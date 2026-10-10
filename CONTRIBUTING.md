@@ -1,27 +1,34 @@
-# Contributing to Plex Media Player
+# Contributing
 
-:+1::tada: First off, thanks for taking the time to contribute! :tada::+1:
+This repository is an unofficial fork of
+[plexinc/plex-media-player](https://github.com/plexinc/plex-media-player), which
+Plex deprecated and archived on 2022-05-31. That repository is read-only, so
+issues and pull requests cannot be filed against it.
 
-The following is a set of guidelines for contributing to Plex Media Player.
+This fork is published as the source for the builds attached to its releases. It
+is not affiliated with, endorsed by or supported by Plex Inc., and its owner
+cannot publish or syndicate an official build.
 
-#### 1 - Read the Plex CLA
+## An official build
 
-Before commiting, you will need to read the CLA which can be found in our [wiki](https://github.com/plexinc/plex-media-player/wiki/Contributor-License-Agreement#individual-agreement)
+Only Plex can build, sign and distribute an official Plex client for a platform.
+Requests for an official aarch64 Linux client belong with Plex, through the
+channels Plex operates:
 
-Your commit message should include a sign off to confirm you've accepted the CLA by ending the commit with:
+- [Feature Suggestions](https://forums.plex.tv/c/feature-suggestions) on the Plex
+  forums — one suggestion per topic, after searching for an existing topic to add
+  to or vote on.
+- [Plex support](https://support.plex.tv/)
+- [Plex apps and downloads](https://www.plex.tv/media-server-downloads/#plex-app)
+  for the clients Plex ships today.
 
-> Plex-CLA-1.0-signed-off-by: Your Name  <your.name@email.com>
+Contributions to Plex's own code were governed by the
+[Plex Contributor License Agreement](https://github.com/plexinc/plex-media-player/wiki/Contributor-License-Agreement#individual-agreement).
+That agreement, and the review process that went with it, belong to Plex and not
+to this fork.
 
-#### 2 - General Guidelines
+## Changes to this fork
 
-There are a few things you should verify before submitting a PR to Plex Media Player.
-
- - Commit messages should be clear and start with the topic being addressed. An example would be: *topic : description*. ie *player : what it fixes* ...
- - Take time to write a clear and understandable commit message description. Most of the time the commit title is not enough to describe the patch and why it's required. Think of the fact that Plex Media Player is running on multiple platforms and that there are other context than your.
- - Ensure that the patch you're submitting does not break other platforms. For instance if you are making a patch that is specific to MacOS, it shouldn't impact Windows or Linux builds.
- - Respect the coding convention currently used, whilst we have no detailed documentation to cover the coding style you can make sure your patch matches the existing conventions.
- 
-#### 3 - Merge process
- - Once you've submitted the Pull Request to the repo, please be patient. It will be reviewed by multiple members of Plex who will reply with comments.
- - Once the change has been verified, it will be merged once all PR comments have been addressed.
-
+No contributor agreement applies here and nothing merged here is official in any
+sense. Keep patches in your own fork: clone it, build it with the steps in
+[README.md](README.md), and publish your changes under your own name.
