@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -147,7 +148,8 @@ def sha256_file(path):
 def request(url, method="GET"):
     headers = {"User-Agent": "plex-media-player-arm64-check-sources"}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token and "api.github.com" in url:
+    parts = urllib.parse.urlsplit(url)
+    if token and parts.scheme == "https" and parts.hostname == "api.github.com":
         headers["Authorization"] = "Bearer " + token
     return urllib.request.Request(url, headers=headers, method=method)
 
