@@ -146,6 +146,7 @@ KonvergoWindow
     focus: true
     property string currentHoveredUrl: ""
     onLinkHovered: web.currentHoveredUrl = hoveredUrl
+    onUrlChanged: mainWindow.webClientNavigated(web.url)
     width: mainWindow.width
     height: mainWindow.height
 
@@ -233,7 +234,6 @@ KonvergoWindow
       }
     }
   }
-
 
   Rectangle
   {

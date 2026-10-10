@@ -63,6 +63,16 @@
         "hidden": true
       },
       {
+        "value": "embeddedServer",
+        "default": true,
+        "hidden": true
+      },
+      {
+        "value": "signInPending",
+        "default": true,
+        "hidden": true
+      },
+      {
         "value": "automaticUpdates",
         "default": true
       },

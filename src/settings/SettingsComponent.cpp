@@ -772,6 +772,9 @@ QString SettingsComponent::getWebClientUrl(bool desktop)
     url = "file:///" + path;
   }
 
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "signInPending").toBool())
+    url += WEB_CLIENT_LOGIN_FRAGMENT;
+
   QLOG_DEBUG() << "Using web-client URL: " << url;
 
   return url;
@@ -813,4 +816,3 @@ void SettingsComponent::setCommandLineValues(const QStringList& values)
     setValue(SETTINGS_SECTION_MAIN, "layout", "auto");
   }
 }
-

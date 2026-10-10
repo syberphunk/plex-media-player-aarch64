@@ -10,12 +10,13 @@
 
 #include <QtQuick/QQuickWindow>
 #include <QOpenGLFunctions>
+#include <QVector>
+#include <QStringList>
 
 #include <mpv/render_gl.h>
 
 #include "QsLog.h"
 #include "utils/Utils.h"
-
 
 #if defined(Q_OS_WIN32)
 #include <windows.h>
@@ -96,15 +97,19 @@ bool PlayerRenderer::init()
       .get_proc_address_ctx = NULL,
   };
 
-  mpv_render_param params[] = {
-    {MPV_RENDER_PARAM_API_TYPE, (void*)MPV_RENDER_API_TYPE_OPENGL},
-    {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &opengl_params},
+  QVector<mpv_render_param> params;
+  params.append({MPV_RENDER_PARAM_API_TYPE, (void*)MPV_RENDER_API_TYPE_OPENGL});
+  params.append({MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &opengl_params});
+
 #ifdef USE_X11EXTRAS
-    {MPV_RENDER_PARAM_X11_DISPLAY, QX11Info::display()},
+  if (QX11Info::isPlatformX11() && QX11Info::display())
+    params.append({MPV_RENDER_PARAM_X11_DISPLAY, QX11Info::display()});
+  else
+    QLOG_INFO() << "Not an X11 platform plugin, not passing an X11 display to mpv";
 #endif
-    {MPV_RENDER_PARAM_INVALID},
-  };
-  int err = mpv_render_context_create(&m_mpvGL, m_mpv, params);
+
+  params.append({MPV_RENDER_PARAM_INVALID, nullptr});
+  int err = mpv_render_context_create(&m_mpvGL, m_mpv, params.data());
 
   if (err >= 0) {
     mpv_render_context_set_update_callback(m_mpvGL, on_update, (void *)this);
@@ -275,26 +280,38 @@ void PlayerQuickItem::onSynchronize()
     connect(&PlayerComponent::Get(), &PlayerComponent::onVideoRecangleChanged, window(), &QQuickWindow::update, Qt::QueuedConnection);
     window()->setPersistentOpenGLContext(true);
     window()->setPersistentSceneGraph(true);
-    window()->setClearBeforeRendering(false);
     m_debugInfo = "";
     QOpenGLContext* glctx = QOpenGLContext::currentContext();
     if (glctx && glctx->isValid())
     {
       m_debugInfo += "\nOpenGL:\n";
       int syms[4] = {GL_VENDOR, GL_RENDERER, GL_VERSION, GL_SHADING_LANGUAGE_VERSION};
-      for (auto sym : syms)
+      const char* names[4] = {"vendor", "renderer", "version", "glsl"};
+      QStringList logged;
+      for (int i = 0; i < 4; i++)
       {
-        auto s = (char *)glctx->functions()->glGetString(sym);
+        auto s = (char *)glctx->functions()->glGetString(syms[i]);
         if (s)
+        {
           m_debugInfo += QString("  ") + QString::fromUtf8(s) + "\n";
+          logged << QString("%1=%2").arg(names[i], QString::fromUtf8(s));
+        }
       }
       m_debugInfo += "\n";
+
+      QLOG_INFO() << "OpenGL:" << qPrintable(logged.join(" "));
+    }
+    else
+    {
+      QLOG_ERROR() << "No valid OpenGL context at scenegraph init";
     }
   }
   if (m_renderer)
   {
     m_renderer->m_size = window()->size() * window()->devicePixelRatio();
     m_renderer->m_videoRectangle = PlayerComponent::Get().videoRectangle();
+
+    window()->setClearBeforeRendering(!PlayerComponent::Get().videoWindowVisible());
   }
 }
 

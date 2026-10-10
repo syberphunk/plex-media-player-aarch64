@@ -70,7 +70,8 @@ public:
     platformArchUnknown,
     platformArchX86_32,
     platformArchX86_64,
-    platformArchRpi2
+    platformArchRpi2,
+    platformArchAarch64
   };
 
   inline PlatformType getPlatformType() { return m_platformType; }
@@ -83,6 +84,7 @@ public:
   bool isWebClientConnected() const { return !m_webClientVersion.isEmpty(); }
 
   inline QString authenticationToken() { return m_authenticationToken; }
+  void setAuthenticationToken(const QString& token);
   inline bool cursorVisible() { return m_cursorVisible; }
 
   Q_INVOKABLE void crashApp();

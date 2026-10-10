@@ -36,9 +36,9 @@ QMap<SystemComponent::PlatformArch, QString> g_platformArchNames = {
   { SystemComponent::platformArchX86_32, "i386" },
   { SystemComponent::platformArchX86_64, "x86_64" },
   { SystemComponent::platformArchRpi2, "rpi2" },
+  { SystemComponent::platformArchAarch64, "aarch64" },
   { SystemComponent::platformArchUnknown, "unknown" }
 };
-
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 SystemComponent::SystemComponent(QObject* parent) : ComponentBase(parent), m_platformType(platformTypeUnknown), m_platformArch(platformArchUnknown), m_doLogMessages(false), m_cursorVisible(true), m_scale(1)
@@ -65,12 +65,9 @@ SystemComponent::SystemComponent(QObject* parent) : ComponentBase(parent), m_pla
   m_platformArch = platformArchX86_32;
 #elif defined(Q_PROCESSOR_X86_64)
   m_platformArch = platformArchX86_64;
+#elif defined(Q_PROCESSOR_ARM_64)
+  m_platformArch = platformArchAarch64;
 #endif
-
-  connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_AUDIO), &SettingsSection::valuesUpdated, [=]()
-  {
-    emit capabilitiesChanged(getCapabilitiesString());
-  });
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -81,6 +78,11 @@ bool SystemComponent::componentInitialize()
 
   // Hide mouse pointer on any keyboard input
   connect(&InputComponent::Get(), &InputComponent::receivedInput, [=]() { setCursorVisibility(false); });
+
+  connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_AUDIO), &SettingsSection::valuesUpdated, [=]()
+  {
+    emit capabilitiesChanged(getCapabilitiesString());
+  });
 
   return true;
 }
@@ -143,7 +145,6 @@ QVariantMap SystemComponent::systemInformation() const
   }
 #endif
 
-  
   info["build"] = build + "-" + arch;
   info["dist"] = dist;
   info["version"] = Version::GetVersionString();
@@ -284,6 +285,15 @@ void SystemComponent::userInformation(const QVariantMap& userModel)
   SettingsComponent::Get().setUserRoleList(roleList);
 
   m_authenticationToken = userModel.value("authToken").toString();
+  emit userInfoChanged();
+}
+
+void SystemComponent::setAuthenticationToken(const QString& token)
+{
+  if (token == m_authenticationToken)
+    return;
+
+  m_authenticationToken = token;
   emit userInfoChanged();
 }
 

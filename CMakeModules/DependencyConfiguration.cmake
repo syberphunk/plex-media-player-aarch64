@@ -67,4 +67,5 @@ else(IS_DIRECTORY ${DEPENDENCY_ROOT})
 endif(IS_DIRECTORY ${DEPENDENCY_ROOT})
 
 find_package(Threads REQUIRED)
-find_package(PythonInterp REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})

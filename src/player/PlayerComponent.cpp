@@ -1,6 +1,7 @@
 #include "PlayerComponent.h"
 #include <QString>
 #include <Qt>
+#include <QDateTime>
 #include <QDir>
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -17,9 +18,11 @@
 
 #include "QsLog.h"
 
+#include <algorithm>
 #include <math.h>
 #include <string.h>
 #include <shared/Paths.h>
+#include <shared/SessionEnv.h>
 
 #if !defined(Q_OS_WIN)
 #include <unistd.h>
@@ -116,17 +119,11 @@ bool PlayerComponent::componentInitialize()
   // Do not let the decoder downmix (better customization for us).
   mpv::qt::set_property(m_mpv, "ad-lavc-downmix", false);
 
-  // Make it load the hwdec interop, so hwdec can be enabled at runtime.
-  mpv::qt::set_property(m_mpv, "hwdec-preload", "auto");
-
   // User-visible application name used by some audio APIs (at least PulseAudio).
   mpv::qt::set_property(m_mpv, "audio-client-name", QCoreApplication::applicationName());
 
   // User-visible stream title used by some audio APIs (at least PulseAudio and wasapi).
   mpv::qt::set_property(m_mpv, "title", QCoreApplication::applicationName());
-
-  // See: https://github.com/plexinc/plex-media-player/issues/736
-  mpv::qt::set_property(m_mpv, "cache-seek-min", 5000);
 
   mpv::qt::set_property(m_mpv, "tls-verify", "yes");
 
@@ -158,8 +155,7 @@ bool PlayerComponent::componentInitialize()
 
   // Apply some low-memory settings on RPI, which is relatively memory-constrained.
 #ifdef TARGET_RPI
-  // The backbuffer makes seeking back faster (without having to do a HTTP-level seek)
-  mpv::qt::set_property(m_mpv, "cache-backbuffer", 10 * 1024); // KB
+  mpv::qt::set_property(m_mpv, "demuxer-max-back-bytes", 10 * 1024 * 1024);
   // The demuxer queue is used for the readahead, and also for dealing with badly
   // interlaved audio/video. Setting it too low increases sensitivity to network
   // issues, and could cause playback failure with "bad" files.
@@ -176,6 +172,8 @@ bool PlayerComponent::componentInitialize()
   if (mpv_initialize(m_mpv) < 0)
     throw FatalException(tr("Failed to initialize mpv."));
 
+  probeLoadfileSignature();
+
   mpv_observe_property(m_mpv, 0, "pause", MPV_FORMAT_FLAG);
   mpv_observe_property(m_mpv, 0, "core-idle", MPV_FORMAT_FLAG);
   mpv_observe_property(m_mpv, 0, "cache-buffering-state", MPV_FORMAT_INT64);
@@ -184,6 +182,9 @@ bool PlayerComponent::componentInitialize()
   mpv_observe_property(m_mpv, 0, "duration", MPV_FORMAT_DOUBLE);
   mpv_observe_property(m_mpv, 0, "audio-device-list", MPV_FORMAT_NODE);
   mpv_observe_property(m_mpv, 0, "video-dec-params", MPV_FORMAT_NODE);
+  mpv_observe_property(m_mpv, 0, "dwidth", MPV_FORMAT_INT64);
+  mpv_observe_property(m_mpv, 0, "dheight", MPV_FORMAT_INT64);
+  mpv_observe_property(m_mpv, 0, "demuxer-cache-state", MPV_FORMAT_NODE);
 
   // Setup a hook with the ID 1, which is run during the file is loaded.
   // Used to delay playback start for display framerate switching.
@@ -198,7 +199,6 @@ bool PlayerComponent::componentInitialize()
   mpv_hook_add(m_mpv, 2, "on_preloaded", 0);
 #endif
 
-  updateAudioDeviceList();
   setAudioConfiguration();
   updateSubtitleSettings();
   updateVideoSettings();
@@ -244,6 +244,40 @@ void PlayerComponent::setVideoRectangle(int x, int y, int w, int h)
     m_videoRectangle = rc;
     emit onVideoRecangleChanged();
   }
+}
+
+void PlayerComponent::setVideoPlacement(const QString& placement, int width, int height,
+                                        int edgeGutterX, int edgeGutterY, bool isStackedAbove)
+{
+  if (isStackedAbove)
+    QLOG_DEBUG() << "Video asked to stack above the web view; not supported, ignoring";
+
+  if (placement.isEmpty() || placement == "none" || width <= 0 || height <= 0)
+  {
+    setVideoRectangle(-1, -1, -1, -1);
+    return;
+  }
+
+  const qreal dpr = m_window ? m_window->devicePixelRatio() : 1.0;
+  const QSize windowSize = m_window ? m_window->size() * dpr : QSize();
+
+  const int w = qRound(width * dpr);
+  const int h = qRound(height * dpr);
+  const int gx = qRound(edgeGutterX * dpr);
+  const int gy = qRound(edgeGutterY * dpr);
+
+  int x = gx;
+  int y = gy;
+  if (placement == "bottom-left")
+  {
+    y = windowSize.height() - h - gy;
+  }
+  else if (placement != "top-left")
+  {
+    QLOG_WARN() << "Unknown video placement" << placement << "-- treating as top-left";
+  }
+
+  setVideoRectangle(x, qMax(y, 0), w, h);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -305,6 +339,41 @@ static QString ConvertPlexDirectURL(const QString& host)
     return substr;
 }
 
+void PlayerComponent::probeLoadfileSignature()
+{
+  m_loadfileIndexArg = -1;
+
+  QVariant list = mpv::qt::get_property(m_mpv, "command-list");
+  if (mpv::qt::is_error(list))
+  {
+    QLOG_WARN() << "Could not read mpv command-list; assuming loadfile has no index argument.";
+    return;
+  }
+
+  for (const QVariant& entry : list.toList())
+  {
+    const QVariantMap cmd = entry.toMap();
+    if (cmd["name"].toString() != "loadfile")
+      continue;
+
+    const QVariantList args = cmd["args"].toList();
+    for (int n = 0; n < args.size(); n++)
+    {
+      if (args[n].toMap()["name"].toString() == "index")
+      {
+        m_loadfileIndexArg = n + 1;
+        break;
+      }
+    }
+
+    QLOG_INFO() << "mpv loadfile takes" << args.size() << "arguments; playlist index argument at"
+                << (m_loadfileIndexArg < 0 ? QString("none") : QString::number(m_loadfileIndexArg));
+    return;
+  }
+
+  QLOG_WARN() << "mpv command-list has no loadfile entry.";
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerComponent::queueMedia(const QString& url, const QVariantMap& options, const QVariantMap &metadata, const QString& audioStream, const QString& subtitleStream)
 {
@@ -323,6 +392,9 @@ void PlayerComponent::queueMedia(const QString& url, const QVariantMap& options,
   QVariantList command;
   command << "loadfile" << qurl.toString(QUrl::FullyEncoded);
   command << "append-play"; // if nothing is playing, play it now, otherwise just enqueue it
+
+  while (command.size() < m_loadfileIndexArg + 1)
+    command << -1;
 
   QVariantMap extraArgs;
 
@@ -355,7 +427,13 @@ void PlayerComponent::queueMedia(const QString& url, const QVariantMap& options,
 
   command << extraArgs;
 
-  mpv::qt::command(m_mpv, command);
+  QVariant result = mpv::qt::command(m_mpv, command);
+  if (mpv::qt::is_error(result))
+  {
+    QLOG_ERROR() << "mpv rejected loadfile:" << mpv_error_string(mpv::qt::get_error(result))
+                 << "command was" << command;
+    emit error(tr("Could not start playback."));
+  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -583,6 +661,35 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
         // Aspect might be known now (or it changed during playback), so update settings
         // dependent on the aspect ratio.
         updateVideoAspectSettings();
+      }
+      else if (strcmp(prop->name, "dwidth") == 0 || strcmp(prop->name, "dheight") == 0)
+      {
+        QSize size(mpv::qt::get_property(m_mpv, "dwidth").toInt(),
+                   mpv::qt::get_property(m_mpv, "dheight").toInt());
+        if (size != m_videoSize)
+        {
+          m_videoSize = size;
+          emit videoSizeChanged(size.width(), size.height());
+        }
+      }
+      else if (strcmp(prop->name, "demuxer-cache-state") == 0)
+      {
+        QVariantList ranges;
+        for (const QVariant& range : mpv::qt::get_property(m_mpv, "demuxer-cache-state")
+                                       .toMap()["seekable-ranges"].toList())
+        {
+          const QVariantMap in = range.toMap();
+          ranges.append(QVariantMap{ { "start", in["start"] }, { "end", in["end"] } });
+        }
+
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const bool shapeChanged = ranges.size() != m_seekableRanges.size();
+        if (ranges != m_seekableRanges && (shapeChanged || now - m_lastSeekableRangesEmit >= 500))
+        {
+          m_seekableRanges = ranges;
+          m_lastSeekableRangesEmit = now;
+          emit seekableRangesChanged(ranges);
+        }
       }
       break;
     }
@@ -849,6 +956,33 @@ void PlayerComponent::reselectStream(const QString &streamSelection, MediaType t
     break;
   }
 
+  if (streamSelection.startsWith("@"))
+  {
+    bool ok = false;
+    const int ordinal = streamSelection.mid(1).toInt(&ok);
+
+    QVariantList candidates;
+    for (const QVariant& stream : findStreamsForURL(QString()))
+    {
+      if (stream.toMap()["type"].toString() == mpvStreamTypeName)
+        candidates.append(stream);
+    }
+    std::sort(candidates.begin(), candidates.end(),
+              [](const QVariant& a, const QVariant& b) {
+                return a.toMap()["ff-index"].toInt() < b.toMap()["ff-index"].toInt();
+              });
+
+    QString selection = "no";
+    if (ok && ordinal >= 0 && !candidates.isEmpty())
+    {
+      const int pick = ordinal < candidates.size() ? ordinal : 0;
+      selection = candidates[pick].toMap()["id"].toString();
+    }
+
+    mpv::qt::set_property(m_mpv, streamIdPropertyName, selection);
+    return;
+  }
+
   QString streamName;
   QString streamID;
 
@@ -962,6 +1096,17 @@ void PlayerComponent::setSubtitleDelay(qint64 milliseconds)
   mpv::qt::set_property(m_mpv, "sub-delay", milliseconds / 1000.0);
 }
 
+void PlayerComponent::setPlaybackRate(double rate)
+{
+  if (rate <= 0)
+  {
+    QLOG_WARN() << "Ignoring non-positive playback rate" << rate;
+    return;
+  }
+
+  mpv::qt::set_property(m_mpv, "speed", qBound(0.01, rate, 100.0));
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // This is called with the set of previous audio devices that were detected, and the set of current
 // audio devices. From this we guess whether we should reopen the audio device. If the user-selected
@@ -1032,6 +1177,8 @@ void PlayerComponent::updateAudioDeviceList()
 
   checkCurrentAudioDevice(m_audioDevices, devices);
   m_audioDevices = devices;
+
+  emit audioDeviceListUpdated();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1039,7 +1186,11 @@ void PlayerComponent::updateAudioDevice()
 {
   QString device = SettingsComponent::Get().value(SETTINGS_SECTION_AUDIO, "device").toString();
 
-  if (!m_audioDevices.contains(device))
+  if (m_audioDevices.isEmpty())
+  {
+    QLOG_DEBUG() << "Audio device list not known yet; using configured device" << device << "as-is.";
+  }
+  else if (!m_audioDevices.contains(device))
   {
     QLOG_WARN() << "Not using audio device" << device << "because it's not present.";
     device = "auto";
@@ -1057,14 +1208,11 @@ void PlayerComponent::setAudioConfiguration()
 
   updateAudioDevice();
 
-  QString resampleOpts = "";
-  bool normalize = SettingsComponent::Get().value(SETTINGS_SECTION_AUDIO, "normalize").toBool();
-  resampleOpts += QString(":normalize=") + (normalize ? "yes" : "no");
+  mpv::qt::set_property(m_mpv, "audio-normalize-downmix",
+                        SettingsComponent::Get().value(SETTINGS_SECTION_AUDIO, "normalize").toBool());
 
   // Make downmix more similar to PHT.
-  resampleOpts += ":o=[surround_mix_level=1]";
-
-  mpv::qt::set_property(m_mpv, "af-defaults", "lavrresample" + resampleOpts);
+  mpv::qt::set_property(m_mpv, "audio-swresample-o", "surround_mix_level=1");
 
   m_passthroughCodecs.clear();
 
@@ -1118,7 +1266,7 @@ void PlayerComponent::setAudioConfiguration()
   }
   else
   {
-    mpv::qt::command(m_mpv, QStringList() << "af" << "del" << "@ac3");
+    mpv::qt::command(m_mpv, QStringList() << "af" << "remove" << "@ac3");
   }
 
   QVariant device = SettingsComponent::Get().value(SETTINGS_SECTION_AUDIO, "device");
@@ -1138,22 +1286,22 @@ void PlayerComponent::setAudioConfiguration()
 void PlayerComponent::updateSubtitleSettings()
 {
   QVariant size = SettingsComponent::Get().value(SETTINGS_SECTION_SUBTITLES, "size");
-  mpv::qt::set_property(m_mpv, "sub-text-font-size", size);
+  mpv::qt::set_property(m_mpv, "sub-font-size", size);
 
   QVariant colorsString = SettingsComponent::Get().value(SETTINGS_SECTION_SUBTITLES, "color");
   auto colors = colorsString.toString().split(",");
   if (colors.length() == 2)
   {
-    mpv::qt::set_property(m_mpv, "sub-text-color", colors[0]);
-    mpv::qt::set_property(m_mpv, "sub-text-border-color", colors[1]);
+    mpv::qt::set_property(m_mpv, "sub-color", colors[0]);
+    mpv::qt::set_property(m_mpv, "sub-border-color", colors[1]);
   }
 
   QVariant subposString = SettingsComponent::Get().value(SETTINGS_SECTION_SUBTITLES, "placement");
   auto subpos = subposString.toString().split(",");
   if (subpos.length() == 2)
   {
-    mpv::qt::set_property(m_mpv, "sub-text-align-x", subpos[0]);
-    mpv::qt::set_property(m_mpv, "sub-text-align-y", subpos[1]);
+    mpv::qt::set_property(m_mpv, "sub-align-x", subpos[0]);
+    mpv::qt::set_property(m_mpv, "sub-align-y", subpos[1]);
   }
 }
 
@@ -1199,7 +1347,7 @@ void PlayerComponent::updateVideoAspectSettings()
   }
 
   mpv::qt::set_property(m_mpv, "video-unscaled", disableScaling);
-  mpv::qt::set_property(m_mpv, "video-aspect", forceAspect);
+  mpv::qt::set_property(m_mpv, "video-aspect-override", forceAspect);
   mpv::qt::set_property(m_mpv, "keepaspect", keepAspect);
   mpv::qt::set_property(m_mpv, "panscan", panScan);
 }
@@ -1215,33 +1363,40 @@ void PlayerComponent::updateVideoSettings()
 
   QString hardwareDecodingMode = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "hardwareDecoding").toString();
   QString hwdecMode = "no";
-  QString hwdecVTFormat = "nv12";
   if (hardwareDecodingMode == "enabled")
     hwdecMode = "auto";
   else if (hardwareDecodingMode == "osx_compat")
   {
     hwdecMode = "auto";
-    hwdecVTFormat = "uyvy422";
   }
   else if (hardwareDecodingMode == "copy")
   {
     hwdecMode = "auto-copy";
   }
+
+  if (hwdecMode == "auto" && SessionEnv::drmDriver() == "msm")
+  {
+    QLOG_WARN() << "Adreno/msm: using hwdec=auto-copy instead of auto, to avoid the "
+                   "dma-buf import path that can lock up the GPU (SteamOS#2882)";
+    hwdecMode = "auto-copy";
+  }
+
   mpv::qt::set_property(m_mpv, "hwdec", hwdecMode);
-  mpv::qt::set_property(m_mpv, "videotoolbox-format", hwdecVTFormat);
 
   QVariant deinterlace = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "deinterlace");
   mpv::qt::set_property(m_mpv, "deinterlace", deinterlace.toBool() ? "yes" : "no");
 
 #ifndef TARGET_RPI
   double displayFps = DisplayComponent::Get().currentRefreshRate();
-  mpv::qt::set_property(m_mpv, "display-fps", displayFps);
+  if (qIsFinite(displayFps) && displayFps > 0)
+    mpv::qt::set_property(m_mpv, "display-fps-override", displayFps);
 #endif
 
   setAudioDelay(m_playbackAudioDelay);
 
   QVariant cache = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "cache");
-  mpv::qt::set_property(m_mpv, "cache", cache.toInt() * 1024);
+  mpv::qt::set_property(m_mpv, "cache", "yes");
+  mpv::qt::set_property(m_mpv, "demuxer-max-bytes", (qint64)cache.toInt() * 1024 * 1024);
 
   updateVideoAspectSettings();
 }
@@ -1522,7 +1677,7 @@ QString PlayerComponent::videoInformation() const
                    << MPV_PROPERTY("video-params/dh") << endl;
   info << "FPS (container): " << MPV_PROPERTY("container-fps") << endl;
   info << "FPS (filters): " << MPV_PROPERTY("estimated-vf-fps") << endl;
-  info << "Aspect: " << MPV_PROPERTY("video-aspect") << endl;
+  info << "Aspect: " << MPV_PROPERTY("video-aspect-override") << endl;
   info << "Bitrate: " << MPV_PROPERTY("video-bitrate") << endl;
   double displayFps = DisplayComponent::Get().currentRefreshRate();
   info << "Display FPS: " << MPV_PROPERTY("display-fps")
@@ -1542,7 +1697,7 @@ QString PlayerComponent::videoInformation() const
   info << endl;
   info << "Performance: " << endl;
   info << "A/V: " << MPV_PROPERTY("avsync") << endl;
-  info << "Dropped frames: " << MPV_PROPERTY("vo-drop-frame-count") << endl;
+  info << "Dropped frames: " << MPV_PROPERTY("frame-drop-count") << endl;
   bool dispSync = MPV_PROPERTY_BOOL("display-sync-active");
   info << "Display Sync: ";
   if (!dispSync)
@@ -1562,7 +1717,7 @@ QString PlayerComponent::videoInformation() const
   info << endl;
   info << "Cache:" << endl;
   info << "Seconds: " << MPV_PROPERTY("demuxer-cache-duration") << endl;
-  info << "Extra readahead: " << MPV_PROPERTY("cache-used") << endl;
+  info << "Extra readahead: " << MPV_PROPERTY("demuxer-cache-state/fw-bytes") << endl;
   info << "Buffering: " << MPV_PROPERTY("cache-buffering-state") << endl;
   info << "Speed: " << MPV_PROPERTY("cache-speed") << endl;
   info << endl;
@@ -1579,4 +1734,3 @@ QString PlayerComponent::videoInformation() const
   info << flush;
   return infoStr;
 }
-

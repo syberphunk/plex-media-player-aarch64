@@ -2,6 +2,11 @@
 
 #include <QFile>
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSysInfo>
 
 #include "QsLog.h"
 #include "utils/Utils.h"
@@ -159,13 +164,124 @@ void HttpServer::handleSoundsRequest(QHttpRequest* request, QHttpResponse* respo
   response->end();
 }
 
+QString HttpServer::machineIdentifier() const
+{
+  auto seed = SettingsComponent::Get()
+                .value(SETTINGS_SECTION_WEBCLIENT, "clientID")
+                .toString()
+                .toUtf8();
+
+  if (seed.isEmpty())
+    seed = QSysInfo::machineUniqueId();
+
+  return QCryptographicHash::hash("pmp-embedded-server:" + seed,
+                                  QCryptographicHash::Sha1).toHex();
+}
+
+void HttpServer::writeMediaContainer(QHttpRequest* request, QHttpResponse* response,
+                                     const QVariantMap& attributes)
+{
+  const bool wantsJson = request->headers().value("accept").contains("json");
+
+  QByteArray body;
+  if (wantsJson)
+  {
+    QJsonObject container;
+    for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
+      container.insert(it.key(), QJsonValue::fromVariant(it.value()));
+
+    QJsonObject root;
+    root.insert("MediaContainer", container);
+    body = QJsonDocument(root).toJson(QJsonDocument::Compact);
+  }
+  else
+  {
+    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer";
+    for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
+      body += " " + it.key().toUtf8() + "=\"" + it.value().toString().toUtf8() + "\"";
+    body += " />\n";
+  }
+
+  response->setStatusCode(qhttp::ESTATUS_OK);
+  response->addHeader("Content-Type", wantsJson ? "application/json" : "text/xml;charset=utf-8");
+  response->addHeader("Content-Length", QByteArray::number(body.size()));
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->end(body);
+}
+
+bool HttpServer::handleEmbeddedServerRequest(QHttpRequest* request, QHttpResponse* response)
+{
+  if (!SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "embeddedServer").toBool())
+    return false;
+
+  const QString path = request->url().path();
+
+  if (path != "/identity" && path != "/media/providers" && path != "/media/subscriptions"
+      && path != "/media/providers/remote/status")
+    return false;
+
+  if (request->method() == qhttp::EHTTP_OPTIONS)
+  {
+    response->setStatusCode(qhttp::ESTATUS_OK);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    response->addHeader("Access-Control-Allow-Headers", "*");
+    response->addHeader("Access-Control-Max-Age", "86400");
+    response->addHeader("Content-Length", "0");
+    response->end();
+    return true;
+  }
+
+  if (path == "/media/providers")
+  {
+    writeMediaContainer(request, response,
+                        { { "size", 0 },
+                          { "machineIdentifier", machineIdentifier() },
+                          { "allowSync", 0 } });
+    return true;
+  }
+
+  if (path == "/media/subscriptions")
+  {
+    writeMediaContainer(request, response, { { "size", 0 } });
+    return true;
+  }
+
+  if (path == "/media/providers/remote/status")
+  {
+    writeMediaContainer(request, response, { { "size", 0 } });
+    return true;
+  }
+
+  if (path == "/identity")
+  {
+    QByteArray body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                      "<MediaContainer machineIdentifier=\""
+                      + machineIdentifier().toUtf8()
+                      + "\" version=\"" + QCoreApplication::applicationVersion().toUtf8()
+                      + "\" />\n";
+
+    response->setStatusCode(qhttp::ESTATUS_OK);
+    response->addHeader("Content-Type", "text/xml;charset=utf-8");
+    response->addHeader("Content-Length", QByteArray::number(body.size()));
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->end(body);
+    return true;
+  }
+
+  return false;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 void HttpServer::handleRequest(QHttpRequest* request, QHttpResponse* response)
 {
   QLOG_DEBUG() << "Incoming request to:" << request->url().toString() << "from" << request->remoteAddress();
 
   QString path = request->url().path();
-  if (path.startsWith(WEB_CLIENT_PATH))
+  if (handleEmbeddedServerRequest(request, response))
+  {
+  }
+  else if (path.startsWith(WEB_CLIENT_PATH))
   {
     handleWebClientRequest(request, response);
   }

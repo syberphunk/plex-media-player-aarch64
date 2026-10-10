@@ -30,6 +30,11 @@ private:
   bool writeFile(const QString& file, QHttpResponse* response);
   void handleSoundsRequest(QHttpRequest* request, QHttpResponse* response);
 
+  bool handleEmbeddedServerRequest(QHttpRequest* request, QHttpResponse* response);
+  void writeMediaContainer(QHttpRequest* request, QHttpResponse* response,
+                           const QVariantMap& attributes);
+  QString machineIdentifier() const;
+
   QHttpServer* m_server;
   QString m_baseUrl;
   quint16 m_port;

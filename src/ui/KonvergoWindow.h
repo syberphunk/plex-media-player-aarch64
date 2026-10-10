@@ -5,7 +5,6 @@
 #include <QEvent>
 #include <settings/SettingsComponent.h>
 
-
 // This controls how big the web view will zoom using semantic zoom
 // over a specific number of pixels and we run out of space for on screen
 // tiles in chromium. This only happens on OSX since on other platforms
@@ -89,6 +88,8 @@ public:
   QSize windowMinSize() { return WINDOWW_MIN_SIZE; }
   QString webUrl();
 
+  Q_INVOKABLE void webClientNavigated(const QUrl& url);
+
 Q_SIGNALS:
   void fullScreenSwitched();
   void enableVideoWindowSignal();
@@ -129,6 +130,7 @@ private:
   QTimer* m_infoTimer;
   QString m_debugInfo, m_systemDebugInfo, m_videoInfo;
   int m_ignoreFullscreenSettingsChange;
+  int m_forcedFullscreenCount;
   bool m_webDesktopMode;
   bool m_showedUpdateDialog;
 

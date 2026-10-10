@@ -113,7 +113,7 @@ public:
   virtual int getDisplayFromPoint(int x, int y) = 0;
 
   // extra functions that can be implemented
-  virtual void resetRendering() {}
+  Q_INVOKABLE virtual void resetRendering() {}
 
   // other classes functions
   int findBestMatch(int display, DMMatchMediaInfo& matchInfo);

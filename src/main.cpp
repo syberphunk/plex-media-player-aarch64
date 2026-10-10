@@ -22,6 +22,8 @@
 #include "Version.h"
 #include "settings/SettingsComponent.h"
 #include "settings/SettingsSection.h"
+#include "connector/ConnectorManager.h"
+#include "connector/Connectors.h"
 #include "ui/KonvergoWindow.h"
 #include "ui/KonvergoWindow.h"
 #include "Globals.h"
@@ -29,6 +31,7 @@
 #include "UniqueApplication.h"
 #include "utils/HelperLauncher.h"
 #include "utils/Log.h"
+#include "shared/SessionEnv.h"
 
 #ifdef Q_OS_MAC
 #include "PFMoveApplication.h"
@@ -38,12 +41,30 @@
 #include "SignalManager.h"
 #endif
 
+static void preinitPlatform()
+{
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
+  if (qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
+    return;
+
+  if (!SessionEnv::haveWaylandDisplay())
+    return;
+
+  if (!SessionEnv::haveX11Display())
+    return;
+
+  qputenv("QT_QPA_PLATFORM", "xcb");
+#endif
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 static void preinitQt()
 {
   QCoreApplication::setApplicationName(Names::MainName());
   QCoreApplication::setApplicationVersion(Version::GetVersionString());
   QCoreApplication::setOrganizationDomain("plex.tv");
+
+  QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
 #ifdef Q_OS_WIN32
   QVariant useOpengl = SettingsComponent::readPreinitValue(SETTINGS_SECTION_MAIN, "useOpenGL");
@@ -124,6 +145,8 @@ int main(int argc, char *argv[])
     qputenv("LC_NUMERIC", "C");
 #endif
 
+    preinitPlatform();
+    SessionEnv::sanitizeGraphicsEnv();
     preinitQt();
     detectOpenGLEarly();
 
@@ -152,7 +175,12 @@ int main(int argc, char *argv[])
     }
 
     auto scale = parser.value("scale-factor");
-    if (scale.isEmpty() || scale == "auto")
+    if (!parser.isSet("scale-factor") && SessionEnv::insideGamescope())
+    {
+      scale = "1";
+      qputenv("QT_SCALE_FACTOR", "1");
+    }
+    else if (scale.isEmpty() || scale == "auto")
       QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     else if (scale != "none")
       qputenv("QT_SCALE_FACTOR", scale.toUtf8());
@@ -184,6 +212,12 @@ int main(int argc, char *argv[])
     if (parser.isSet("terminal"))
       Log::EnableTerminalOutput();
 
+    QLOG_INFO() << "Session:" << qPrintable(SessionEnv::description());
+    QLOG_INFO() << "Qt platform plugin:" << qPrintable(app.platformName())
+                << "scale-factor:" << qPrintable(scale);
+    if (!SessionEnv::graphicsEnvReport().isEmpty())
+      QLOG_INFO() << "Graphics env:" << qPrintable(SessionEnv::graphicsEnvReport());
+
     // Quit app and apply update if we find one.
     if (!parser.isSet("no-updates") && UpdateManager::CheckForUpdates())
     {
@@ -200,6 +234,8 @@ int main(int argc, char *argv[])
     //
     ComponentManager::Get().initialize();
 
+    ConnectorManager::Get().initialize();
+
     if (parser.isSet("no-updates"))
       UpdaterComponent::Get().disable();
 
@@ -207,7 +243,8 @@ int main(int argc, char *argv[])
 
     // enable remote inspection if we have the correct setting for it.
     if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "remoteInspector").toBool())
-      qputenv("QTWEBENGINE_REMOTE_DEBUGGING", "0.0.0.0:9992");
+      qputenv("QTWEBENGINE_REMOTE_DEBUGGING",
+              QString("0.0.0.0:%1").arg(WEB_INSPECTOR_PORT).toUtf8());
 
     QtWebEngine::initialize();
 
@@ -237,6 +274,8 @@ int main(int argc, char *argv[])
       QObject* webChannel = qvariant_cast<QObject*>(window->property("webChannel"));
       Q_ASSERT(webChannel);
       ComponentManager::Get().setWebChannel(qobject_cast<QWebChannel*>(webChannel));
+      ConnectorManager::Get().setWebChannel(qobject_cast<QWebChannel*>(webChannel));
+      ConnectorManager::Get().trackWindow(window);
 
       QObject::connect(uniqueApp, &UniqueApplication::otherApplicationStarted, window, &KonvergoWindow::otherAppFocus);
     });

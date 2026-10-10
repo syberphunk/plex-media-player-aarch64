@@ -17,15 +17,21 @@ function(copy_resources target)
   
   get_property(RESOURCE_LIST GLOBAL PROPERTY _${target}_RESOURCE_LIST)
 
-  # we read the LOCATION from the target instead of using a generator
-  # here since add_custom_command doesn't support generator expresessions
-  # in the output field, and this is still cleaner than hardcoding the path
-  # of the output binary.
-  #  
-  get_property(TARGET_LOC TARGET ${target} PROPERTY LOCATION)
-  get_filename_component(TARGET_DIR ${TARGET_LOC} DIRECTORY)
+  get_property(TARGET_DIR TARGET ${target} PROPERTY RUNTIME_OUTPUT_DIRECTORY)
+  if(NOT TARGET_DIR)
+    get_property(TARGET_DIR TARGET ${target} PROPERTY BINARY_DIR)
+  endif()
   if(APPLE)
-    set(TARGET_LOC ${TARGET_DIR}/..)
+    get_property(_IS_BUNDLE TARGET ${target} PROPERTY MACOSX_BUNDLE)
+    get_property(_OUT_NAME TARGET ${target} PROPERTY OUTPUT_NAME)
+    if(NOT _OUT_NAME)
+      set(_OUT_NAME ${target})
+    endif()
+    if(_IS_BUNDLE)
+      set(TARGET_LOC ${TARGET_DIR}/${_OUT_NAME}.app/Contents)
+    else()
+      set(TARGET_LOC ${TARGET_DIR})
+    endif()
   else()
     set(TARGET_LOC ${TARGET_DIR})
   endif()

@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*-arm64.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish
+        required: true
+      allow_outdated:
+        description: Build even if a newer upstream release exists
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    env:
+      ARCH: aarch64
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder xvfb \
+            qemu-user-static binfmt-support
+
+      - name: Register qemu binfmt handlers
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Check pinned sources
+        run: ./scripts/check-sources.py
+
+      - name: Build, verify and publish
+        run: |
+          set -eu
+          args="--arch $ARCH --gh-repo ${{ github.repository }}"
+          if [ -n "${{ inputs.tag }}" ]; then
+            args="$args --tag ${{ inputs.tag }}"
+          else
+            args="$args --tag ${GITHUB_REF_NAME}"
+          fi
+          if [ "${{ inputs.allow_outdated }}" != "false" ]; then
+            args="$args --allow-outdated"
+          fi
+          ./scripts/release.sh $args
+
+      - name: Upload the verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: facade-verify-aarch64
+          path: facade-verify-*.log
+          if-no-files-found: ignore

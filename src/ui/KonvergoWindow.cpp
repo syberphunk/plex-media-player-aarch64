@@ -17,6 +17,7 @@
 #include "player/PlayerQuickItem.h"
 #include "display/DisplayComponent.h"
 #include "QsLog.h"
+#include "shared/SessionEnv.h"
 #include "utils/Utils.h"
 #include "Globals.h"
 #include "EventFilter.h"
@@ -43,6 +44,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   QQuickWindow(parent),
   m_debugLayer(false),
   m_ignoreFullscreenSettingsChange(0),
+  m_forcedFullscreenCount(0),
   m_showedUpdateDialog(false),
   m_osxPresentationOptions(0)
 {
@@ -453,10 +455,19 @@ void KonvergoWindow::updateForcedScreen()
   }
 }
 
+static const int kMaxForcedFullscreenAttempts = 5;
+
+static bool alwaysFullscreenSession()
+{
+  return SystemComponent::Get().isOpenELEC()
+      || SessionEnv::insideGamescope()
+      || SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "forceAlwaysFS").toBool();
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void KonvergoWindow::updateWindowState(bool saveGeo)
 {
-  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "fullscreen").toBool() || SystemComponent::Get().isOpenELEC() || SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "forceAlwaysFS").toBool())
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "fullscreen").toBool() || alwaysFullscreenSession())
   {
     // if we were go from windowed to fullscreen
     // we want to store our current windowed position
@@ -531,12 +542,24 @@ void KonvergoWindow::onVisibilityChanged(QWindow::Visibility visibility)
   }
 #endif
 
-  if (visibility == QWindow::Windowed && SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "forceAlwaysFS").toBool())
+  if (visibility == QWindow::Windowed && alwaysFullscreenSession())
   {
-    QLOG_WARN() << "Forcing re-entering fullscreen because of forceAlwaysFS setting!";
-    updateForcedScreen(); // if a specific screen is forced, try to move the window there
-    setVisibility(QWindow::FullScreen);
-    return;
+    if (++m_forcedFullscreenCount > kMaxForcedFullscreenAttempts)
+    {
+      QLOG_ERROR() << "Window manager will not keep us fullscreen after"
+                   << kMaxForcedFullscreenAttempts << "attempts; giving up and staying windowed";
+    }
+    else
+    {
+      QLOG_WARN() << "Forcing re-entering fullscreen: this session has no usable windowed mode";
+      updateForcedScreen();
+      setVisibility(QWindow::FullScreen);
+      return;
+    }
+  }
+  else if (visibility == QWindow::FullScreen)
+  {
+    m_forcedFullscreenCount = 0;
   }
 
   if (visibility == QWindow::FullScreen || visibility == QWindow::Windowed)
@@ -544,8 +567,11 @@ void KonvergoWindow::onVisibilityChanged(QWindow::Visibility visibility)
     m_ignoreFullscreenSettingsChange++;
     ScopedDecrementer decrement(&m_ignoreFullscreenSettingsChange);
 
-    bool fs = visibility == QWindow::FullScreen;
-    SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, "fullscreen", fs);
+    if (!alwaysFullscreenSession())
+    {
+      bool fs = visibility == QWindow::FullScreen;
+      SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, "fullscreen", fs);
+    }
 
     SystemComponent::Get().setCursorVisibility(false);
   }
@@ -685,6 +711,23 @@ QScreen* KonvergoWindow::loadLastScreen()
 QString KonvergoWindow::webUrl()
 {
   return SettingsComponent::Get().getWebClientUrl(m_webDesktopMode);
+}
+
+void KonvergoWindow::webClientNavigated(const QUrl& url)
+{
+  auto& settings = SettingsComponent::Get();
+
+  const QUrl ours(settings.getWebClientUrl(m_webDesktopMode));
+  if (url.adjusted(QUrl::RemoveFragment) != ours.adjusted(QUrl::RemoveFragment))
+    return;
+
+  const bool onLogin = url.fragment().startsWith(QStringLiteral(WEB_CLIENT_LOGIN_FRAGMENT).mid(1));
+
+  if (onLogin != settings.value(SETTINGS_SECTION_MAIN, "signInPending").toBool())
+  {
+    QLOG_DEBUG() << "Web client" << (onLogin ? "is on" : "has left") << "the sign-in page.";
+    settings.setValue(SETTINGS_SECTION_MAIN, "signInPending", onLogin);
+  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

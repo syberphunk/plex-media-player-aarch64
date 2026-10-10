@@ -18,10 +18,11 @@
 #define SETTINGS_SECTION_CEC "cec"
 #define SETTINGS_SECTION_APPLEREMOTE "appleremote"
 
+#define WEB_CLIENT_LOGIN_FRAGMENT "#!/login"
+
 #define AUDIO_DEVICE_TYPE_BASIC "basic"
 #define AUDIO_DEVICE_TYPE_SPDIF "spdif"
 #define AUDIO_DEVICE_TYPE_HDMI "hdmi"
-
 
 class SettingsSection;
 

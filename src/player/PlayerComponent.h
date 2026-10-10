@@ -17,7 +17,6 @@
 
 #include <mpv/client.h>
 
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 class PlayerComponent : public ComponentBase
 {
@@ -88,6 +87,8 @@ public:
   Q_INVOKABLE virtual void setAudioDelay(qint64 milliseconds);
   Q_INVOKABLE virtual void setSubtitleDelay(qint64 milliseconds);
 
+  Q_INVOKABLE virtual void setPlaybackRate(double rate);
+
   // If enabled, hide the web view (whether it's OSD or not), and show video
   // only. If no video is running, render a black background only.
   Q_INVOKABLE virtual void setVideoOnlyMode(bool enable);
@@ -117,7 +118,12 @@ public:
   // automatically use the whole window. (Same if the rectangle is 0-sized.)
   Q_INVOKABLE void setVideoRectangle(int x, int y, int w, int h);
 
+  Q_INVOKABLE void setVideoPlacement(const QString& placement, int width, int height,
+                                     int edgeGutterX, int edgeGutterY, bool isStackedAbove);
+
   QRect videoRectangle() { return m_videoRectangle; }
+
+  bool videoWindowVisible() const { return m_windowVisible; }
 
   const mpv::qt::Handle getMpvHandle() const { return m_mpv; }
 
@@ -174,6 +180,12 @@ Q_SIGNALS:
   // emitted as soon as the duration of the current file is known
   void updateDuration(qint64 milliseconds);
 
+  void videoSizeChanged(int width, int height);
+
+  void audioDeviceListUpdated();
+
+  void seekableRangesChanged(const QVariant& ranges);
+
   // current position in ms should be triggered 2 times a second
   // when position updates
   void positionUpdate(quint64);
@@ -210,6 +222,7 @@ private:
   void updateVideoAspectSettings();
   QVariantList findStreamsForURL(const QString &url);
   void reselectStream(const QString &streamSelection, MediaType target);
+  void probeLoadfileSignature();
 
   mpv::qt::Handle m_mpv;
 
@@ -238,6 +251,11 @@ private:
   QString m_currentSubtitleStream;
   QString m_currentAudioStream;
   QRect m_videoRectangle;
+  QSize m_videoSize;
+  QVariantList m_seekableRanges;
+  qint64 m_lastSeekableRangesEmit = 0;
+
+  int m_loadfileIndexArg = -1;
 };
 
 #endif // PLAYERCOMPONENT_H

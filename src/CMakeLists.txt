@@ -38,6 +38,7 @@ add_subdirectory(breakpad)
 add_subdirectory(settings)
 add_subdirectory(power)
 add_subdirectory(remote)
+add_subdirectory(connector)
 add_subdirectory(tools)
 
 get_property(ALL_SRCS GLOBAL PROPERTY SRCS_LIST)
@@ -109,7 +110,6 @@ if(APPLE)
   if(EXISTS ${QTROOT}/bin/qt.conf)
     add_resources(TARGET ${MAIN_TARGET} SOURCES ${QTROOT}/bin/qt.conf DEST ${INSTALL_RESOURCE_DIR})
   endif()
-
 
   set(ICON_FILE ${CMAKE_SOURCE_DIR}/bundle/osx/${MACOSX_BUNDLE_ICON_FILE})
   list(APPEND RESOURCE_FILES ${ICON_FILE})

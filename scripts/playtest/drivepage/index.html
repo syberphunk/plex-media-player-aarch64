@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PMP player drive</title>
+<script src="qrc://:/qtwebchannel/qwebchannel.js"></script>
+<style>body{background:#111;color:#ddd;font:14px monospace;white-space:pre-wrap}</style>
+</head>
+<body>
+<div id="out">starting…</div>
+<script>
+var out = document.getElementById("out");
+function say(s) { console.log("DRIVE " + s); out.textContent += "\n" + s; }
+window.onerror = function (m, u, l) { say("WINDOW ERROR " + m + " @" + l); };
+
+var CLIP = decodeURIComponent((location.search.match(/[?&]clip=([^&]*)/) || [])[1] || "");
+
+var t0 = Date.now();
+function at() { return ((Date.now() - t0) / 1000).toFixed(1) + "s"; }
+
+new QWebChannel(qt.webChannelTransport, function (channel) {
+  var o = channel.objects;
+  say("objects: " + Object.keys(o).sort().join(","));
+
+  ["onPlaying", "onFinish", "onError", "onDurationUpdate", "onPositionUpdate",
+   "onBuffering", "onSeekableRangesUpdate", "onResize",
+   "onAudioDeviceListUpdate", "onVideoCoverClicked"].forEach(function (n) {
+    try {
+      o.player[n].connect(function () {
+        var a = JSON.stringify([].slice.call(arguments));
+        if (n === "onPositionUpdate" || n === "onSeekableRangesUpdate") {
+          window.__q = window.__q || {};
+          if (window.__q[n]) return;
+          window.__q[n] = 1;
+        }
+        say(at() + " SIGNAL " + n + " " + a);
+      });
+    } catch (e) { say("CONNECT FAIL " + n + ": " + e.message); }
+  });
+
+  function inv(obj, meth, args) {
+    return new Promise(function (res) {
+      try { o[obj][meth].apply(o[obj], args.concat([function (r) { res(r); }])); }
+      catch (e) { res({ threw: String(e) }); }
+    });
+  }
+  var J = JSON.stringify;
+
+  var item = {
+    url: CLIP,
+    type: "video",
+    startPositionSeconds: 0,
+    effectiveFrameRate: 30,
+    decision: {
+      metadataItem: { title: "testclip", duration: 30000, type: "movie" },
+      selectedVideoStream: { id: 1, index: 0, streamType: 1, codec: "h264",
+                             ffIndex: 0, width: 640, height: 360, frameRate: 30 },
+      selectedAudioStream: { id: 2, index: 0, streamType: 2, codec: "aac",
+                             ffIndex: 1, channels: 1 }
+    }
+  };
+
+  var hostSynced = ["audioChannelLayout", "audioDevice", "audioPassthroughCodecs",
+                    "exclusiveAudioEnabled", "forwardCacheSize",
+                    "hardwareDecodingEnabled", "transcodeToAC3Enabled",
+                    "refreshRateSwitchingEnabled",
+                    "refreshRateSwitchingDelayMilliseconds", "videoProfile"];
+
+  inv("player", "keys", []).then(function (r) {
+    say("player.keys -> " + J(r));
+    return inv("player", "get", [hostSynced]);
+  }).then(function (r) {
+    say("player.get(hostSyncedAttrs) -> " + J(r));
+    return inv("player", "get", [["forwardCacheSize", "videoProfileList"]]);
+  }).then(function (r) {
+    say("player.get(forwardCacheSize,videoProfileList) -> " + J(r));
+    return inv("player", "set", [{
+      audioChannelLayout: "auto", audioDevice: "auto", audioPassthroughCodecs: [],
+      exclusiveAudioEnabled: false, forwardCacheSize: 0,
+      hardwareDecodingEnabled: true, transcodeToAC3Enabled: false,
+      refreshRateSwitchingEnabled: false,
+      refreshRateSwitchingDelayMilliseconds: 0,
+      videoProfile: "plex-normal-quality"
+    }]);
+  }).then(function (r) {
+    say("player.set(client defaults) -> " + J(r));
+    return inv("player", "shrinkTo", ["top-left", 640, 360, 0, 0, false]);
+  }).then(function (r) {
+    say("shrinkTo -> " + J(r));
+    say(at() + " >>> queue");
+    return inv("player", "queue", [item]);
+  }).then(function (r) {
+    say(at() + " queue -> " + J(r));
+    say(at() + " >>> play");
+    return inv("player", "play", []);
+  }).then(function (r) {
+    say(at() + " play -> " + J(r));
+    [5, 10, 20, 30, 45].forEach(function (s) {
+      setTimeout(function () {
+        inv("player", "get", [["volume", "muted"]]).then(function (g) {
+          say(at() + " tick " + s + " alive, get -> " + J(g));
+        });
+      }, s * 1000);
+    });
+  });
+});
+</script>
+</body>
+</html>
