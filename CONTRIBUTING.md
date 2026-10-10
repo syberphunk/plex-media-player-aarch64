@@ -29,6 +29,8 @@ to this fork.
 
 ## Changes to this fork
 
-No contributor agreement applies here and nothing merged here is official in any
-sense. Keep patches in your own fork: clone it, build it with the steps in
-[README.md](README.md), and publish your changes under your own name.
+Issues, the wiki and projects are disabled, and pull requests opened here are
+not reviewed. Keep patches in your own fork: clone it, build it with the steps
+in [README.md](README.md), and publish your changes under your own name.
+
+Security reports are covered by [SECURITY.md](SECURITY.md).
