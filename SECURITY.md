@@ -21,6 +21,17 @@ disabled, so there is no monitored channel here.
 | org.kde.Platform / org.kde.Sdk | https://invent.kde.org/packaging/flatpak-kde-runtime/-/issues |
 | io.qt.qtwebengine.BaseApp | https://github.com/flathub/io.qt.qtwebengine.BaseApp/issues |
 
+## What GitHub checks
+
+- Dependabot alerts are enabled. They cover the GitHub Actions versions pinned
+  in `.github/workflows/`; GitHub has no ecosystem for a Flatpak manifest, so
+  the pinned C and C++ sources are not covered by them.
+- `.github/workflows/code-scanning.yml` runs CodeQL weekly over the Actions
+  workflows, the Python scripts and the C and C++ sources in `src/`, with
+  `.github/codeql-config.yml` as its configuration. It runs without building,
+  so its C and C++ results are indicative rather than complete.
+- Secret scanning and push protection are enabled.
+
 ## What the build checks
 
 - `scripts/check-sources.py` verifies every pinned source against its recorded

@@ -1,0 +1,13 @@
+name: plex-media-player-arm64
+
+paths:
+  - src
+  - scripts
+  - .github/workflows
+
+paths-ignore:
+  - src/breakpad
+  - src/plugins
+  - scripts/build-windows.bat
+  - scripts/WindowsSign.cmd
+  - scripts/make_mpv_lib.bat
