@@ -3,7 +3,7 @@
 
   --update             fetch newer upstream releases, rewrite the pins and the
                        README version table
-  --deep               hash every remote mirror instead of only checking it exists
+  --deep               hash every remote source instead of only checking it exists
   --fail-on-outdated   exit non-zero when a newer upstream release exists
   --offline            skip every network check
   --manifest PATH      manifest to read (default: the one in this repo)
@@ -72,9 +72,6 @@ UPSTREAM = {
 
 README = os.path.join(REPO, "README.md")
 
-MIRROR_BASE = ("https://raw.githubusercontent.com/syberphunk/"
-               "plex-media-player-arm64/master/vendor-deps/")
-
 VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+)+")
 
 
@@ -83,7 +80,6 @@ class Source(object):
         self.module = module
         self.fields = {}
         self.lines = {}
-        self.mirrors = []
 
 
 def parse_manifest(path):
@@ -94,7 +90,6 @@ def parse_manifest(path):
     module = None
     current = None
     in_sources = False
-    in_mirrors = False
 
     for number, line in enumerate(raw):
         stripped = line.strip()
@@ -122,24 +117,16 @@ def parse_manifest(path):
         if stripped.startswith("- ") and indent == 6:
             current = Source(module)
             sources.append(current)
-            in_mirrors = False
             stripped = stripped[2:]
             indent = 8
 
         if current is None:
             continue
 
-        if in_mirrors and stripped.startswith("- "):
-            current.mirrors.append((number, stripped[2:].strip()))
-            continue
-
         pair = re.match(r"([a-z0-9-]+):\s*(.*)$", stripped)
         if not pair:
             continue
         key, value = pair.group(1), pair.group(2).strip()
-        in_mirrors = key == "mirror-urls"
-        if in_mirrors:
-            continue
         current.fields[key] = value
         current.lines[key] = number
 
@@ -281,24 +268,17 @@ def check(sources, deep, offline):
         if source.fields.get("path"):
             local = os.path.normpath(os.path.join(os.path.dirname(MANIFEST),
                                                   source.fields["path"]))
+            if not os.path.exists(local):
+                local = None
+                failures.append(report(module, False,
+                                       "%s: no in-repo copy" % name))
         else:
             candidate = os.path.join(VENDOR, name)
             if os.path.exists(candidate):
                 local = candidate
-            else:
-                for _, mirror in source.mirrors:
-                    if mirror.startswith(MIRROR_BASE):
-                        candidate = os.path.join(VENDOR,
-                                                 mirror[len(MIRROR_BASE):])
-                        if os.path.exists(candidate):
-                            local = candidate
-                        break
 
         if local is None:
-            if source.mirrors:
-                failures.append(report(module, False,
-                                       "%s: no in-repo copy" % name))
-            else:
+            if not source.fields.get("path"):
                 report(module, True, "%s: remote only, pinned %s"
                        % (name, pin[:12]))
         else:
@@ -336,27 +316,6 @@ def check(sources, deep, offline):
                 else:
                     failures.append(report(module, False,
                                            "upstream unreachable: %s" % detail))
-
-        for _, mirror in source.mirrors:
-            if deep:
-                try:
-                    actual = remote_sha256(mirror)
-                except Exception as problem:
-                    failures.append(report(module, False,
-                                           "mirror unreachable: %s" % problem))
-                    continue
-                if actual == pin:
-                    report(module, True, "mirror serves the pinned bytes")
-                else:
-                    failures.append(report(module, False,
-                                           "mirror serves %s" % actual[:12]))
-            else:
-                ok, detail = head_ok(mirror)
-                if ok:
-                    report(module, True, "mirror reachable")
-                else:
-                    failures.append(report(module, False,
-                                           "mirror unreachable: %s" % detail))
 
     if offline:
         return failures, outdated
@@ -507,11 +466,10 @@ def update(raw, sources, outdated):
         vendor_name = spec["vendor"] % {"v": latest}
         target = os.path.join(VENDOR, vendor_name)
         digest = download(url, target)
-        raw[source.lines["url"]] = replace_line(raw, source.lines["url"], url)
+        raw[source.lines["path"]] = replace_line(
+            raw, source.lines["path"], "../../vendor-deps/" + vendor_name)
         raw[source.lines["sha256"]] = replace_line(
             raw, source.lines["sha256"], digest)
-        for number, _ in source.mirrors:
-            raw[number] = replace_line(raw, number, MIRROR_BASE + vendor_name)
         old = os.path.join(VENDOR, spec["vendor"] % {"v": pin})
         if os.path.exists(old) and os.path.abspath(old) != os.path.abspath(target):
             os.unlink(old)

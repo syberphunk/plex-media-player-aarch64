@@ -17,7 +17,8 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | io.qt.qtwebengine.BaseApp | 6.11 | https://github.com/flathub/io.qt.qtwebengine.BaseApp |
 
 `vendor-deps/` holds copies of the libass, libplacebo, mpv and zlib release
-archives listed above, used as the Flatpak manifest's mirrors.
+archives listed above; the Flatpak manifest builds from those copies, so the
+only source the build downloads is the Plex Desktop client.
 `external/qhttp/3rdparty/http-parser/` holds the http-parser copy listed above.
 
 Packaging references:

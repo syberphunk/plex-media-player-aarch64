@@ -43,9 +43,7 @@ modules:
       - --disable-static
     sources:
       - type: archive
-        url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.gz
-        mirror-urls:
-          - https://raw.githubusercontent.com/syberphunk/plex-media-player-arm64/master/vendor-deps/libass-0.17.5.tar.gz
+        path: ../../vendor-deps/libass-0.17.5.tar.gz
         sha256: caab4b993dd7be6187c55623b789ed75dddefea6e65938af134637c732fe094a
 
   - name: libplacebo
@@ -76,9 +74,7 @@ modules:
       - -Dgl=enabled
     sources:
       - type: archive
-        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.39.0.tar.gz
-        mirror-urls:
-          - https://raw.githubusercontent.com/syberphunk/plex-media-player-arm64/master/vendor-deps/mpv-0.39.0.tar.gz
+        path: ../../vendor-deps/mpv-0.39.0.tar.gz
         sha256: 2ca92437affb62c2b559b4419ea4785c70d023590500e8a52e95ea3ab4554683
 
   - name: minizip
@@ -88,9 +84,7 @@ modules:
       - --disable-static
     sources:
       - type: archive
-        url: https://zlib.net/fossils/zlib-1.3.1.tar.gz
-        mirror-urls:
-          - https://raw.githubusercontent.com/syberphunk/plex-media-player-arm64/master/vendor-deps/zlib-1.3.1.tar.gz
+        path: ../../vendor-deps/zlib-1.3.1.tar.gz
         sha256: 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
       - type: shell
         commands:
