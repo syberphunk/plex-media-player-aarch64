@@ -68,6 +68,26 @@
         "hidden": true
       },
       {
+        "value": "remoteControl",
+        "default": false,
+        "hidden": true
+      },
+      {
+        "value": "rokuRemote",
+        "default": false,
+        "hidden": true
+      },
+      {
+        "value": "userScripts",
+        "default": false,
+        "hidden": true
+      },
+      {
+        "value": "disableWebSecurity",
+        "default": false,
+        "hidden": true
+      },
+      {
         "value": "signInPending",
         "default": true,
         "hidden": true

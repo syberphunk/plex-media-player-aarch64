@@ -15,6 +15,7 @@
 #include "settings/SettingsSection.h"
 #include "Paths.h"
 #include "Names.h"
+#include "shared/SessionEnv.h"
 #include "utils/Utils.h"
 
 #define MOUSE_TIMEOUT 5 * 1000
@@ -97,8 +98,13 @@ void SystemComponent::crashApp()
 void SystemComponent::componentPostInitialize()
 {
   InputComponent::Get().registerHostCommand("crash!", this, "crashApp");
-  InputComponent::Get().registerHostCommand("script", this, "runUserScript");
   InputComponent::Get().registerHostCommand("message", this, "hostMessage");
+
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "userScripts").toBool()
+      || qgetenv("PMP_USER_SCRIPTS") == "1")
+    InputComponent::Get().registerHostCommand("script", this, "runUserScript");
+  else
+    QLOG_INFO() << "Keymap scripts are disabled.";
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -223,29 +229,33 @@ QString SystemComponent::debugInformation()
   QString debugInfo;
   QTextStream stream(&debugInfo);
 
-  stream << "Plex Media Player" << endl;
-  stream << "  Version: " << Version::GetVersionString() << " built: " << Version::GetBuildDate() << endl;
-  stream << "  Web Client Version: " << Version::GetWebVersion() << endl;
-  stream << "  Web Client URL: " << SettingsComponent::Get().value(SETTINGS_SECTION_PATH, "startupurl").toString() << endl;
-  stream << "  Platform: " << getPlatformTypeString() << "-" << getPlatformArchString() << endl;
-  stream << "  User-Agent: " << getUserAgent() << endl;
-  stream << "  Qt version: " << qVersion() << QString("(%1)").arg(Version::GetQtDepsVersion()) << endl;
-  stream << "  Depends version: " << Version::GetDependenciesVersion() << endl;
-  stream << endl;
+  stream << "Plex Media Player" << Qt::endl;
+  stream << "  Version: " << Version::GetVersionString() << " built: " << Version::GetBuildDate() << Qt::endl;
+  stream << "  Web Client Version: " << Version::GetWebVersion() << Qt::endl;
+  stream << "  Web Client URL: " << SettingsComponent::Get().value(SETTINGS_SECTION_PATH, "startupurl").toString() << Qt::endl;
+  stream << "  Platform: " << getPlatformTypeString() << "-" << getPlatformArchString() << Qt::endl;
+  stream << "  User-Agent: " << getUserAgent() << Qt::endl;
+  stream << "  Qt version: " << qVersion() << QString("(%1)").arg(Version::GetQtDepsVersion()) << Qt::endl;
+  stream << "  Depends version: " << Version::GetDependenciesVersion() << Qt::endl;
+  stream << "  Session: " << SessionEnv::description() << Qt::endl;
+  stream << "  Graphics env: " << (SessionEnv::graphicsEnvReport().isEmpty()
+                                   ? QString("unchanged")
+                                   : SessionEnv::graphicsEnvReport()) << Qt::endl;
+  stream << Qt::endl;
 
-  stream << "Files" << endl;
-  stream << "  Log file: " << Paths::logDir(Names::MainName() + ".log") << endl;
-  stream << "  Config file: " << Paths::dataDir(Names::MainName() + ".conf") << endl;
-  stream << endl;
+  stream << "Files" << Qt::endl;
+  stream << "  Log file: " << Paths::logDir(Names::MainName() + ".log") << Qt::endl;
+  stream << "  Config file: " << Paths::dataDir(Names::MainName() + ".conf") << Qt::endl;
+  stream << Qt::endl;
 
-  stream << "Network Addresses" << endl;
+  stream << "Network Addresses" << Qt::endl;
   for(const QString& addr : networkAddresses())
   {
-    stream << "  " << addr << endl;
+    stream << "  " << addr << Qt::endl;
   }
-  stream << endl;
+  stream << Qt::endl;
 
-  stream << flush;
+  stream << Qt::flush;
   return debugInfo;
 }
 
@@ -300,7 +310,16 @@ void SystemComponent::setAuthenticationToken(const QString& token)
 /////////////////////////////////////////////////////////////////////////////////////////
 void SystemComponent::openExternalUrl(const QString& url)
 {
-  QDesktopServices::openUrl(QUrl(url));
+  static const QStringList allowed = {"http", "https", "mailto"};
+
+  const QUrl parsed(url);
+  if (!parsed.isValid() || !allowed.contains(parsed.scheme(), Qt::CaseInsensitive))
+  {
+    QLOG_WARN() << "Refusing to open external URL with scheme" << parsed.scheme();
+    return;
+  }
+
+  QDesktopServices::openUrl(parsed);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """usage: check-sources.py [options]
 
-  --update             fetch newer upstream releases and rewrite the pins
+  --update             fetch newer upstream releases, rewrite the pins and the
+                       README version table
   --deep               hash every remote mirror instead of only checking it exists
   --fail-on-outdated   exit non-zero when a newer upstream release exists
   --offline            skip every network check
@@ -35,12 +36,14 @@ UPSTREAM = {
         "strip_v": True,
         "url": "https://github.com/libass/libass/releases/download/%(v)s/libass-%(v)s.tar.gz",
         "vendor": "libass-%(v)s.tar.gz",
+        "readme": ("libass", ""),
     },
     "libmpv": {
         "probe": ("github", "mpv-player/mpv"),
         "strip_v": True,
         "url": "https://github.com/mpv-player/mpv/archive/refs/tags/v%(v)s.tar.gz",
         "vendor": "mpv-%(v)s.tar.gz",
+        "readme": ("mpv (libmpv)", "v"),
     },
     "minizip": {
         "probe": ("github", "madler/zlib"),
@@ -48,20 +51,26 @@ UPSTREAM = {
         "url": "https://zlib.net/fossils/zlib-%(v)s.tar.gz",
         "fallback_url": "https://zlib.net/zlib-%(v)s.tar.gz",
         "vendor": "zlib-%(v)s.tar.gz",
+        "readme": ("zlib (minizip)", ""),
+        "hold": ("1.3.1", "CVE-2026-85091 affects 1.3.1.2 through 1.3.2"),
     },
     "libplacebo": {
         "probe": ("gitlab", "https://code.videolan.org", "videolan%2Flibplacebo"),
         "strip_v": True,
         "vendor": "libplacebo-%(v)s.tar.gz",
         "vendor_script": "vendor-libplacebo.sh",
+        "readme": ("libplacebo", "v"),
     },
     "plex-media-player": {
         "probe": ("plex", None),
         "strip_v": False,
         "url": None,
         "vendor": None,
+        "readme": ("Plex Desktop web client", ""),
     },
 }
+
+README = os.path.join(REPO, "README.md")
 
 MIRROR_BASE = ("https://raw.githubusercontent.com/syberphunk/"
                "plex-media-player-arm64/master/vendor-deps/")
@@ -369,14 +378,60 @@ def check(sources, deep, offline):
             continue
         if latest is None:
             continue
+        hold = spec.get("hold")
         if latest == pin:
             report(source.module, True, "%s is current" % pin)
+        elif hold and hold[0] == pin:
+            report(source.module, True, "%s held, not taking %s: %s"
+                   % (pin, latest, hold[1]))
         else:
             print("    %-6s %-28s %s -> %s available"
                   % ("newer", source.module, pin, latest))
             outdated.append((source.module, pin, latest))
 
     return failures, outdated
+
+
+def readme_rows(sources, runtime_version):
+    wanted = {}
+    for source in interesting(sources):
+        spec = UPSTREAM.get(source.module)
+        if not spec or not spec.get("readme"):
+            continue
+        pin = pinned_version(source, source.module)
+        if pin is None:
+            continue
+        row, prefix = spec["readme"]
+        wanted[row] = prefix + pin
+    if runtime_version:
+        wanted["org.kde.Platform / org.kde.Sdk"] = runtime_version
+        wanted["io.qt.qtwebengine.BaseApp"] = runtime_version
+    return wanted
+
+
+def readme_sync(wanted, rewrite):
+    if not os.path.exists(README):
+        return []
+    with open(README, encoding="utf-8") as fp:
+        lines = fp.read().splitlines()
+
+    stale = []
+    for number, line in enumerate(lines):
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) != 5 or not cells[0] == "":
+            continue
+        row = cells[1]
+        if row not in wanted or cells[2] == wanted[row]:
+            continue
+        stale.append("%s: README says %s, manifest pins %s"
+                     % (row, cells[2] or "nothing", wanted[row]))
+        cells[2] = wanted[row]
+        lines[number] = "| " + " | ".join(cells[1:4]) + " |"
+
+    if stale and rewrite:
+        with open(README, "w", encoding="utf-8") as fp:
+            fp.write("\n".join(lines) + "\n")
+    return stale
 
 
 def replace_line(raw, number, value):
@@ -491,13 +546,38 @@ def main(argv):
     offline = "--offline" in options
     failures, outdated = check(sources, "--deep" in options, offline)
 
-    if "--update" in options and outdated:
+    updating = "--update" in options
+
+    if updating and outdated:
         if update(raw, sources, outdated):
             with open(manifest, "w", encoding="utf-8") as fp:
                 fp.write("\n".join(raw) + "\n")
             print()
             print("==> rewrote %s" % os.path.relpath(manifest, REPO))
-            print("    re-run without --update to verify the new pins")
+            raw, sources = parse_manifest(manifest)
+
+    runtime = ""
+    for line in raw:
+        found = re.match(r"runtime-version:\s*'?([^'\s]+)'?\s*$", line)
+        if found:
+            runtime = found.group(1)
+            break
+
+    print()
+    print("==> README versions")
+    stale = readme_sync(readme_rows(sources, runtime), updating)
+    for item in stale:
+        report("README.md", updating, item)
+    if not stale:
+        report("README.md", True, "matches the manifest")
+    elif updating:
+        print("    rewrote README.md")
+    else:
+        failures.extend([False] * len(stale))
+
+    if updating:
+        print()
+        print("    re-run without --update to verify the new pins")
         return 0
 
     print()

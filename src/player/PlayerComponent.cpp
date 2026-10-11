@@ -143,7 +143,7 @@ bool PlayerComponent::componentInitialize()
   for (auto path : list)
   {
     if (access(path.data(), R_OK) == 0) {
-      mpv::qt::set_property(m_mpv, "tls-ca-file", path.data());
+      mpv::qt::set_property(m_mpv, "tls-ca-file", QString::fromUtf8(path));
       success = true;
       break;
     }
@@ -1146,7 +1146,7 @@ void PlayerComponent::updateAudioDeviceList()
   QSet<QString> devices;
   for(const QVariant& d : list.toList())
   {
-    Q_ASSERT(d.type() == QVariant::Map);
+    Q_ASSERT(d.typeId() == QMetaType::QVariantMap);
     QVariantMap dmap = d.toMap();
 
     QString device = dmap["name"].toString();
@@ -1664,73 +1664,73 @@ QString PlayerComponent::videoInformation() const
   if (mpv::qt::get_property(m_mpv, "idle-active").toBool())
     return "";
 
-  info << "File:" << endl;
-  info << "URL: " << MPV_PROPERTY("path") << endl;
-  info << "Container: " << MPV_PROPERTY("file-format") << endl;
+  info << "File:" << Qt::endl;
+  info << "URL: " << MPV_PROPERTY("path") << Qt::endl;
+  info << "Container: " << MPV_PROPERTY("file-format") << Qt::endl;
   info << "Native seeking: " << ((MPV_PROPERTY_BOOL("seekable") &&
                                   !MPV_PROPERTY_BOOL("partially-seekable"))
-                                 ? "yes" : "no") << endl;
-  info << endl;
-  info << "Video:" << endl;
-  info << "Codec: " << MPV_PROPERTY("video-codec") << endl;
+                                 ? "yes" : "no") << Qt::endl;
+  info << Qt::endl;
+  info << "Video:" << Qt::endl;
+  info << "Codec: " << MPV_PROPERTY("video-codec") << Qt::endl;
   info << "Size: " << MPV_PROPERTY("video-params/dw") << "x"
-                   << MPV_PROPERTY("video-params/dh") << endl;
-  info << "FPS (container): " << MPV_PROPERTY("container-fps") << endl;
-  info << "FPS (filters): " << MPV_PROPERTY("estimated-vf-fps") << endl;
-  info << "Aspect: " << MPV_PROPERTY("video-aspect-override") << endl;
-  info << "Bitrate: " << MPV_PROPERTY("video-bitrate") << endl;
+                   << MPV_PROPERTY("video-params/dh") << Qt::endl;
+  info << "FPS (container): " << MPV_PROPERTY("container-fps") << Qt::endl;
+  info << "FPS (filters): " << MPV_PROPERTY("estimated-vf-fps") << Qt::endl;
+  info << "Aspect: " << MPV_PROPERTY("video-aspect-override") << Qt::endl;
+  info << "Bitrate: " << MPV_PROPERTY("video-bitrate") << Qt::endl;
   double displayFps = DisplayComponent::Get().currentRefreshRate();
   info << "Display FPS: " << MPV_PROPERTY("display-fps")
-                          << " (" << displayFps << ")" << endl;
+                          << " (" << displayFps << ")" << Qt::endl;
   info << "Hardware Decoding: " << MPV_PROPERTY("hwdec-current")
-                                << " (" << MPV_PROPERTY("hwdec-interop") << ")" << endl;
-  info << endl;
-  info << "Audio: " << endl;
-  info << "Codec: " << MPV_PROPERTY("audio-codec") << endl;
-  info << "Bitrate: " << MPV_PROPERTY("audio-bitrate") << endl;
+                                << " (" << MPV_PROPERTY("hwdec-interop") << ")" << Qt::endl;
+  info << Qt::endl;
+  info << "Audio: " << Qt::endl;
+  info << "Codec: " << MPV_PROPERTY("audio-codec") << Qt::endl;
+  info << "Bitrate: " << MPV_PROPERTY("audio-bitrate") << Qt::endl;
   info << "Channels: ";
   appendAudioFormat(info, "audio-params");
   info << " -> ";
   appendAudioFormat(info, "audio-out-params");
-  info << endl;
-  info << "Output driver: " << MPV_PROPERTY("current-ao") << endl;
-  info << endl;
-  info << "Performance: " << endl;
-  info << "A/V: " << MPV_PROPERTY("avsync") << endl;
-  info << "Dropped frames: " << MPV_PROPERTY("frame-drop-count") << endl;
+  info << Qt::endl;
+  info << "Output driver: " << MPV_PROPERTY("current-ao") << Qt::endl;
+  info << Qt::endl;
+  info << "Performance: " << Qt::endl;
+  info << "A/V: " << MPV_PROPERTY("avsync") << Qt::endl;
+  info << "Dropped frames: " << MPV_PROPERTY("frame-drop-count") << Qt::endl;
   bool dispSync = MPV_PROPERTY_BOOL("display-sync-active");
   info << "Display Sync: ";
   if (!dispSync)
   {
-     info << "no" << endl;
+     info << "no" << Qt::endl;
   }
   else
   {
-    info << "yes (ratio " << MPV_PROPERTY("vsync-ratio") << ")" << endl;
+    info << "yes (ratio " << MPV_PROPERTY("vsync-ratio") << ")" << Qt::endl;
     info << "Mistimed frames: " << MPV_PROPERTY("mistimed-frame-count")
-                                << "/" << MPV_PROPERTY("vo-delayed-frame-count") << endl;
+                                << "/" << MPV_PROPERTY("vo-delayed-frame-count") << Qt::endl;
     info << "Measured FPS: " << MPV_PROPERTY("estimated-display-fps")
-                             << " (" << MPV_PROPERTY("vsync-jitter") << ")" << endl;
-    info << "V. speed corr.: " << MPV_PROPERTY("video-speed-correction") << endl;
-    info << "A. speed corr.: " << MPV_PROPERTY("audio-speed-correction") << endl;
+                             << " (" << MPV_PROPERTY("vsync-jitter") << ")" << Qt::endl;
+    info << "V. speed corr.: " << MPV_PROPERTY("video-speed-correction") << Qt::endl;
+    info << "A. speed corr.: " << MPV_PROPERTY("audio-speed-correction") << Qt::endl;
   }
-  info << endl;
-  info << "Cache:" << endl;
-  info << "Seconds: " << MPV_PROPERTY("demuxer-cache-duration") << endl;
-  info << "Extra readahead: " << MPV_PROPERTY("demuxer-cache-state/fw-bytes") << endl;
-  info << "Buffering: " << MPV_PROPERTY("cache-buffering-state") << endl;
-  info << "Speed: " << MPV_PROPERTY("cache-speed") << endl;
-  info << endl;
-  info << "Misc: " << endl;
+  info << Qt::endl;
+  info << "Cache:" << Qt::endl;
+  info << "Seconds: " << MPV_PROPERTY("demuxer-cache-duration") << Qt::endl;
+  info << "Extra readahead: " << MPV_PROPERTY("demuxer-cache-state/fw-bytes") << Qt::endl;
+  info << "Buffering: " << MPV_PROPERTY("cache-buffering-state") << Qt::endl;
+  info << "Speed: " << MPV_PROPERTY("cache-speed") << Qt::endl;
+  info << Qt::endl;
+  info << "Misc: " << Qt::endl;
   info << "Time: " << MPV_PROPERTY("playback-time") << " / "
                    << MPV_PROPERTY("duration")
-                   << " (" << MPV_PROPERTY("percent-pos") << "%)" << endl;
+                   << " (" << MPV_PROPERTY("percent-pos") << "%)" << Qt::endl;
   info << "State: " << (MPV_PROPERTY_BOOL("pause") ? "paused " : "")
                     << (MPV_PROPERTY_BOOL("paused-for-cache") ? "buffering " : "")
                     << (MPV_PROPERTY_BOOL("core-idle") ? "waiting " : "playing ")
                     << (MPV_PROPERTY_BOOL("seeking") ? "seeking " : "")
-                    << endl;
+                    << Qt::endl;
 
-  info << flush;
+  info << Qt::flush;
   return infoStr;
 }

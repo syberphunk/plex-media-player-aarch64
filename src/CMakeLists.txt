@@ -83,7 +83,7 @@ add_custom_command(OUTPUT resources.qrc
 )
 set_source_files_properties(resources.qrc PROPERTIES GENERATED TRUE)
 add_custom_command(OUTPUT qrc_resources.cpp
-  COMMAND ${Qt5Core_RCC_EXECUTABLE} -name resources -o qrc_resources.cpp resources.qrc
+  COMMAND Qt6::rcc -name resources -o qrc_resources.cpp resources.qrc
   DEPENDS resources.qrc ${CMAKE_SOURCE_DIR}/src/ui/webview.qml ${RESOURCE_FILES}
 )
 set_source_files_properties(qrc_resources.cpp PROPERTIES GENERATED TRUE)
@@ -191,7 +191,7 @@ target_link_libraries(${MAIN_TARGET}
   qslog
   ${MPV_LIBRARY}
   ${OPENGL_LIBS}
-  ${QT5_LIBRARIES}
+  ${QT_LIBRARIES}
   ${OS_LIBS}
   ${EXTRA_LIBS}
   ${X11_LIBRARIES}

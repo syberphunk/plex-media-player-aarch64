@@ -12,7 +12,7 @@ add_executable(${HELPER_TARGET} WIN32
   HelperSocket.h
 )
 
-target_link_libraries(${HELPER_TARGET} ${Qt5Core_LIBRARIES} ${Qt5Network_LIBRARIES} qslog shared)
+target_link_libraries(${HELPER_TARGET} Qt6::Core Qt6::Network qslog shared)
 std_target_properties(${HELPER_TARGET})
 set_target_properties(${HELPER_TARGET} PROPERTIES
   INSTALL_RPATH "${QTROOT}/lib"

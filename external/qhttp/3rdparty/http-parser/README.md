@@ -1,6 +1,9 @@
 HTTP Parser
 ===========
 
+http-parser is [**not** actively maintained](https://github.com/nodejs/http-parser/issues/522).
+New projects and projects looking to migrate should consider [llhttp](https://github.com/nodejs/llhttp).
+
 [![Build Status](https://api.travis-ci.org/nodejs/http-parser.svg?branch=master)](https://travis-ci.org/nodejs/http-parser)
 
 This is a parser for HTTP messages written in C. It parses both requests and
@@ -72,9 +75,9 @@ if (parser->upgrade) {
 }
 ```
 
-HTTP needs to know where the end of the stream is. For example, sometimes
+`http_parser` needs to know where the end of the stream is. For example, sometimes
 servers send responses without Content-Length and expect the client to
-consume input (for the body) until EOF. To tell http_parser about EOF, give
+consume input (for the body) until EOF. To tell `http_parser` about EOF, give
 `0` as the fourth parameter to `http_parser_execute()`. Callbacks and errors
 can still be encountered during an EOF, so one must still be prepared
 to receive them.
@@ -93,7 +96,7 @@ the on_body callback.
 The Special Problem of Upgrade
 ------------------------------
 
-HTTP supports upgrading the connection to a different protocol. An
+`http_parser` supports upgrading the connection to a different protocol. An
 increasingly common example of this is the WebSocket protocol which sends
 a request like
 
@@ -144,11 +147,11 @@ parse a request, and then give a response over that socket. By instantiation
 of a thread-local struct containing relevant data (e.g. accepted socket,
 allocated memory for callbacks to write into, etc), a parser's callbacks are
 able to communicate data between the scope of the thread and the scope of the
-callback in a threadsafe manner. This allows http-parser to be used in
+callback in a threadsafe manner. This allows `http_parser` to be used in
 multi-threaded contexts.
 
 Example:
-```
+```c
  typedef struct {
   socket_t sock;
   void* buffer;
@@ -184,7 +187,7 @@ void http_parser_thread(socket_t sock) {
  parser supplied to callback functions */
  parser->data = my_data;
 
- http_parser_settings settings; / * set up callbacks */
+ http_parser_settings settings; /* set up callbacks */
  settings.on_url = my_url_callback;
 
  /* execute parser */
@@ -202,7 +205,7 @@ void http_parser_thread(socket_t sock) {
 
 In case you parse HTTP message in chunks (i.e. `read()` request line
 from socket, parse, read half headers, parse, etc) your data callbacks
-may be called more than once. Http-parser guarantees that data pointer is only
+may be called more than once. `http_parser` guarantees that data pointer is only
 valid for the lifetime of callback. You can also `read()` into a heap allocated
 buffer to avoid copying memory around if this fits your application.
 

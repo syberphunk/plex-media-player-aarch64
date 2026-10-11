@@ -58,9 +58,16 @@ MANIFEST="$REPO_ROOT/packaging/flatpak/$APP_ID.yml"
 RUNTIME_VERSION=$(sed -n "s/^runtime-version: *'\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$MANIFEST")
 BUNDLE="$REPO_ROOT/plex-media-player-$ARCH.flatpak"
 
-for tool in flatpak flatpak-builder python3; do
+for tool in flatpak flatpak-builder python3 ffmpeg; do
   command -v "$tool" >/dev/null || { echo "$tool not found" >&2; exit 1; }
 done
+
+MIN_FLATPAK=1.15.1
+FLATPAK_VERSION=$(flatpak --version | awk '{print $NF}')
+if [ "$(printf '%s\n%s\n' "$MIN_FLATPAK" "$FLATPAK_VERSION" | sort -V | head -1)" != "$MIN_FLATPAK" ]; then
+  echo "flatpak $MIN_FLATPAK or newer is required (found $FLATPAK_VERSION)" >&2
+  exit 1
+fi
 
 version_from_cmake() {
   local file="$REPO_ROOT/CMakeModules/VersionConfiguration.cmake"
@@ -139,7 +146,9 @@ flatpak-builder --arch="$ARCH" --force-clean --disable-rofiles-fuse \
 echo
 echo "==> step 4/6: bundling"
 rm -f "$BUNDLE"
-flatpak build-bundle --arch="$ARCH" "$REPO_DIR" "$BUNDLE" "$APP_ID"
+flatpak build-bundle --arch="$ARCH" \
+  --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+  "$REPO_DIR" "$BUNDLE" "$APP_ID"
 
 head -c 4096 "$BUNDLE" | strings | grep -q "app/$APP_ID/$ARCH/" || {
   echo "$BUNDLE is not an $ARCH bundle" >&2

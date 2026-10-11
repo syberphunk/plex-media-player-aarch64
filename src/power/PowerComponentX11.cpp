@@ -18,9 +18,9 @@ void PowerComponentX11::onTimer()
   {
     m_process = new QProcess(this);
     m_process->setProcessChannelMode(QProcess::ForwardedChannels);
-    connect(m_process, (void (QProcess::*)(int,QProcess::ExitStatus))&QProcess::finished,
+    connect(m_process, &QProcess::finished,
             this, &PowerComponentX11::onProcessFinished);
-    connect(m_process, (void (QProcess::*)(QProcess::ProcessError))&QProcess::error,
+    connect(m_process, &QProcess::errorOccurred,
             this, &PowerComponentX11::onProcessError);
     m_process->start("xdg-screensaver", {"reset"});
   }

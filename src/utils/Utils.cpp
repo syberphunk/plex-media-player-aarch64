@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QHostInfo>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QVariant>
 #include <qnetworkinterface.h>
 #include <QUuid>
@@ -58,7 +59,7 @@ QJsonDocument Utils::OpenJsonDocument(const QString& path, QJsonParseError* err)
 {
   QFile fp(path);
   QByteArray fdata;
-  QRegExp commentMatch("^\\s*//");
+  QRegularExpression commentMatch("^\\s*//");
 
   if (fp.open(QFile::ReadOnly))
   {
@@ -70,7 +71,7 @@ QJsonDocument Utils::OpenJsonDocument(const QString& path, QJsonParseError* err)
         break;
 
       // filter all comments
-      if (commentMatch.indexIn(row) != -1)
+      if (commentMatch.match(QString::fromUtf8(row)).hasMatch())
         continue;
 
       fdata.append(row);

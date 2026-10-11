@@ -1,10 +1,10 @@
 app-id: tv.plex.PlexMediaPlayer
 runtime: org.kde.Platform
-runtime-version: '5.15-25.08'
+runtime-version: '6.11'
 sdk: org.kde.Sdk
 
 base: io.qt.qtwebengine.BaseApp
-base-version: '5.15-25.08'
+base-version: '6.11'
 
 command: plexmediaplayer
 rename-desktop-file: plexmediaplayer.desktop
@@ -13,10 +13,11 @@ rename-icon: plexmediaplayer
 finish-args:
   - --share=ipc
   - --share=network
-  - --socket=x11
+  - --socket=fallback-x11
   - --socket=wayland
   - --socket=pulseaudio
-  - --device=all
+  - --device=dri
+  - --device=input
   - --filesystem=xdg-videos:ro
   - --filesystem=xdg-music:ro
   - --filesystem=xdg-pictures:ro
@@ -42,10 +43,10 @@ modules:
       - --disable-static
     sources:
       - type: archive
-        url: https://github.com/libass/libass/releases/download/0.17.3/libass-0.17.3.tar.gz
+        url: https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.gz
         mirror-urls:
-          - https://raw.githubusercontent.com/syberphunk/plex-media-player-arm64/master/vendor-deps/libass-0.17.3.tar.gz
-        sha256: da7c348deb6fa6c24507afab2dee7545ba5dd5bbf90a137bfe9e738f7df68537
+          - https://raw.githubusercontent.com/syberphunk/plex-media-player-arm64/master/vendor-deps/libass-0.17.5.tar.gz
+        sha256: caab4b993dd7be6187c55623b789ed75dddefea6e65938af134637c732fe094a
 
   - name: libplacebo
     buildsystem: meson
@@ -100,7 +101,10 @@ modules:
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DQTROOT=/usr
+      - -DCMAKE_PREFIX_PATH=/app;/usr
+      - -DQT_ADDITIONAL_PACKAGES_PREFIX_PATH=/app
       - -DCMAKE_INSTALL_PREFIX=/app
+      - -DENABLE_CODECS=OFF
       - -DWEB_CLIENT_UNPACKED_DIR=/run/build/plex-media-player/web-client
     sources:
       - type: dir

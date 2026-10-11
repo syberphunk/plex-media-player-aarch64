@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QStringList>
+#include <QSysInfo>
 
 static QString g_graphicsEnvReport;
 
@@ -14,7 +15,7 @@ bool SessionEnv::insideGamescope()
     return true;
 
   const QString desktops = QString::fromLocal8Bit(qgetenv("XDG_CURRENT_DESKTOP"));
-  for (const QString& name : desktops.split(':', QString::SkipEmptyParts))
+  for (const QString& name : desktops.split(':', Qt::SkipEmptyParts))
   {
     if (name.compare("gamescope", Qt::CaseInsensitive) == 0)
       return true;
@@ -48,6 +49,16 @@ QString SessionEnv::drmDriver()
     const QString driver = QFileInfo(device + "/driver").symLinkTarget();
     if (!driver.isEmpty())
       return QFileInfo(driver).fileName();
+
+    QFile uevent(device + "/uevent");
+    if (uevent.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+      for (const QByteArray& line : uevent.readAll().split('\n'))
+      {
+        if (line.startsWith("DRIVER="))
+          return QString::fromLatin1(line.mid(7)).trimmed();
+      }
+    }
   }
   return QString();
 }
@@ -58,7 +69,7 @@ static bool haveVulkanIcd(const QString& nameFilter)
                       "/usr/local/share/vulkan/icd.d"};
 
   const QString dataDirs = QString::fromLocal8Bit(qgetenv("XDG_DATA_DIRS"));
-  for (const QString& dir : dataDirs.split(':', QString::SkipEmptyParts))
+  for (const QString& dir : dataDirs.split(':', Qt::SkipEmptyParts))
     dirs << dir + "/vulkan/icd.d";
 
   const QDir libDir("/usr/lib");
@@ -85,15 +96,40 @@ void SessionEnv::sanitizeGraphicsEnv()
 {
   QStringList report;
 
+  const QString driver = drmDriver();
+  const bool adreno = driver == "msm";
+  const bool armFlatpak = insideFlatpak() && QSysInfo::buildCpuArchitecture() == "arm64";
+  const bool clampTarget = adreno || armFlatpak;
+  const bool driverFromEnv = qEnvironmentVariableIsSet("MESA_LOADER_DRIVER_OVERRIDE");
+
   if (insideFlatpak() && !qEnvironmentVariableIsSet("PMP_KEEP_MESA_OVERRIDES"))
   {
-    for (const char* var : {"MESA_GL_VERSION_OVERRIDE", "MESA_GLSL_VERSION_OVERRIDE"})
+    if (clampTarget)
     {
-      if (qEnvironmentVariableIsSet(var))
+      const struct { const char* name; const char* value; } clamps[] = {
+        {"MESA_GL_VERSION_OVERRIDE", "4.3"},
+        {"MESA_GLSL_VERSION_OVERRIDE", "430"},
+      };
+
+      for (const auto& clamp : clamps)
       {
-        report << QString("unset %1 (was %2; host value, foreign driver)")
-                    .arg(var, QString::fromLocal8Bit(qgetenv(var)));
-        qunsetenv(var);
+        if (qEnvironmentVariableIsSet(clamp.name))
+          continue;
+        qputenv(clamp.name, clamp.value);
+        report << QString("%1=%2 (the GL version the platform exposes to every "
+                          "other client)").arg(clamp.name, clamp.value);
+      }
+    }
+    else
+    {
+      for (const char* var : {"MESA_GL_VERSION_OVERRIDE", "MESA_GLSL_VERSION_OVERRIDE"})
+      {
+        if (qEnvironmentVariableIsSet(var))
+        {
+          report << QString("unset %1 (was %2; host value, foreign driver)")
+                      .arg(var, QString::fromLocal8Bit(qgetenv(var)));
+          qunsetenv(var);
+        }
       }
     }
 
@@ -103,7 +139,7 @@ void SessionEnv::sanitizeGraphicsEnv()
       if (!value.isEmpty())
       {
         bool resolves = false;
-        for (const QString& path : value.split(':', QString::SkipEmptyParts))
+        for (const QString& path : value.split(':', Qt::SkipEmptyParts))
           resolves = resolves || QFile::exists(path);
         if (!resolves)
         {
@@ -114,24 +150,31 @@ void SessionEnv::sanitizeGraphicsEnv()
     }
   }
 
-  const QString driver = drmDriver();
-  if (insideFlatpak() && driver == "msm" && !qEnvironmentVariableIsSet("MESA_LOADER_DRIVER_OVERRIDE"))
+  if (clampTarget && !driverFromEnv && !qEnvironmentVariableIsSet("PMP_KEEP_MESA_OVERRIDES"))
   {
-    if (haveVulkanIcd("*freedreno*.json"))
+    const QString icd = haveVulkanIcd("*freedreno*.json") ? QString("freedreno")
+                      : haveVulkanIcd("*_icd*.json") ? QString("generic")
+                      : QString();
+    if (!icd.isEmpty())
     {
       qputenv("MESA_LOADER_DRIVER_OVERRIDE", "zink");
-      report << "MESA_LOADER_DRIVER_OVERRIDE=zink (Adreno: matches the vendor's "
-                "GL stack; freedreno gallium a7xx is undocumented upstream)";
+      report << QString("MESA_LOADER_DRIVER_OVERRIDE=zink (%1 Vulkan ICD; the "
+                        "gallium driver mis-renders the compositor)").arg(icd);
     }
     else
     {
-      report << "Adreno detected but no freedreno Vulkan ICD in the sandbox, "
-                "leaving the GL driver to Mesa";
+      report << "no Vulkan ICD in the sandbox, leaving the GL driver to Mesa";
     }
   }
 
-  if (!driver.isEmpty())
-    report << QString("drm-driver=%1").arg(driver);
+  report << QString("drm-driver=%1").arg(driver.isEmpty() ? QString("(none)") : driver);
+  report << QString("arch=%1").arg(QSysInfo::buildCpuArchitecture());
+
+  if (driverFromEnv)
+  {
+    report << QString("MESA_LOADER_DRIVER_OVERRIDE=%1 (from the environment)")
+                .arg(QString::fromLocal8Bit(qgetenv("MESA_LOADER_DRIVER_OVERRIDE")));
+  }
 
   g_graphicsEnvReport = report.join("; ");
 }

@@ -1,4 +1,3 @@
-
 include(FetchDependencies)
 
 if(WIN32)
@@ -15,7 +14,7 @@ if(NOT IS_DIRECTORY ${QTROOT})
     DYLIB_SCRIPT_PATH ${PROJECT_SOURCE_DIR}/scripts/fix-install-names.py
 	)
   set(QTROOT ${dir})
-  
+
   # Write qt.conf in the Qt depends directory so that the Qt tools can find QML files
   set(QTCONFCONTENT "[Paths]
     Prefix=${QTROOT}
@@ -27,66 +26,31 @@ message(STATUS "Qt root directory: ${QTROOT}")
 
 list(APPEND CMAKE_FIND_ROOT_PATH ${QTROOT})
 list(APPEND CMAKE_PREFIX_PATH ${QTROOT})
-include_directories(${QTROOT}/include)
 
-set(REQUIRED_QT_VERSION "5.7.0")
+set(REQUIRED_QT_VERSION "6.5.0")
 
-set(QTCONFIGROOT ${QTROOT}/lib/cmake/Qt5)
-set(components Core Network WebChannel Qml Quick Xml WebEngine Widgets)
-
-if(UNIX AND (NOT APPLE) AND ((NOT BUILD_TARGET STREQUAL "RPI")))
-  add_definitions(-DUSE_X11EXTRAS)
-  set(components ${components} X11Extras)
-endif()
+set(components Core Gui Network WebChannel Qml Quick QuickControls2 Xml WebEngineQuick Widgets OpenGL)
 
 if(LINUX_DBUS)
   set(components ${components} DBus)
 endif(LINUX_DBUS)
 
+find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED COMPONENTS ${components})
+
 foreach(COMP ${components})
-	set(mod Qt5${COMP})
-	
-	# look for the config files in the QtConfigRoot defined above
-	set(${mod}_DIR ${QTCONFIGROOT}${COMP})
-
-	# look for the actual package
-	find_package(${mod} ${REQUIRED_QT_VERSION} REQUIRED)
-
-	include_directories(${${mod}_INCLUDE_DIRS})
-	if(OPENELEC)
-		include_directories(${${mod}_PRIVATE_INCLUDE_DIRS})
-	endif(OPENELEC)
-
-	list(APPEND QT5_LIBRARIES ${${mod}_LIBRARIES})
-	list(APPEND QT5_CFLAGS ${${mod}_EXECUTABLE_COMPILE_FLAGS})
+	list(APPEND QT_LIBRARIES Qt6::${COMP})
+	include_directories(${Qt6${COMP}_INCLUDE_DIRS})
 endforeach(COMP ${components})
 
-if(QT5_CFLAGS)
-	list(REMOVE_DUPLICATES QT5_CFLAGS)
-  if(WIN32)
-    list(REMOVE_ITEM QT5_CFLAGS -fPIC)
-  endif(WIN32)
-endif(QT5_CFLAGS)
+message(STATUS "Qt version: ${Qt6Core_VERSION}")
 
-message(STATUS "Qt version: ${Qt5Core_VERSION_STRING}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${QT5_CFLAGS}")
-
-set(CMAKE_REQUIRED_INCLUDES ${Qt5WebEngine_INCLUDE_DIRS};${Qt5WebEngine_PRIVATE_INCLUDE_DIRS})
-set(CMAKE_REQUIRED_LIBRARIES ${QT5_LIBRARIES})
-
-include(CheckCXXSourceCompiles)
-
-CHECK_CXX_SOURCE_COMPILES(
-"
-  #include <QSurfaceFormat>
-
-  int main(int argc, char** argv) {
-    QSurfaceFormat::FormatOption o = QSurfaceFormat::UseOptimalOrientation;
-    return 0;
-  }
-" QT5_HAVE_OPTIMALORIENTATION)
-
-if(QT5_HAVE_OPTIMALORIENTATION)
-  message(STATUS "QSurfaceFormat::UseOptimalOrientation found")
-  add_definitions(-DHAVE_OPTIMALORIENTATION)
+if(UNIX AND (NOT APPLE) AND ((NOT BUILD_TARGET STREQUAL "RPI")))
+  find_package(X11)
+  if(X11_FOUND)
+    add_definitions(-DUSE_X11EXTRAS)
+    include_directories(${X11_INCLUDE_DIR})
+    list(APPEND QT_LIBRARIES ${X11_LIBRARIES})
+  else()
+    message(STATUS "X11 not found, building without X11 integration")
+  endif()
 endif()

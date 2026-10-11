@@ -25,4 +25,5 @@ toolchain.cmake
 .flatpak-builder/
 *.flatpak
 facade-verify-*.log
+facade-verify-*.png
 __pycache__/

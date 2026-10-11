@@ -45,6 +45,7 @@ public:
   }
 
   void setCommandLineValues(const QStringList& values);
+  void setValueUnchecked(const QString& sectionID, const QString& key, const QVariant& value);
 
   // JS interface
   Q_INVOKABLE void setValue(const QString& sectionID, const QString& key, const QVariant& value);
@@ -59,6 +60,8 @@ public:
   Q_INVOKABLE void resetToDefault(const QString& sectionID);
   Q_INVOKABLE QVariantList settingDescriptions();
   Q_INVOKABLE QString getWebClientUrl(bool desktop);
+
+  bool remoteControlEnabled();
 
   // host commands
   Q_SLOT Q_INVOKABLE void cycleSettingCommand(const QString& args);

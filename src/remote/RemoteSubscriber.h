@@ -12,6 +12,7 @@
 #include <QDomDocument>
 #include <QNetworkReply>
 #include <QQueue>
+#include <QElapsedTimer>
 
 #include "qhttpserverresponse.hpp"
 
@@ -21,7 +22,7 @@ class RemoteSubscriber : public QObject
 public:
   RemoteSubscriber(const QString& clientIdentifier, const QString& deviceName, const QUrl& address, QObject* parent = nullptr);
   void reSubscribe();
-  int lastSubscribe() const { return m_subscribeTime.elapsed(); }
+  int lastSubscribe() const { return static_cast<int>(m_subscribeTime.elapsed()); }
 
   QString deviceName();
   QString clientIdentifier();
@@ -56,7 +57,7 @@ private:
 
   QNetworkAccessManager* m_netAccess;
   QUrl m_address;
-  QTime m_subscribeTime;
+  QElapsedTimer m_subscribeTime;
 
   QMutex m_timelineLock;
   QDomDocument m_timeline;

@@ -391,7 +391,7 @@ void RemoteComponent::commandResponse(const QVariantMap& responseArguments)
   lk.unlock();
 
   // add headers if we have them
-  if (responseArguments.contains("headers") && responseArguments["headers"].type() == QVariant::Map)
+  if (responseArguments.contains("headers") && responseArguments["headers"].typeId() == QMetaType::QVariantMap)
   {
     QVariantMap headers = responseArguments["headers"].toMap();
       for(const QString& key : headers.keys())
@@ -402,7 +402,7 @@ void RemoteComponent::commandResponse(const QVariantMap& responseArguments)
   response->setStatusCode((qhttp::TStatusCode)responseCode);
 
   // handle optional body argument
-  if (responseArguments.contains("body") && responseArguments["body"].type() == QVariant::String)
+  if (responseArguments.contains("body") && responseArguments["body"].typeId() == QMetaType::QString)
     response->write(responseArguments["body"].toString().toUtf8());
 
   response->end();

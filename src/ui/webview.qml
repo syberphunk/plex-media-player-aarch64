@@ -1,9 +1,8 @@
-import QtQuick 2.4
+import QtQuick
 import Konvergo 1.0
-import QtWebEngine 1.1
-import QtWebChannel 1.0
-import QtQuick.Window 2.2
-import QtQuick.Controls 1.4
+import QtWebEngine
+import QtWebChannel
+import QtQuick.Window
 
 KonvergoWindow
 {
@@ -19,109 +18,109 @@ KonvergoWindow
       web.triggerWebAction(action)
   }
 
-  Action
+  Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    shortcut: {
+    sequence: {
       if (components.system.isMacos) return "Ctrl+Shift+F";
       return "F11";
     }
-    onTriggered: mainWindow.toggleWebMode()
+    onActivated: mainWindow.toggleWebMode()
   }
 
-  Action
+  Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    shortcut:
+    sequence:
     {
       if (components.system.isMacos) return "Ctrl+Meta+F"
       return "Shift+F11"
     }
-    onTriggered: mainWindow.toggleFullscreen()
+    onActivated: mainWindow.toggleFullscreen()
   }
 
-  Action
+  Shortcut
   {
-    shortcut: "Alt+Return"
+    sequence: "Alt+Return"
     enabled:
     {
       if (mainWindow.webDesktopMode && components.system.isWindows)
         return true;
       return false;
     }
-    onTriggered: mainWindow.toggleFullscreen()
+    onActivated: mainWindow.toggleFullscreen()
   }
 
-  Action
+  Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    shortcut: StandardKey.Close
-    onTriggered: mainWindow.close()
+    sequences: [ StandardKey.Close ]
+    onActivated: mainWindow.close()
   }
 
-  Action
+  Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    shortcut: {
+    sequence: {
       if (components.system.isMacos) return "Ctrl+M";
       return "Meta+Down";
     }
-    onTriggered: mainWindow.minimizeWindow()
+    onActivated: mainWindow.minimizeWindow()
   }
 
-  Action
+  Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    shortcut: StandardKey.Quit
-    onTriggered: mainWindow.close()
+    sequences: [ StandardKey.Quit ]
+    onActivated: mainWindow.close()
   }
 
-  Action
+  Shortcut
   {
-    shortcut: "Ctrl+Shift+D"
+    sequence: "Ctrl+Shift+D"
     enabled: mainWindow.webDesktopMode
-    onTriggered: mainWindow.toggleDebug()
+    onActivated: mainWindow.toggleDebug()
   }
 
-  Action
+  Shortcut
   {
-    shortcut: StandardKey.Copy
-    onTriggered: runWebAction(WebEngineView.Copy)
+    sequences: [ StandardKey.Copy ]
+    onActivated: runWebAction(WebEngineView.Copy)
     id: action_copy
   }
 
-  Action
+  Shortcut
   {
-    shortcut: StandardKey.Cut
-    onTriggered: runWebAction(WebEngineView.Cut)
+    sequences: [ StandardKey.Cut ]
+    onActivated: runWebAction(WebEngineView.Cut)
     id: action_cut
   }
 
-  Action
+  Shortcut
   {
-    shortcut: StandardKey.Paste
-    onTriggered: runWebAction(WebEngineView.Paste)
+    sequences: [ StandardKey.Paste ]
+    onActivated: runWebAction(WebEngineView.Paste)
     id: action_paste
   }
 
-  Action
+  Shortcut
   {
-    shortcut: StandardKey.SelectAll
-    onTriggered: runWebAction(WebEngineView.SelectAll)
+    sequences: [ StandardKey.SelectAll ]
+    onActivated: runWebAction(WebEngineView.SelectAll)
     id: action_selectall
   }
 
-  Action
+  Shortcut
   {
-    shortcut: StandardKey.Undo
-    onTriggered: runWebAction(WebEngineView.Undo)
+    sequences: [ StandardKey.Undo ]
+    onActivated: runWebAction(WebEngineView.Undo)
     id: action_undo
   }
 
-  Action
+  Shortcut
   {
-    shortcut: StandardKey.Redo
-    onTriggered: runWebAction(WebEngineView.Redo)
+    sequences: [ StandardKey.Redo ]
+    onActivated: runWebAction(WebEngineView.Redo)
     id: action_redo
   }
 
@@ -129,10 +128,6 @@ KonvergoWindow
   {
     id: video
     objectName: "video"
-    // It's not a real item. Its renderer draws onto the view's background.
-    width: 0
-    height: 0
-    visible: false
   }
 
   WebEngineView
@@ -141,11 +136,18 @@ KonvergoWindow
     objectName: "web"
     settings.errorPageEnabled: false
     settings.localContentCanAccessRemoteUrls: true
-    profile.httpUserAgent: components.system.getUserAgent()
+    profile: WebEngineProfile
+    {
+      storageName: "plexmediaplayer"
+      offTheRecord: false
+      httpUserAgent: components.system.getUserAgent()
+      httpCacheType: WebEngineProfile.DiskHttpCache
+      persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
+    }
     url: mainWindow.webUrl
     focus: true
     property string currentHoveredUrl: ""
-    onLinkHovered: web.currentHoveredUrl = hoveredUrl
+    onLinkHovered: (hoveredUrl) => { web.currentHoveredUrl = hoveredUrl }
     onUrlChanged: mainWindow.webClientNavigated(web.url)
     width: mainWindow.width
     height: mainWindow.height
@@ -156,21 +158,21 @@ KonvergoWindow
       mainWindow.reloadWebClient.connect(reload)
     }
 
-    onLoadingChanged:
+    onLoadingChanged: (loadRequest) =>
     {
       // we use a timer here to switch to the webview since
       // it take a few moments for the webview to render
       // after it has loaded.
       //
-      if (loadRequest.status == WebEngineView.LoadStartedStatus)
+      if (loadRequest.status == WebEngineLoadingInfo.LoadStartedStatus)
       {
         console.log("WebEngineLoadRequest starting: " + loadRequest.url);
       }
-      else if (loadRequest.status == WebEngineView.LoadSucceededStatus)
+      else if (loadRequest.status == WebEngineLoadingInfo.LoadSucceededStatus)
       {
         console.log("WebEngineLoadRequest success: " + loadRequest.url);
       }
-      else if (loadRequest.status == WebEngineView.LoadFailedStatus)
+      else if (loadRequest.status == WebEngineLoadingInfo.LoadFailedStatus)
       {
         console.log("WebEngineLoadRequest failure: " + loadRequest.url + " error code: " + loadRequest.errorCode);
         errorLabel.visible = true
@@ -181,30 +183,34 @@ KonvergoWindow
       }
     }
 
-    onNewViewRequested:
+    onNewWindowRequested: (request) =>
     {
       if (request.userInitiated)
       {
-        console.log("Opening external URL: " + web.currentHoveredUrl)
-        components.system.openExternalUrl(web.currentHoveredUrl)
+        var target = request.requestedUrl.toString()
+        if (target.length == 0)
+          target = web.currentHoveredUrl
+        console.log("Opening external URL: " + target)
+        components.system.openExternalUrl(target)
       }
     }
 
-    onFullScreenRequested:
+    onFullScreenRequested: (request) =>
     {
       console.log("Request fullscreen: " + request.toggleOn)
       mainWindow.setFullScreen(request.toggleOn)
       request.accept()
     }
 
-    onJavaScriptConsoleMessage:
+    onJavaScriptConsoleMessage: (level, message, lineNumber, sourceID) =>
     {
       components.system.info(message)
     }
 
-    onCertificateError:
+    onCertificateError: (error) =>
     {
-      console.log(error.url + " :" + error.description + error.error)
+      console.log(error.url + " :" + error.description + error.type)
+      error.rejectCertificate()
     }
   }
 
@@ -221,7 +227,7 @@ KonvergoWindow
     visible: false
     verticalAlignment: Text.AlignVCenter
     textFormat: Text.StyledText
-    onLinkActivated:
+    onLinkActivated: (link) =>
     {
       if (link == "reload")
       {

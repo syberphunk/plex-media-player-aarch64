@@ -11,6 +11,11 @@ REMOTE=pmp-verify-$ARCH
 OUT=$(mktemp -d)
 
 command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; exit 1; }
+command -v ffmpeg >/dev/null || { echo "ffmpeg not found (apt install ffmpeg)" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
+
+WIDTH=1280
+HEIGHT=720
 
 if [ ! -w /tmp/.X11-unix ] || [ ! -k /tmp/.X11-unix ]; then
   echo "/tmp/.X11-unix must be writable and mode 1777 for the X server to start." >&2
@@ -23,7 +28,7 @@ start_xvfb() {
   for n in $(seq 99 120); do
     [ -e "/tmp/.X$n-lock" ] && continue
     LIBGL_ALWAYS_SOFTWARE=1 __EGL_VENDOR_LIBRARY_FILENAMES=/dev/null \
-      Xvfb ":$n" -screen 0 1280x720x24 -listen tcp -ac >/dev/null 2>&1 &
+      Xvfb ":$n" -screen 0 "${WIDTH}x${HEIGHT}x24" -listen tcp -ac >/dev/null 2>&1 &
     XVFB_PID=$!
     for _ in $(seq 1 40); do
       kill -0 "$XVFB_PID" 2>/dev/null || break
@@ -45,11 +50,27 @@ XVFB_PID=
 trap 'rm -rf "$OUT"; [ -n "$XVFB_PID" ] && kill "$XVFB_PID" 2>/dev/null' EXIT
 start_xvfb
 
-echo "==> installing $APP_ID/$ARCH from $REPO_DIR"
-flatpak --user remote-add --no-gpg-verify --no-enumerate --if-not-exists "$REMOTE" "$REPO_DIR"
+[ -d "$REPO_DIR" ] || { echo "$REPO_DIR is not a directory" >&2; exit 1; }
+REPO_URL=file://$(cd "$REPO_DIR" && pwd)
+
+echo "==> installing $APP_ID/$ARCH from $REPO_URL"
+flatpak --user remote-add --no-gpg-verify --no-enumerate --if-not-exists "$REMOTE" "$REPO_URL"
+flatpak --user remote-modify --no-gpg-verify --url="$REPO_URL" "$REMOTE"
 flatpak --user install -y --arch="$ARCH" --reinstall "$REMOTE" "$APP_ID" >/dev/null
 
-rm -rf "$HOME/.var/app/$APP_ID/config/plex" "$HOME/.var/app/$APP_ID/data/plex"
+INSTALLED_COMMIT=$(flatpak --user info --show-commit --arch="$ARCH" "$APP_ID")
+REPO_COMMIT=$(flatpak --user remote-info --show-commit --arch="$ARCH" "$REMOTE" "$APP_ID")
+if [ "$INSTALLED_COMMIT" != "$REPO_COMMIT" ]; then
+  echo "installed commit $INSTALLED_COMMIT does not match $REPO_DIR ($REPO_COMMIT)" >&2
+  exit 1
+fi
+echo "==> verifying commit $REPO_COMMIT"
+
+flatpak kill "$APP_ID" 2>/dev/null || true
+
+rm -rf "$HOME/.var/app/$APP_ID/config/plex.tv" \
+       "$HOME/.var/app/$APP_ID/data/plexmediaplayer" \
+       "$HOME/.var/app/$APP_ID/cache/plexmediaplayer"
 
 EXTRA_ENV=()
 if [ "$ARCH" != "$(flatpak --default-arch)" ]; then
@@ -58,10 +79,21 @@ if [ "$ARCH" != "$(flatpak --default-arch)" ]; then
   EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="--single-process --no-sandbox --disable-gpu-sandbox")
 fi
 
-echo "==> running headless for ${RUN_SECONDS}s"
+GRAB_AT=$((RUN_SECONDS - 8))
+[ "$GRAB_AT" -lt 4 ] && GRAB_AT=$((RUN_SECONDS / 2))
+SHOT=$OUT/shot.rgb
+
+echo "==> running headless for ${RUN_SECONDS}s, screen grab at ${GRAB_AT}s"
+(
+  sleep "$GRAB_AT"
+  ffmpeg -loglevel error -y -f x11grab -video_size "${WIDTH}x${HEIGHT}" -i "$DISPLAY" \
+    -frames:v 1 -pix_fmt rgb24 -f rawvideo "$SHOT" </dev/null
+) &
+GRAB_PID=$!
+
 set +e
 timeout --signal=TERM "$RUN_SECONDS" \
-  flatpak run --arch="$ARCH" --env=DISPLAY="$DISPLAY" \
+  flatpak run --arch="$ARCH" --socket=x11 --nosocket=wayland --env=DISPLAY="$DISPLAY" \
     --env=LIBGL_ALWAYS_SOFTWARE=1 --env=QT_X11_NO_MITSHM=1 \
     "${EXTRA_ENV[@]}" "$APP_ID" \
     --terminal --desktop --windowed --no-updates \
@@ -70,7 +102,39 @@ rc=$?
 set -e
 echo "    exited with $rc (124 = ran until the timeout, which is the good case)"
 
-APP_LOG="$HOME/.var/app/$APP_ID/cache/plex/logs/Plex Media Player.log"
+wait "$GRAB_PID" 2>/dev/null || true
+flatpak kill "$APP_ID" 2>/dev/null || true
+
+cat > "$OUT/pixels.py" <<'PY'
+import sys
+
+path, width, height = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+with open(path, "rb") as fp:
+    raw = fp.read()
+
+expected = width * height * 3
+if len(raw) < expected:
+    sys.exit("frame is %d bytes, expected %d" % (len(raw), expected))
+
+lit = 0
+colours = set()
+for i in range(0, expected, 3):
+    r, g, b = raw[i], raw[i + 1], raw[i + 2]
+    if r > 24 or g > 24 or b > 24:
+        lit += 1
+    colours.add((r >> 3, g >> 3, b >> 3))
+
+pixels = width * height
+print("lit=%.4f colours=%d" % (lit / pixels, len(colours)))
+if lit / pixels < 0.02:
+    sys.exit("only %.2f%% of the frame is non-black: the window painted nothing"
+             % (100.0 * lit / pixels))
+if len(colours) < 16:
+    sys.exit("the frame holds %d distinct colours: no client UI was drawn"
+             % len(colours))
+PY
+
+APP_LOG="$HOME/.var/app/$APP_ID/cache/plexmediaplayer/logs/Plex Media Player.log"
 [ -f "$APP_LOG" ] && cat "$APP_LOG" >> "$OUT/run.log"
 
 echo
@@ -132,6 +196,21 @@ if [ "$blocked" -eq 0 ]; then
 else
   echo "    FAIL  the bundle was blocked by subresource integrity ($blocked)"
   echo "          scripts/patch-web-client.py must re-sign index.html"
+  fail=1
+fi
+
+if [ -s "$SHOT" ]; then
+  ffmpeg -loglevel error -y -f rawvideo -pix_fmt rgb24 \
+    -video_size "${WIDTH}x${HEIGHT}" -i "$SHOT" "./facade-verify-$ARCH.png" </dev/null
+  if pixels=$(python3 -I "$OUT/pixels.py" "$SHOT" "$WIDTH" "$HEIGHT" 2>&1); then
+    echo "    pass  the window rendered a client UI ($pixels)"
+  else
+    echo "    FAIL  $pixels"
+    echo "          see ./facade-verify-$ARCH.png"
+    fail=1
+  fi
+else
+  echo "    FAIL  no screen grab was captured"
   fail=1
 fi
 

@@ -5,7 +5,8 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QtQml>
-#include <QtWebEngine/qtwebengineglobal.h>
+#include <QQuickWindow>
+#include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QErrorMessage>
 #include <QCommandLineOption>
 
@@ -65,13 +66,14 @@ static void preinitQt()
   QCoreApplication::setOrganizationDomain("plex.tv");
 
   QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+  QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
 #ifdef Q_OS_WIN32
   QVariant useOpengl = SettingsComponent::readPreinitValue(SETTINGS_SECTION_MAIN, "useOpenGL");
 
   // Warning: this must be the same as the default value as declared in
   // the settings_description.json file, or confusion will result.
-  if (useOpengl.type() != QMetaType::Bool)
+  if (useOpengl.typeId() != QMetaType::Bool)
     useOpengl = false;
 
   if (useOpengl.toBool())
@@ -105,10 +107,30 @@ void ShowLicenseInfo()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-QStringList g_qtFlags = {
-  "--disable-gpu",
-  "--disable-web-security"
-};
+static bool webSecurityDisabled()
+{
+  const QByteArray override = qgetenv("PMP_DISABLE_WEB_SECURITY");
+  if (!override.isEmpty())
+    return override != "0";
+
+  // Warning: this must be the same as the default value as declared in
+  // the settings_description.json file, or confusion will result.
+  QVariant setting = SettingsComponent::readPreinitValue(SETTINGS_SECTION_MAIN, "disableWebSecurity");
+  if (setting.typeId() != QMetaType::Bool)
+    return false;
+
+  return setting.toBool();
+}
+
+static QStringList qtFlags()
+{
+  QStringList flags = { "--disable-gpu" };
+
+  if (webSecurityDisabled())
+    flags << "--disable-web-security";
+
+  return flags;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char *argv[])
@@ -135,8 +157,9 @@ int main(int argc, char *argv[])
     scaleOption.setDefaultValue("auto");
     parser.addOption(scaleOption);
 
-    char **newArgv = appendCommandLineArguments(argc, argv, g_qtFlags);
-    int newArgc = argc + g_qtFlags.size();
+    const QStringList flags = qtFlags();
+    char **newArgv = appendCommandLineArguments(argc, argv, flags);
+    int newArgc = argc + flags.size();
 
     // Qt calls setlocale(LC_ALL, "") in a bunch of places, which breaks
     // float/string processing in mpv and ffmpeg.
@@ -154,6 +177,7 @@ int main(int argc, char *argv[])
     for (int i = 0; i < argc; i++)
       arguments << QString::fromLatin1(argv[i]);
 
+    if (!parser.parse(arguments) || parser.isSet("help") || parser.isSet("version"))
     {
       // This is kinda dumb. But in order for the QCommandLineParser
       // to work properly we need to init if before we call process
@@ -166,6 +190,7 @@ int main(int argc, char *argv[])
 
       // Now parse the command line.
       parser.process(arguments);
+      return EXIT_SUCCESS;
     }
 
     if (parser.isSet("licenses"))
@@ -180,10 +205,17 @@ int main(int argc, char *argv[])
       scale = "1";
       qputenv("QT_SCALE_FACTOR", "1");
     }
-    else if (scale.isEmpty() || scale == "auto")
-      QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-    else if (scale != "none")
+    else if (scale == "none")
+      qputenv("QT_ENABLE_HIGHDPI_SCALING", "0");
+    else if (!scale.isEmpty() && scale != "auto")
       qputenv("QT_SCALE_FACTOR", scale.toUtf8());
+
+    // enable remote inspection if we have the correct setting for it.
+    if (SettingsComponent::readPreinitValue(SETTINGS_SECTION_MAIN, "remoteInspector").toBool())
+      qputenv("QTWEBENGINE_REMOTE_DEBUGGING",
+              QString("127.0.0.1:%1").arg(WEB_INSPECTOR_PORT).toUtf8());
+
+    QtWebEngineQuick::initialize();
 
     QApplication app(newArgc, newArgv);
 #if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
@@ -219,7 +251,7 @@ int main(int argc, char *argv[])
       QLOG_INFO() << "Graphics env:" << qPrintable(SessionEnv::graphicsEnvReport());
 
     // Quit app and apply update if we find one.
-    if (!parser.isSet("no-updates") && UpdateManager::CheckForUpdates())
+    if (!parser.isSet("no-updates") && !SessionEnv::insideFlatpak() && UpdateManager::CheckForUpdates())
     {
       app.quit();
       return 0;
@@ -240,13 +272,6 @@ int main(int argc, char *argv[])
       UpdaterComponent::Get().disable();
 
     SettingsComponent::Get().setCommandLineValues(parser.optionNames());
-
-    // enable remote inspection if we have the correct setting for it.
-    if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "remoteInspector").toBool())
-      qputenv("QTWEBENGINE_REMOTE_DEBUGGING",
-              QString("0.0.0.0:%1").arg(WEB_INSPECTOR_PORT).toUtf8());
-
-    QtWebEngine::initialize();
 
     // start our helper
 #if ENABLE_HELPER

@@ -20,6 +20,7 @@
 #include "qhttpclientresponse.hpp"
 
 #include "settings/SettingsComponent.h"
+#include "shared/SessionEnv.h"
 #include "UpdateManager.h"
 #include "SystemComponent.h"
 
@@ -39,10 +40,16 @@ UpdaterComponent::UpdaterComponent(QObject* parent) :
   m_enabled = false;
 #endif
 
+  if (SessionEnv::insideFlatpak())
+  {
+    QLOG_INFO() << "Running from a Flatpak, which the updater cannot write to. Updates disabled.";
+    m_enabled = false;
+  }
+
   connect(&m_netManager, &QNetworkAccessManager::finished, this, &UpdaterComponent::dlComplete);
 
   connect(&SystemComponent::Get(), &SystemComponent::userInfoChanged, [this](){
-    if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "automaticUpdates").toBool())
+    if (m_enabled && SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "automaticUpdates").toBool())
       QTimer::singleShot(10 * 1000, this, &UpdaterComponent::checkForUpdate);
   });
 
@@ -54,7 +61,7 @@ UpdaterComponent::UpdaterComponent(QObject* parent) :
       checkForUpdate();
   });
 
-  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "automaticUpdates").toBool())
+  if (m_enabled && SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "automaticUpdates").toBool())
     updateTimer->start(5 * 60 * 1000);
 }
 

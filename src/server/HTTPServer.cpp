@@ -28,13 +28,18 @@ HttpServer::HttpServer(QObject* parent) : QObject(parent)
 bool HttpServer::start()
 {
   connect(m_server, &QHttpServer::newRequest, this, &HttpServer::handleRequest);
-  if (!m_server->listen(QHostAddress::AnyIPv4, m_port))
+
+  const bool remote = SettingsComponent::Get().remoteControlEnabled();
+  const QHostAddress address = remote ? QHostAddress(QHostAddress::AnyIPv4)
+                                      : QHostAddress(QHostAddress::LocalHost);
+
+  if (!m_server->listen(address, m_port))
   {
     QLOG_WARN() << "Failed to listen to remote control web server. Remote controlling from apps disabled.";
     return false;
   }
 
-  QLOG_DEBUG() << "Listening to port:" << m_port;
+  QLOG_DEBUG() << "Listening on" << qPrintable(address.toString()) << "port:" << m_port;
   return true;
 }
 
@@ -78,7 +83,7 @@ bool HttpServer::writeFile(const QString& file, QHttpResponse* response)
     QFile fp(file);
     if (fp.open(QFile::ReadOnly))
     {
-      auto mime = m_mime.mimeTypeForFile(fp);
+      auto mime = m_mime.mimeTypeForFile(QFileInfo(fp));
 
       response->setStatusCode(qhttp::ESTATUS_OK);
       response->addHeader("Content-Type", mime.name().toUtf8());

@@ -22,7 +22,7 @@ void HelperLauncher::start()
 {
   m_jsonClient = new LocalJsonClient("pmpHelper");
   connect(m_jsonClient, &QLocalSocket::connected, this, &HelperLauncher::didConnect);
-  connect(m_jsonClient, static_cast<void (QLocalSocket::*)(QLocalSocket::LocalSocketError)>(&QLocalSocket::error), this, &HelperLauncher::socketError);
+  connect(m_jsonClient, &QLocalSocket::errorOccurred, this, &HelperLauncher::socketError);
   connect(m_jsonClient, &LocalJsonClient::messageReceived, this, &HelperLauncher::gotMessage);
   connect(m_jsonClient, &QLocalSocket::disconnected, this, &HelperLauncher::socketDisconnect);
 

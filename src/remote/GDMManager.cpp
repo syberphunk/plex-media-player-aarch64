@@ -15,6 +15,12 @@ GDMManager::GDMManager(QObject *parent) : QObject(parent), m_port(-1)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void GDMManager::startAnnouncing()
 {
+  if (!SettingsComponent::Get().remoteControlEnabled())
+  {
+    QLOG_INFO() << "Network remote control is disabled, not announcing over GDM.";
+    return;
+  }
+
   startListener();
 }
 
@@ -70,7 +76,7 @@ QByteArray GDMManager::getPacket()
   QVariantMap headers = RemoteComponent::GDMInformation();
 
   for(const QString& key : headers.keys())
-    packetData.append(key + ": " + headers[key].toString() + "\r\n");
+    packetData.append((key + ": " + headers[key].toString() + "\r\n").toUtf8());
 
   // terminate header
   packetData.append("\r\n");

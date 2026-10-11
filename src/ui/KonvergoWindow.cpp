@@ -23,7 +23,7 @@
 #include "EventFilter.h"
 
 #ifdef USE_X11EXTRAS
-#include <QX11Info>
+#include <QtGui/qguiapplication_platform.h>
 #include <X11/Xlib.h>
 #endif
 
@@ -77,9 +77,9 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
 
 #ifdef USE_X11EXTRAS
   // On Gnome show a darker title bar
-  if (QX11Info::isPlatformX11())
+  if (auto* x11App = qGuiApp->nativeInterface<QNativeInterface::QX11Application>())
   {
-    Display* dpy = QX11Info::display();
+    Display* dpy = x11App->display();
     if (dpy)
     {
       WId win = winId();
@@ -116,8 +116,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   connect(&PlayerComponent::Get(), &PlayerComponent::windowVisible,
           this, &KonvergoWindow::playerWindowVisible, Qt::QueuedConnection);
 
-  // this is using old syntax because ... reasons. QQuickCloseEvent is not public class
-  connect(this, SIGNAL(closing(QQuickCloseEvent*)), this, SLOT(closingWindow()));
+  connect(this, &QQuickWindow::closing, this, [this]() { closingWindow(); });
 
   connect(qApp, &QCoreApplication::aboutToQuit, this, &KonvergoWindow::closingWindow);
 

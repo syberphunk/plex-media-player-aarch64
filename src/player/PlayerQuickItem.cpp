@@ -1,12 +1,10 @@
 #include "PlayerQuickItem.h"
 
-#include <stdexcept>
-
-#include <QCoreApplication>
 #include <QOpenGLContext>
-#include <QRunnable>
+#include <QPointF>
+#include <QSizeF>
 
-#include <QtGui/QOpenGLFramebufferObject>
+#include <QtOpenGL/QOpenGLFramebufferObject>
 
 #include <QtQuick/QQuickWindow>
 #include <QOpenGLFunctions>
@@ -25,7 +23,8 @@
 #endif
 
 #ifdef USE_X11EXTRAS
-#include <QX11Info>
+#include <QGuiApplication>
+#include <QtGui/qguiapplication_platform.h>
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,35 +52,29 @@ static void* get_proc_address(void* ctx, const char* name)
   return res;
 }
 
-namespace {
-
-/////////////////////////////////////////////////////////////////////////////////////////
-class RequestRepaintJob : public QRunnable
+///////////////////////////////////////////////////////////////////////////////////////////////////
+PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
+: m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
+  m_playbackActive(false), m_hAvrtHandle(nullptr)
 {
-public:
-  explicit RequestRepaintJob(QQuickWindow *window) : m_window(window) { }
-
-  void run() override
-  {
-    // QSGThreadedRenderLoop::update has a special code path that will render
-    // without syncing the render and GUI threads unless asked elsewhere to support
-    // QQuickAnimator animations. This is currently triggered by the fact that
-    // QQuickWindow::update() is called from the render thread.
-    // This allows continuing rendering video while the GUI thread is busy.
-    //
-    m_window->update();
-  }
-
-private:
-  QQuickWindow *m_window;
-};
-
+  m_item->m_renderer = this;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-PlayerRenderer::PlayerRenderer(mpv::qt::Handle mpv, QQuickWindow* window)
-: m_mpv(mpv), m_mpvGL(nullptr), m_window(window), m_size(), m_hAvrtHandle(nullptr), m_videoRectangle(-1, -1, -1, -1), m_fbo(0)
+PlayerRenderer::~PlayerRenderer()
 {
+  if (m_item->m_renderer == this)
+    m_item->m_renderer = nullptr;
+
+  setThreadCharacteristics(false);
+
+  // Keep in mind that the m_mpv handle must be held until this is done.
+  if (m_mpvGL)
+  {
+    mpv_render_context_set_update_callback(m_mpvGL, nullptr, nullptr);
+    mpv_render_context_free(m_mpvGL);
+  }
+  m_mpvGL = nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -102,8 +95,9 @@ bool PlayerRenderer::init()
   params.append({MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &opengl_params});
 
 #ifdef USE_X11EXTRAS
-  if (QX11Info::isPlatformX11() && QX11Info::display())
-    params.append({MPV_RENDER_PARAM_X11_DISPLAY, QX11Info::display()});
+  auto* x11App = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
+  if (x11App && x11App->display())
+    params.append({MPV_RENDER_PARAM_X11_DISPLAY, x11App->display()});
   else
     QLOG_INFO() << "Not an X11 platform plugin, not passing an X11 display to mpv";
 #endif
@@ -112,94 +106,14 @@ bool PlayerRenderer::init()
   int err = mpv_render_context_create(&m_mpvGL, m_mpv, params.data());
 
   if (err >= 0) {
-    mpv_render_context_set_update_callback(m_mpvGL, on_update, (void *)this);
+    mpv_render_context_set_update_callback(m_mpvGL, PlayerQuickItem::on_update, (void *)m_item);
     return true;
   }
   return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-PlayerRenderer::~PlayerRenderer()
-{
-  // Keep in mind that the m_mpv handle must be held until this is done.
-  if (m_mpvGL)
-    mpv_render_context_free(m_mpvGL);
-  m_mpvGL = nullptr;
-  delete m_fbo;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::render()
-{
-  QOpenGLContext *context = QOpenGLContext::currentContext();
-
-  GLint fbo = 0;
-  context->functions()->glGetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
-  bool flip = true;
-#if HAVE_OPTIMALORIENTATION
-  flip = !(context->format().orientationFlags() & QSurfaceFormat::MirrorVertically);
-#endif
-  bool screenFlip = flip;
-  QSize fboSize = m_size;
-  QOpenGLFramebufferObject *blitFbo = 0;
-
-  m_window->resetOpenGLState();
-
-  QRect fullWindow(0, 0, m_size.width(), m_size.height());
-  if (m_videoRectangle.width() > 0 && m_videoRectangle.height() > 0 && m_videoRectangle != fullWindow && QOpenGLFramebufferObject::hasOpenGLFramebufferBlit() && QOpenGLFramebufferObject::hasOpenGLFramebufferObjects())
-  {
-    if (!m_fbo || !m_fbo->isValid() || m_fbo->size() != m_videoRectangle.size())
-    {
-      delete m_fbo;
-      m_fbo = new QOpenGLFramebufferObject(m_videoRectangle.size());
-    }
-    if (m_fbo && m_fbo->isValid())
-    {
-      blitFbo = m_fbo;
-      fboSize = m_fbo->size();
-      fbo = m_fbo->handle();
-      flip = false;
-
-      // Need to clear the background manually, since nothing else knows it has to be done.
-      context->functions()->glClearColor(0, 0, 0, 0);
-      context->functions()->glClear(GL_COLOR_BUFFER_BIT);
-    }
-  }
-
-  mpv_opengl_fbo mpv_fbo = {
-    .fbo = fbo,
-    .w = fboSize.width(),
-    .h = fboSize.height(),
-  };
-  int mpv_flip = flip ? -1 : 0;
-  mpv_render_param params[] = {
-    {MPV_RENDER_PARAM_OPENGL_FBO, &mpv_fbo},
-    {MPV_RENDER_PARAM_FLIP_Y, &mpv_flip},
-    {MPV_RENDER_PARAM_INVALID}
-  };
-  mpv_render_context_render(m_mpvGL, params);
-
-  m_window->resetOpenGLState();
-
-  if (blitFbo)
-  {
-    QRect dstRect = m_videoRectangle;
-    if (screenFlip)
-      dstRect = QRect(dstRect.x(), m_size.height() - dstRect.y(), dstRect.width(), dstRect.top() - dstRect.bottom());
-
-    QOpenGLFramebufferObject::blitFramebuffer(0, dstRect, blitFbo, QRect(QPoint(0, 0), blitFbo->size()));
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::swap()
-{
-  if (m_mpvGL)
-    mpv_render_context_report_swap(m_mpvGL);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::onVideoPlaybackActive(bool active)
+void PlayerRenderer::setThreadCharacteristics(bool active)
 {
 #ifdef Q_OS_WIN32
   if (active && !m_hAvrtHandle)
@@ -212,27 +126,100 @@ void PlayerRenderer::onVideoPlaybackActive(bool active)
     AvRevertMmThreadCharacteristics(m_hAvrtHandle);
     m_hAvrtHandle = 0;
   }
+#else
+  Q_UNUSED(active);
 #endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::on_update(void *ctx)
+void PlayerRenderer::collectGraphicsInfo()
 {
-  PlayerRenderer *self = (PlayerRenderer *)ctx;
-  // QQuickWindow::scheduleRenderJob is expected to be called from the GUI thread but
-  // is thread-safe when using the QSGThreadedRenderLoop. We can detect a non-threaded render
-  // loop by checking if QQuickWindow::beforeSynchronizing was called from the GUI thread
-  // (which affects the QObject::thread() of the PlayerRenderer).
-  //
-  if (self->thread() == self->m_window->thread())
-    QMetaObject::invokeMethod(self->m_window, "update", Qt::QueuedConnection);
-  else
-    self->m_window->scheduleRenderJob(new RequestRepaintJob(self->m_window), QQuickWindow::NoStage);
+  QOpenGLContext* glctx = QOpenGLContext::currentContext();
+  if (!glctx || !glctx->isValid())
+  {
+    QLOG_ERROR() << "No valid OpenGL context at scenegraph init";
+    return;
+  }
+
+  QStringList logged;
+  QString info = "\nOpenGL:\n";
+  int syms[4] = {GL_VENDOR, GL_RENDERER, GL_VERSION, GL_SHADING_LANGUAGE_VERSION};
+  const char* names[4] = {"vendor", "renderer", "version", "glsl"};
+  for (int i = 0; i < 4; i++)
+  {
+    auto s = (char *)glctx->functions()->glGetString(syms[i]);
+    if (s)
+    {
+      info += QString("  ") + QString::fromUtf8(s) + "\n";
+      logged << QString("%1=%2").arg(names[i], QString::fromUtf8(s));
+    }
+  }
+  info += "\n";
+  m_graphicsInfo = info;
+
+  QLOG_INFO() << "OpenGL:" << qPrintable(logged.join(" "));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::render()
+{
+  if (!m_initialized && m_mpv)
+  {
+    m_initialized = true;
+    collectGraphicsInfo();
+    if (!init())
+      emit m_item->onFatalError(QObject::tr("Could not initialize OpenGL."));
+  }
+
+  QOpenGLFramebufferObject* fbo = framebufferObject();
+  if (!m_mpvGL || !fbo || !fbo->isValid())
+    return;
+
+  mpv_opengl_fbo mpv_fbo = {
+    .fbo = (int)fbo->handle(),
+    .w = fbo->width(),
+    .h = fbo->height(),
+  };
+  int mpv_flip = 0;
+  mpv_render_param params[] = {
+    {MPV_RENDER_PARAM_OPENGL_FBO, &mpv_fbo},
+    {MPV_RENDER_PARAM_FLIP_Y, &mpv_flip},
+    {MPV_RENDER_PARAM_INVALID}
+  };
+  mpv_render_context_render(m_mpvGL, params);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::reportSwap()
+{
+  if (m_mpvGL)
+    mpv_render_context_report_swap(m_mpvGL);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
+{
+  auto* player = static_cast<PlayerQuickItem*>(item);
+
+  if (!m_mpv)
+    m_mpv = player->m_mpv;
+
+  if (!m_graphicsInfo.isEmpty())
+  {
+    player->m_debugInfo = m_graphicsInfo;
+    m_graphicsInfo.clear();
+  }
+
+  if (m_playbackActive != player->m_playbackActive)
+  {
+    m_playbackActive = player->m_playbackActive;
+    setThreadCharacteristics(m_playbackActive);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
-: QQuickItem(parent), m_mpvGL(nullptr), m_renderer(nullptr)
+: QQuickFramebufferObject(parent), m_playbackActive(false), m_renderer(nullptr)
 {
   connect(this, &QQuickItem::windowChanged, this, &PlayerQuickItem::onWindowChanged, Qt::DirectConnection);
   connect(this, &PlayerQuickItem::onFatalError, this, &PlayerQuickItem::onHandleFatalError, Qt::QueuedConnection);
@@ -241,17 +228,63 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::~PlayerQuickItem()
 {
-  if (m_mpvGL)
-    mpv_render_context_set_update_callback(m_mpvGL, nullptr, nullptr);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QQuickFramebufferObject::Renderer* PlayerQuickItem::createRenderer() const
+{
+  return new PlayerRenderer(const_cast<PlayerQuickItem*>(this));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerQuickItem::onWindowChanged(QQuickWindow* win)
 {
-  if (win)
+  if (!win)
+    return;
+
+  win->setPersistentGraphics(true);
+  win->setPersistentSceneGraph(true);
+
+  connect(win, &QQuickWindow::frameSwapped, this, &PlayerQuickItem::onFrameSwapped, Qt::DirectConnection);
+  connect(win, &QQuickWindow::widthChanged, this, &PlayerQuickItem::updateVideoGeometry);
+  connect(win, &QQuickWindow::heightChanged, this, &PlayerQuickItem::updateVideoGeometry);
+
+  updateVideoGeometry();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::onFrameSwapped()
+{
+  if (m_renderer)
+    m_renderer->reportSwap();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::onVideoPlaybackActive(bool active)
+{
+  m_playbackActive = active;
+  update();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::updateVideoGeometry()
+{
+  QQuickWindow* win = window();
+  if (!win)
+    return;
+
+  const qreal dpr = win->devicePixelRatio();
+  const QRect rc = PlayerComponent::Get().videoRectangle();
+
+  if (rc.width() > 0 && rc.height() > 0 && dpr > 0)
   {
-    connect(win, &QQuickWindow::beforeSynchronizing, this, &PlayerQuickItem::onSynchronize, Qt::DirectConnection);
-    connect(win, &QQuickWindow::sceneGraphInvalidated, this, &PlayerQuickItem::onInvalidate, Qt::DirectConnection);
+    setPosition(QPointF(rc.x() / dpr, rc.y() / dpr));
+    setSize(QSizeF(rc.width() / dpr, rc.height() / dpr));
+  }
+  else
+  {
+    setPosition(QPointF(0, 0));
+    setSize(QSizeF(win->width(), win->height()));
   }
 }
 
@@ -262,65 +295,10 @@ void PlayerQuickItem::onHandleFatalError(QString message)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerQuickItem::onSynchronize()
+void PlayerQuickItem::on_update(void *ctx)
 {
-  if (!m_renderer && m_mpv)
-  {
-    m_renderer = new PlayerRenderer(m_mpv, window());
-    if (!m_renderer->init())
-    {
-      delete m_renderer;
-      m_renderer = nullptr;
-      emit onFatalError(tr("Could not initialize OpenGL."));
-      return;
-    }
-    connect(window(), &QQuickWindow::beforeRendering, m_renderer, &PlayerRenderer::render, Qt::DirectConnection);
-    connect(window(), &QQuickWindow::frameSwapped, m_renderer, &PlayerRenderer::swap, Qt::DirectConnection);
-    connect(&PlayerComponent::Get(), &PlayerComponent::videoPlaybackActive, m_renderer, &PlayerRenderer::onVideoPlaybackActive, Qt::QueuedConnection);
-    connect(&PlayerComponent::Get(), &PlayerComponent::onVideoRecangleChanged, window(), &QQuickWindow::update, Qt::QueuedConnection);
-    window()->setPersistentOpenGLContext(true);
-    window()->setPersistentSceneGraph(true);
-    m_debugInfo = "";
-    QOpenGLContext* glctx = QOpenGLContext::currentContext();
-    if (glctx && glctx->isValid())
-    {
-      m_debugInfo += "\nOpenGL:\n";
-      int syms[4] = {GL_VENDOR, GL_RENDERER, GL_VERSION, GL_SHADING_LANGUAGE_VERSION};
-      const char* names[4] = {"vendor", "renderer", "version", "glsl"};
-      QStringList logged;
-      for (int i = 0; i < 4; i++)
-      {
-        auto s = (char *)glctx->functions()->glGetString(syms[i]);
-        if (s)
-        {
-          m_debugInfo += QString("  ") + QString::fromUtf8(s) + "\n";
-          logged << QString("%1=%2").arg(names[i], QString::fromUtf8(s));
-        }
-      }
-      m_debugInfo += "\n";
-
-      QLOG_INFO() << "OpenGL:" << qPrintable(logged.join(" "));
-    }
-    else
-    {
-      QLOG_ERROR() << "No valid OpenGL context at scenegraph init";
-    }
-  }
-  if (m_renderer)
-  {
-    m_renderer->m_size = window()->size() * window()->devicePixelRatio();
-    m_renderer->m_videoRectangle = PlayerComponent::Get().videoRectangle();
-
-    window()->setClearBeforeRendering(!PlayerComponent::Get().videoWindowVisible());
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerQuickItem::onInvalidate()
-{
-  if (m_renderer)
-    delete m_renderer;
-  m_renderer = nullptr;
+  auto* self = static_cast<PlayerQuickItem*>(ctx);
+  QMetaObject::invokeMethod(self, "update", Qt::QueuedConnection);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -328,6 +306,9 @@ void PlayerQuickItem::initMpv(PlayerComponent* player)
 {
   m_mpv = player->getMpvHandle();
 
-  connect(player, &PlayerComponent::windowVisible, this, &QQuickItem::setVisible);
-  window()->update();
+  connect(player, &PlayerComponent::videoPlaybackActive, this, &PlayerQuickItem::onVideoPlaybackActive);
+  connect(player, &PlayerComponent::onVideoRecangleChanged, this, &PlayerQuickItem::updateVideoGeometry);
+
+  updateVideoGeometry();
+  update();
 }
