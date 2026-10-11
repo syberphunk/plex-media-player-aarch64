@@ -2,7 +2,7 @@
 
 This repository is an unofficial fork of
 [plexinc/plex-media-player](https://github.com/plexinc/plex-media-player),
-published as the source for the builds attached to its releases. It is not a
+and the source for the builds attached to its releases. It is not a
 supported product: no advisories are issued, no CVE triage is performed, and no
 release is promised in response to a report. Issues, the wiki and projects are
 disabled, so there is no monitored channel here.
@@ -26,11 +26,8 @@ disabled, so there is no monitored channel here.
 - Dependabot alerts are enabled. They cover the GitHub Actions versions pinned
   in `.github/workflows/`; GitHub has no ecosystem for a Flatpak manifest, so
   the pinned C and C++ sources are not covered by them.
-- `.github/workflows/code-scanning.yml` runs CodeQL weekly over the Actions
-  workflows, the Python scripts and the C and C++ sources in `src/`, with
-  `.github/codeql-config.yml` as its configuration. It runs without building,
-  so its C and C++ results are indicative rather than complete.
-- Secret scanning and push protection are enabled.
+- Code scanning, secret scanning and push protection are not available on this
+  repository, so nothing here is scanned by them.
 
 ## What the build checks
 
