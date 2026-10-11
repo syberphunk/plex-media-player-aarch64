@@ -93,5 +93,8 @@ flatpak run tv.plex.PlexMediaPlayer
 ## License
 
 GPL-2.0, per `LICENSE`. The Plex Desktop web client is proprietary to Plex,
-Inc., is not redistributed here, and is downloaded from plex.tv during the
-build.
+Inc. This repository does not contain it. The build downloads it from plex.tv,
+verifies every subresource against the integrity attributes shipped in its own
+`index.html`, and installs it unmodified apart from one rewrite of the `qrc://`
+URL that loads `qwebchannel.js`, which Qt 6 requires. The released Flatpak
+bundle embeds the client as installed.

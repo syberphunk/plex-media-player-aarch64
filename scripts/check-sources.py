@@ -489,8 +489,8 @@ def update(raw, sources, outdated):
             raw[source.lines["sha256"]] = replace_line(
                 raw, source.lines["sha256"], digest)
             print("    pinned %s (%s)" % (os.path.basename(url), digest[:12]))
-            print("    the web client patches are re-checked at build time by"
-                  " patch-web-client.py")
+            print("    the client's own integrity attributes are re-checked at"
+                  " build time by verify-web-client.py")
             changed = True
             continue
 

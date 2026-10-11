@@ -118,5 +118,5 @@ modules:
           - mkdir plex-desktop
           - tar -xjf plex-desktop-linux.tar.bz2 -C plex-desktop ./resources/web-client
           - python3 scripts/stage-web-client.py plex-desktop/resources/web-client web-client
-          - python3 scripts/patch-web-client.py web-client
+          - python3 scripts/verify-web-client.py web-client
           - rm -rf plex-desktop plex-desktop-linux.tar.bz2

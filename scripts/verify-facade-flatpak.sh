@@ -195,7 +195,7 @@ if [ "$blocked" -eq 0 ]; then
   echo "    pass  no subresource integrity failure"
 else
   echo "    FAIL  the bundle was blocked by subresource integrity ($blocked)"
-  echo "          scripts/patch-web-client.py must re-sign index.html"
+  echo "          the staged client no longer matches the hashes in index.html"
   fail=1
 fi
 
