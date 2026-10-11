@@ -10,10 +10,6 @@ set(INPUT_SRCS
   InputRoku.h
 )
 
-if(APPLE)
-  add_subdirectory(apple)
-endif(APPLE)
-
 if(SDL2_FOUND)
   list(APPEND INPUT_SRCS InputSDL.cpp InputSDL.h)
 endif(SDL2_FOUND)

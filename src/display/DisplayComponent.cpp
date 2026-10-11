@@ -7,14 +7,10 @@
 #include <QWindow>
 #include <math.h>
 
-#ifdef Q_OS_MAC
-#include "osx/DisplayManagerOSX.h"
-#elif defined(TARGET_RPI)
+#if defined(TARGET_RPI)
 #include "rpi/DisplayManagerRPI.h"
 #elif defined(USE_X11XRANDR)
 #include "x11/DisplayManagerX11.h"
-#elif defined(Q_OS_WIN)
-#include "win/DisplayManagerWin.h"
 #endif
 
 #include "dummy/DisplayManagerDummy.h"
@@ -53,14 +49,10 @@ bool DisplayComponent::componentInitialize()
 {
 #if 0
   m_displayManager = new DisplayManagerDummy(this);
-#elif defined(Q_OS_MAC)
-  m_displayManager = new DisplayManagerOSX(this);
 #elif defined(TARGET_RPI)
   m_displayManager = new DisplayManagerRPI(this);
 #elif defined(USE_X11XRANDR)
   m_displayManager = new DisplayManagerX11(this);
-#elif defined(Q_OS_WIN)
-  m_displayManager = new DisplayManagerWin(this);
 #endif
 
   if (initializeDisplayManager())

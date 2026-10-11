@@ -17,19 +17,7 @@ function(dumpsyms target symfile)
     message(WARNING "dump_syms not found")
   endif()
   if(GENERATE_SYMBOLS AND DUMP_SYMS)
-    if(APPLE)
-      add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND dsymutil -o ${MAIN_NAME}.dSYM $<TARGET_FILE:${MAIN_TARGET}>
-        COMMENT Generating ${MAIN_NAME}.dSYM
-        BYPRODUCTS ${MAIN_NAME}.dSYM/Contents/Resources/DWARF/${target} ${MAIN_NAME}.dSYM/Contents/Info.plist
-      )
-      set(EXTRA_DUMPSYMS_ARGS -g "${CMAKE_CURRENT_BINARY_DIR}/${MAIN_NAME}.dSYM")
-    endif(APPLE)
-    
     set(TARGET_FILE $<TARGET_FILE:${target}>)
-    if(WIN32)
-      set(TARGET_FILE $<TARGET_PDB_FILE:${target}>)
-    endif(WIN32)
 
     file(TO_NATIVE_PATH ${PYTHON_EXECUTABLE} PYTHON_EXE)
     file(TO_NATIVE_PATH ${PROJECT_SOURCE_DIR}/scripts/compress.py SCRIPT_PATH)

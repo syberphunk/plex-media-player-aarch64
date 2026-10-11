@@ -45,11 +45,7 @@ QString Utils::ComputerName()
   static std::once_flag flag;
   static QString name;
   std::call_once(flag, [](){
-#ifdef Q_OS_MAC
-    name = OSXUtils::ComputerName();
-#else
     name = QHostInfo::localHostName();
-#endif
   });
   return name;
 }
@@ -86,9 +82,7 @@ QJsonDocument Utils::OpenJsonDocument(const QString& path, QJsonParseError* err)
 /////////////////////////////////////////////////////////////////////////////////////////
 Platform Utils::CurrentPlatform()
 {
-#if defined(Q_OS_MAC)
-  return PLATFORM_OSX;
-#elif KONVERGO_OPENELEC
+#if KONVERGO_OPENELEC
   #if TARGET_RPI
     return PLATFORM_OE_RPI;
   #else
@@ -96,8 +90,6 @@ Platform Utils::CurrentPlatform()
   #endif
 #elif defined(Q_OS_LINUX)
   return PLATFORM_LINUX;
-#elif defined(Q_OS_WIN32)
-  return PLATFORM_WINDOWS;
 #else
   return PLATFORM_UNKNOWN;
 #endif

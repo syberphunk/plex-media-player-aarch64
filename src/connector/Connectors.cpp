@@ -22,13 +22,7 @@ namespace
 {
   QString platformName()
   {
-#if defined(Q_OS_WIN)
-    return QStringLiteral("Windows");
-#elif defined(Q_OS_MAC)
-    return QStringLiteral("macOS");
-#else
     return QStringLiteral("Linux");
-#endif
   }
 
   QString platformVersion()

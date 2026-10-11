@@ -1,9 +1,5 @@
 include(FetchDependencies)
 
-if(WIN32)
-  set(WINARCHSTR ARCHSTR windows-x86_64)
-endif(WIN32)
-
 if(NOT IS_DIRECTORY ${QTROOT})
   download_deps(
 		"plexmediaplayer-qt"
@@ -11,7 +7,6 @@ if(NOT IS_DIRECTORY ${QTROOT})
 		DEPHASH_VAR QT_DEPS_HASH
     BUILD_NUMBER 206
     ARTIFACTNAME konvergo-qt
-    DYLIB_SCRIPT_PATH ${PROJECT_SOURCE_DIR}/scripts/fix-install-names.py
 	)
   set(QTROOT ${dir})
 
@@ -44,7 +39,7 @@ endforeach(COMP ${components})
 
 message(STATUS "Qt version: ${Qt6Core_VERSION}")
 
-if(UNIX AND (NOT APPLE) AND ((NOT BUILD_TARGET STREQUAL "RPI")))
+if(UNIX AND (NOT BUILD_TARGET STREQUAL "RPI"))
   find_package(X11)
   if(X11_FOUND)
     add_definitions(-DUSE_X11EXTRAS)

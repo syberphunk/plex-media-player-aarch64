@@ -15,9 +15,6 @@
 #include "Version.h"
 #include "utils/Utils.h"
 
-#ifdef Q_OS_MAC
-#include "HelperLaunchd.h"
-#endif
 
 class HelperLauncher : public QObject
 {
@@ -46,9 +43,6 @@ private:
   void updateClientId();
   bool helperEnabled();
 
-#ifdef Q_OS_MAC
-  HelperLaunchd* m_launchd;
-#endif
 };
 
 #endif //KONVERGO_HELPERLAUNCHER_H

@@ -13,7 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
 option(OPENELEC "Make an OpenELEC build" OFF)
 option(LINUX_X11POWER "Enable non D-Bus screensaver management" OFF)
 
-if((NOT LINUX_X11POWER) AND (UNIX AND (NOT APPLE)))
+if((NOT LINUX_X11POWER) AND UNIX)
   set(LINUX_DBUS ON)
 endif()
 
@@ -63,13 +63,7 @@ include(ClangTidy)
 
 add_definitions(-DQS_LOG_LINE_NUMBERS -DQS_LOG_SEPARATE_THREAD)
 
-if(APPLE)
-  include(AppleConfiguration)
-elseif(WIN32)
-  include(Win32Configuration)
-elseif(UNIX AND (NOT APPLE))
-  include(LinuxConfiguration)
-endif(APPLE)
+include(LinuxConfiguration)
 
 SET(CMAKE_POSITION_INDEPENDENT_CODE ON)
 

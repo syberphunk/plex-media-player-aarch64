@@ -7,9 +7,6 @@ if(DEPENDENCY_TOKEN)
   if(OPENELEC)
     set(DEPENDCY_FOLDER plexmediaplayer-openelec-codecs)
     set(DEPS_BUILD_NUMBER 90)
-  elseif(APPLE OR WIN32)
-    set(DEPENDCY_FOLDER plexmediaplayer-dependencies-codecs)
-    set(DEPS_BUILD_NUMBER 260)
   endif()
   if(NOT (DEPENDCY_FOLDER STREQUAL ""))
     download_deps(
@@ -18,40 +15,12 @@ if(DEPENDENCY_TOKEN)
       BUILD_NUMBER ${DEPS_BUILD_NUMBER}
       DIRECTORY dir
       DEPHASH_VAR DEPS_HASH
-      DYLIB_SCRIPT_PATH ${PROJECT_SOURCE_DIR}/scripts/fix-install-names.py
       TOKEN ${DEPENDENCY_TOKEN}
     )
     message("dependencies are: ${dir}")
     set(DEFAULT_ROOT ${dir})
   endif()
 endif(DEPENDENCY_TOKEN)
-
-if(WIN32)
-  message("dependencies are: ${dir}")
-  set(DEFAULT_ROOT "${dir}")
-
-  download_deps(
-    "windows-redist"
-    DIRECTORY VCREDIST_DIR
-    ARTIFACTNAME windows-redist-2015
-    ARCHSTR windows-x86_x64
-  )
-
-  option(ENABLE_ANGLE_DEP "Enable downloading and deployment of separate ANGLE deps" OFF)
-  if(ENABLE_ANGLE_DEP)
-    message(STATUS "Downloading separate ANGLE deps...")
-    foreach(angle_file libEGL.dll libGLESv2.dll d3dcompiler_47.dll)
-      download_dep_file(
-        "plexmediaplayer-angle"
-        BUILD_NUMBER 53
-        DIRECTORY angle
-        ARTIFACTNAME "plexmediaplayer-angle"
-        FILENAME ${angle_file}
-      )
-    endforeach()
-  endif()
-
-endif(WIN32)
 
 set(DEPENDENCY_ROOT ${DEFAULT_ROOT} CACHE PATH "Path where the deps are located")
 

@@ -34,17 +34,11 @@
 #include "utils/Log.h"
 #include "shared/SessionEnv.h"
 
-#ifdef Q_OS_MAC
-#include "PFMoveApplication.h"
-#endif
-
-#if defined(Q_OS_MAC) || defined(Q_OS_LINUX)
 #include "SignalManager.h"
-#endif
 
 static void preinitPlatform()
 {
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
+#if defined(Q_OS_UNIX)
   if (qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
     return;
 
@@ -218,14 +212,7 @@ int main(int argc, char *argv[])
     QtWebEngineQuick::initialize();
 
     QApplication app(newArgc, newArgv);
-#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
-    // Setting window icon on OSX will break user ability to change it
     app.setWindowIcon(QIcon(":/images/icon.png"));
-#endif
-
-#if defined(Q_OS_MAC) && defined(NDEBUG)
-    PFMoveToApplicationsFolderIfNecessary();
-#endif
 
     // init breakpad.
     setupCrashDumper();

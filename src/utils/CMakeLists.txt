@@ -7,11 +7,3 @@ add_sources(
   Log.cpp Log.h
 )
 
-if(APPLE)
-  add_sources(HelperLaunchd.cpp HelperLaunchd.cpp)
-  add_subdirectory(osx)
-endif(APPLE)
-
-if(WIN32)
-  add_subdirectory(win)
-endif()

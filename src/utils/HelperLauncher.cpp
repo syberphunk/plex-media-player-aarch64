@@ -26,10 +26,6 @@ void HelperLauncher::start()
   connect(m_jsonClient, &LocalJsonClient::messageReceived, this, &HelperLauncher::gotMessage);
   connect(m_jsonClient, &QLocalSocket::disconnected, this, &HelperLauncher::socketDisconnect);
 
-#ifdef Q_OS_MAC
-  m_launchd = new HelperLaunchd(this);
-#endif
-
   m_helperProcess = new QProcess(this);
 
   connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_WEBCLIENT), &SettingsSection::valuesUpdated, [=](const QVariantMap& values)
