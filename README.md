@@ -8,6 +8,7 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | --- | --- | --- |
 | Plex Media Player | `d9685b2` | https://github.com/plexinc/plex-media-player |
 | Plex Desktop web client | 1.115.0.426-4e960a1d | https://www.plex.tv/media-server-downloads/#plex-app |
+| http-parser | 2.9.4 (`ec8b5ee`) | https://github.com/nodejs/http-parser |
 | libass | 0.17.5 | https://github.com/libass/libass |
 | libplacebo | v7.349.0 | https://code.videolan.org/videolan/libplacebo |
 | mpv (libmpv) | v0.39.0 | https://github.com/mpv-player/mpv |
@@ -17,6 +18,7 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 
 `vendor-deps/` holds copies of the libass, libplacebo, mpv and zlib release
 archives listed above, used as the Flatpak manifest's mirrors.
+`external/qhttp/3rdparty/http-parser/` holds the http-parser copy listed above.
 
 Packaging references:
 
