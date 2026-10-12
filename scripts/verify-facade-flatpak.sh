@@ -224,6 +224,9 @@ fi
 
 if [ "$fail" -ne 0 ]; then
   echo
+  echo "==> last host lines"
+  grep -vF '] JS: ' "$OUT/run.log" | tail -60
+  echo
   echo "VERIFICATION FAILED -- do not publish this build"
   exit 1
 fi
