@@ -1,0 +1,44 @@
+Plex Media Player
+
+Copyright © 2015-2026 Plex, Inc. and the Plex Media Player contributors
+
+Licensed under the GNU General Public License, version 2. See LICENSE.
+
+Third-party components in this repository:
+
+external/qhttp/
+    Copyright © 2014 Amir Zamani
+    MIT. See external/qhttp/LICENSE.
+
+external/qhttp/3rdparty/http-parser/
+    Copyright © Joyent, Inc. and other Node contributors
+    Copyright © Igor Sysoev
+    Copyright © Fedor Indutny
+    MIT. See external/qhttp/3rdparty/http-parser/LICENSE-MIT.
+
+external/qslog/
+    Copyright © 2013-2014 Razvan Petru
+    Copyright © 2014 Omar Carey
+    BSD 3-Clause. See external/qslog/LICENSE.txt.
+
+src/player/QtHelper.h
+    Copyright © 2017 the mpv developers
+    ISC. See the file header.
+
+src/plugins/RPI_jpeg/
+    Copyright © 2012 Broadcom Europe Ltd
+    BSD 3-Clause. See the file headers.
+
+CMakeModules/
+    FindBreakpad.cmake, FindGLES2.cmake, FindICU.cmake, FindMPV.cmake,
+    FindSDL2.cmake, GetGitRevisionDescription.cmake and
+    GetGitRevisionDescription.cmake.in carry their own notices in their
+    file headers.
+
+vendor-deps/
+    Release archives of libass, libplacebo, mpv and zlib, each under the
+    copyright and licence of its own project. See README.md.
+
+The Plex Desktop web client is proprietary to Plex, Inc. It is not contained
+in this repository or in any release asset, and is not modified by this
+software.

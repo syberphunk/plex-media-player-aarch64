@@ -1,4 +1,4 @@
-# plex-media-player-arm64
+# plex-media-player-aarch64
 
 aarch64 build of Plex Media Player, packaged as a Flatpak.
 
@@ -84,7 +84,7 @@ zlib is held at 1.3.1. CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
 
 `.github/workflows/check-sources.yml` runs the check weekly;
 `.github/workflows/release.yml` builds, verifies and publishes on a
-`v*-arm64.*` tag.
+`v*-aarch64.*` tag.
 
 ## Install
 
@@ -100,7 +100,9 @@ the install.
 
 ## License
 
-GPL-2.0, per `LICENSE`. The Plex Desktop web client is proprietary to Plex,
+GPL-2.0, per `LICENSE`. Copyright holders are listed in `COPYRIGHT`.
+
+The Plex Desktop web client is proprietary to Plex,
 Inc. Neither this repository nor a release asset contains any part of it. It is
 declared as Flatpak `extra-data`, so it is downloaded from plex.tv at install
 time by the machine it is installed on, and `scripts/apply_extra` stages it

@@ -142,7 +142,7 @@ def sha256_file(path):
 
 
 def request(url, method="GET"):
-    headers = {"User-Agent": "plex-media-player-arm64-check-sources"}
+    headers = {"User-Agent": "plex-media-player-aarch64-check-sources"}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     parts = urllib.parse.urlsplit(url)
     if token and parts.scheme == "https" and parts.hostname == "api.github.com":

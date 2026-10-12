@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags:
-      - 'v*-arm64.*'
+      - 'v*-aarch64.*'
   workflow_dispatch:
     inputs:
       tag:

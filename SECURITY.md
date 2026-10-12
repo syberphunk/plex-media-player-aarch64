@@ -49,7 +49,7 @@ disabled, so there is no monitored channel here.
 
   ```
   gh attestation verify plex-media-player-aarch64.flatpak \
-    --repo syberphunk/plex-media-player-arm64
+    --repo syberphunk/plex-media-player-aarch64
   ```
 
 ## What it does not do
