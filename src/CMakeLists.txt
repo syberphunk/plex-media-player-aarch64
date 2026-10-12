@@ -76,9 +76,11 @@ list(APPEND RESOURCE_FILES qrc_resources.cpp)
 
 set(RESOURCE_ROOT .)
 
-add_resources(TARGET ${MAIN_TARGET} SOURCES ${WEB_TV_DIR} DEST ${RESOURCE_ROOT}/web-client/tv)
-if(NOT WEB_CLIENT_DISABLE_DESKTOP)
-  add_resources(TARGET ${MAIN_TARGET} SOURCES ${WEB_DESKTOP_DIR} DEST ${RESOURCE_ROOT}/web-client/desktop)
+if(WEB_TV_DIR)
+  add_resources(TARGET ${MAIN_TARGET} SOURCES ${WEB_TV_DIR} DEST ${RESOURCE_ROOT}/web-client/tv)
+  if(NOT WEB_CLIENT_DISABLE_DESKTOP)
+    add_resources(TARGET ${MAIN_TARGET} SOURCES ${WEB_DESKTOP_DIR} DEST ${RESOURCE_ROOT}/web-client/desktop)
+  endif()
 endif()
 
 set(rsrc_locations
@@ -90,8 +92,10 @@ foreach(loc ${rsrc_locations})
     install(FILES ${loc}/qtwebengine_devtools_resources.pak DESTINATION resources)
   endif()
 endforeach()
-install(DIRECTORY ${WEB_TV_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/tv)
-install(DIRECTORY ${WEB_DESKTOP_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/desktop)
+if(WEB_TV_DIR)
+  install(DIRECTORY ${WEB_TV_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/tv)
+  install(DIRECTORY ${WEB_DESKTOP_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/desktop)
+endif()
 
 get_property(BUNDLED_FILES GLOBAL PROPERTY CONFIG_BUNDLED_FILES)
 add_executable(${MAIN_TARGET} ${SOURCES} ${BUNDLED_FILES} ${RESOURCE_FILES})

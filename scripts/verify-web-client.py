@@ -12,9 +12,6 @@ TAG_RE = re.compile(r"<[a-zA-Z][^>]*>")
 INTEGRITY_RE = re.compile(r'integrity="([^"]*)"')
 SOURCE_RE = re.compile(r'(?:src|href)="([^"]*)"')
 
-WEBCHANNEL_SRC = "qrc://:/qtwebchannel/qwebchannel.js"
-WEBCHANNEL_SRC_QT6 = "qrc:///qtwebchannel/qwebchannel.js"
-
 
 def subresource_integrity(path, algorithm):
     digest = hashlib.new(algorithm)
@@ -67,22 +64,6 @@ def verify_page(page):
     return checked
 
 
-def fix_webchannel_url(page):
-    with open(page, encoding="utf-8") as fp:
-        markup = fp.read()
-
-    count = markup.count(WEBCHANNEL_SRC)
-    if not count:
-        if WEBCHANNEL_SRC_QT6 not in markup:
-            sys.exit("%s: no qwebchannel.js reference to rewrite" % page)
-        return 0
-
-    markup = markup.replace(WEBCHANNEL_SRC, WEBCHANNEL_SRC_QT6)
-    with open(page, "w", encoding="utf-8") as fp:
-        fp.write(markup)
-    return count
-
-
 def main(argv):
     if len(argv) != 2:
         sys.exit(__doc__)
@@ -100,9 +81,6 @@ def main(argv):
         checked = verify_page(page)
         print("%s: verified %d subresource%s"
               % (rel, checked, "" if checked == 1 else "s"))
-        count = fix_webchannel_url(page)
-        print("%s: %s" % (rel, "web channel URL rewritten for Qt 6"
-                          if count else "web channel URL already rewritten"))
 
     return 0
 

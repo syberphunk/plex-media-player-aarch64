@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+LIBEXEC=/app/libexec/plexmediaplayer
+PAYLOAD=plex-desktop.tar.bz2
+
+tar -xjf "$PAYLOAD" ./resources/web-client
+python3 -I "$LIBEXEC/stage-web-client.py" resources/web-client web-client
+python3 -I "$LIBEXEC/verify-web-client.py" web-client
+rm -rf resources "$PAYLOAD"

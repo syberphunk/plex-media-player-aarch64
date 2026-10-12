@@ -33,9 +33,11 @@ disabled, so there is no monitored channel here.
 
 - `scripts/check-sources.py` verifies every pinned source against its recorded
   hash and reports when a component has a newer upstream release.
-- `scripts/verify-web-client.py` verifies every subresource of the staged Plex
-  Desktop client against the subresource integrity attributes shipped in its
-  own `index.html`, and fails the build on any mismatch.
+- Flatpak verifies the Plex Desktop client download against the `sha256` and
+  `size` pinned in the manifest before `scripts/apply_extra` unpacks it.
+- `scripts/verify-web-client.py` then verifies every subresource of the staged
+  client against the subresource integrity attributes shipped in its own
+  `index.html`, and fails the install on any mismatch.
 - `scripts/verify-facade-flatpak.sh` runs the built Flatpak headless and fails
   the release when the client does not complete the host handshake or when a
   subresource integrity check is blocked.

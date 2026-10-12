@@ -239,7 +239,7 @@ def normalise(version, strip_v):
 def interesting(sources):
     out = []
     for source in sources:
-        if source.fields.get("type") not in ("archive", "file"):
+        if source.fields.get("type") not in ("archive", "file", "extra-data"):
             continue
         if "sha256" not in source.fields:
             continue
@@ -316,6 +316,17 @@ def check(sources, deep, offline):
                 else:
                     failures.append(report(module, False,
                                            "upstream unreachable: %s" % detail))
+                    continue
+
+                declared = source.fields.get("size")
+                if declared and detail and str(detail).isdigit():
+                    if declared == str(detail):
+                        report(module, True, "upstream serves %s bytes, as pinned"
+                               % declared)
+                    else:
+                        failures.append(report(module, False,
+                                               "upstream serves %s bytes, pinned %s"
+                                               % (detail, declared)))
 
     if offline:
         return failures, outdated
@@ -447,9 +458,12 @@ def update(raw, sources, outdated):
             raw[source.lines["url"]] = replace_line(raw, source.lines["url"], url)
             raw[source.lines["sha256"]] = replace_line(
                 raw, source.lines["sha256"], digest)
+            if "size" in source.lines and detail and str(detail).isdigit():
+                raw[source.lines["size"]] = replace_line(
+                    raw, source.lines["size"], str(detail))
             print("    pinned %s (%s)" % (os.path.basename(url), digest[:12]))
-            print("    the client's own integrity attributes are re-checked at"
-                  " build time by verify-web-client.py")
+            print("    the client's own integrity attributes are re-checked on"
+                  " the target by verify-web-client.py")
             changed = True
             continue
 

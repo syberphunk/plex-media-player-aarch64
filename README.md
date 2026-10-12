@@ -18,7 +18,9 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 
 `vendor-deps/` holds copies of the libass, libplacebo, mpv and zlib release
 archives listed above; the Flatpak manifest builds from those copies, so the
-only source the build downloads is the Plex Desktop client.
+build downloads nothing. The Plex Desktop client is declared as Flatpak
+`extra-data` and is fetched from plex.tv by `flatpak install`, on the machine
+the application is installed on.
 `external/qhttp/3rdparty/http-parser/` holds the http-parser copy listed above.
 
 Packaging references:
@@ -91,11 +93,23 @@ flatpak install --user plex-media-player-aarch64.flatpak
 flatpak run tv.plex.PlexMediaPlayer
 ```
 
+The install step downloads the Plex Desktop client from plex.tv, so it needs
+network access. It verifies the download against the `sha256` and `size` pinned
+in the manifest, then stages and verifies it on the target; a mismatch fails
+the install.
+
 ## License
 
 GPL-2.0, per `LICENSE`. The Plex Desktop web client is proprietary to Plex,
-Inc. This repository does not contain it. The build downloads it from plex.tv,
-verifies every subresource against the integrity attributes shipped in its own
-`index.html`, and installs it unmodified apart from one rewrite of the `qrc://`
-URL that loads `qwebchannel.js`, which Qt 6 requires. The released Flatpak
-bundle embeds the client as installed.
+Inc. Neither this repository nor a release asset contains any part of it. It is
+declared as Flatpak `extra-data`, so it is downloaded from plex.tv at install
+time by the machine it is installed on, and `scripts/apply_extra` stages it
+there, verifying every subresource against the integrity attributes shipped in
+the client's own `index.html`. Its files are used exactly as published; the
+`qwebchannel.js` that Qt 6 provides is injected by the host at document
+creation rather than by altering the client.
+
+Plex's terms of service are at
+https://www.plex.tv/about/privacy-legal/plex-terms-of-service/ and its privacy
+policy at https://www.plex.tv/about/privacy-legal/privacy-preferences/.
+`PRIVACY.md` records what this build collects.

@@ -2,6 +2,14 @@ include(FetchDependencies)
 
 option(WEB_CLIENT_TV_OLD "" OFF)
 option(WEB_CLIENT_DISABLE_DESKTOP "" OFF)
+option(WEB_CLIENT_PROVIDED_AT_RUNTIME "The web client is supplied on the target at install time" OFF)
+
+if(WEB_CLIENT_PROVIDED_AT_RUNTIME)
+  set(WEB_TV_DIR "")
+  set(WEB_DESKTOP_DIR "")
+  message(STATUS "web-client: supplied at install time")
+  return()
+endif()
 
 # This is the line to edit when you bump the web-client.
 set(WEB_CLIENT_BUILD_ID 183-045db5be50e175)

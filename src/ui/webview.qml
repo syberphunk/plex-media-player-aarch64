@@ -144,7 +144,6 @@ KonvergoWindow
       httpCacheType: WebEngineProfile.DiskHttpCache
       persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
     }
-    url: mainWindow.webUrl
     focus: true
     property string currentHoveredUrl: ""
     onLinkHovered: (hoveredUrl) => { web.currentHoveredUrl = hoveredUrl }
@@ -154,6 +153,15 @@ KonvergoWindow
 
     Component.onCompleted:
     {
+      var bridge = WebEngine.script()
+      bridge.name = "qwebchannel"
+      bridge.sourceUrl = "qrc:///qtwebchannel/qwebchannel.js"
+      bridge.injectionPoint = WebEngineScript.DocumentCreation
+      bridge.worldId = WebEngineScript.MainWorld
+      web.userScripts.insert(bridge)
+
+      web.url = Qt.binding(function() { return mainWindow.webUrl })
+
       forceActiveFocus()
       mainWindow.reloadWebClient.connect(reload)
     }
