@@ -4,6 +4,11 @@ Copyright © 2015-2026 Plex, Inc. and the Plex Media Player contributors
 
 Licensed under the GNU General Public License, version 2. See LICENSE.
 
+This is a modified version of plex-media-player, based on upstream commit
+d9685b2 of 2022-05-25 at https://github.com/plexinc/plex-media-player. The
+authorship and date of every change, upstream and local, is recorded in this
+repository's git history.
+
 Third-party components in this repository:
 
 external/qhttp/
