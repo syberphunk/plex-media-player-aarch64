@@ -190,6 +190,7 @@ echo "==> step 4/6: packaging the repository"
   echo "$REPO_DIR holds no app/$APP_ID/$ARCH/master" >&2
   exit 1
 }
+rm -f "$REPO_DIR/refs/heads/runtime/$APP_ID.Debug/$ARCH/master"
 flatpak build-update-repo --prune "$REPO_DIR" >/dev/null
 rm -f "$ARTIFACT"
 tar -C "$REPO_DIR" -czf "$ARTIFACT" .

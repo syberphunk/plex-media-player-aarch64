@@ -18,6 +18,7 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  pages: write
 
 jobs:
   build:
@@ -80,3 +81,49 @@ jobs:
 
       - name: Publish
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --publish-only
+
+      - name: Stage the repository for Pages
+        run: |
+          set -eu
+          ./scripts/stage-pages.sh "$(dirname "$GITHUB_WORKSPACE")/fp-repo" \
+            "https://${{ github.repository_owner }}.github.io/${GITHUB_REPOSITORY#*/}" \
+            pages
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+  pages:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  verify-pages:
+    needs: pages
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - name: Install flatpak
+        run: |
+          sudo add-apt-repository -y ppa:flatpak/stable
+          sudo apt-get update
+          sudo apt-get install -y flatpak
+
+      - name: Install from the published repository
+        run: |
+          set -eu
+          url=${{ needs.pages.outputs.url }}
+          ref="${url%/}/tv.plex.PlexMediaPlayer.flatpakref"
+          flatpak remote-add --user --if-not-exists \
+            flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive --from "$ref"
+          flatpak run --command=/usr/bin/test tv.plex.PlexMediaPlayer \
+            -s /app/share/plexmediaplayer/web-client/index.html
+          flatpak info --user tv.plex.PlexMediaPlayer

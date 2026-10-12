@@ -89,9 +89,19 @@ zlib is held at 1.3.1. CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
 
 `.github/workflows/check-sources.yml` runs the check weekly;
 `.github/workflows/release.yml` builds, verifies and publishes on a
-`v*-aarch64.*` tag.
+`v*-aarch64.*` tag, deploys the repository to Pages with
+`scripts/stage-pages.sh`, and installs from the deployed URL before finishing.
 
 ## Install
+
+```
+flatpak install --user --from \
+    https://syberphunk.github.io/plex-media-player-aarch64/tv.plex.PlexMediaPlayer.flatpakref
+flatpak run tv.plex.PlexMediaPlayer
+```
+
+`flatpak update` then follows the published repository. The release artifact is
+the same repository as a tarball, for installing without it:
 
 ```
 mkdir -p plex-media-player-aarch64-repo
