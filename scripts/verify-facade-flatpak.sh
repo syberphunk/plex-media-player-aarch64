@@ -164,7 +164,8 @@ done
 
 echo
 echo "==> errors and warnings"
-grep -nE 'ERROR|FATAL|WARN|Uncaught|undefined is not' "$OUT/run.log" | head -30 || echo "    none"
+grep -nE 'ERROR|FATAL|WARN|Uncaught|undefined is not' "$OUT/run.log" \
+  | grep -vF '] JS: ' | head -30 || echo "    none"
 
 cp "$OUT/run.log" "./facade-verify-$ARCH.log"
 echo

@@ -26,4 +26,6 @@ toolchain.cmake
 *.flatpak
 facade-verify-*.log
 facade-verify-*.png
+plex-desktop*.tar.bz2
+Plex-*-linux-*.tar.bz2
 __pycache__/
