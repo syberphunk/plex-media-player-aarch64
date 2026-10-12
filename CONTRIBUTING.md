@@ -15,9 +15,9 @@ Only Plex can build, sign and distribute an official Plex client for a platform.
 Requests for an official aarch64 Linux client belong with Plex, through the
 channels Plex operates:
 
-- [Feature Suggestions](https://forums.plex.tv/c/feature-suggestions) on the Plex
-  forums — one suggestion per topic, after searching for an existing topic to add
-  to or vote on.
+- [PlexHTPC, Plex, Plexamp Flatpak aarch64 (ARM) support](https://forums.plex.tv/t/plexhtpc-plex-plexamp-flatpak-aarch64-arm-support/884994)
+  in [Feature Suggestions](https://forums.plex.tv/c/feature-suggestions) on the
+  Plex forums — the existing topic for this request, to add to or vote on.
 - [Plex support](https://support.plex.tv/)
 - [Plex apps and downloads](https://www.plex.tv/media-server-downloads/#plex-app)
   for the clients Plex ships today.
