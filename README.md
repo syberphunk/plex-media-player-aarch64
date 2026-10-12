@@ -90,7 +90,9 @@ zlib is held at 1.3.1. CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
 `.github/workflows/check-sources.yml` runs the check weekly;
 `.github/workflows/release.yml` builds, verifies and publishes on a
 `v*-aarch64.*` tag, deploys the repository to Pages with
-`scripts/stage-pages.sh`, and installs from the deployed URL before finishing.
+`scripts/stage-pages.sh`, and calls
+`.github/workflows/verify-pages.yml`, which installs from the deployed URL.
+That workflow also runs on its own against the live site.
 
 ## Install
 

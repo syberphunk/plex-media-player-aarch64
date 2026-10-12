@@ -1,0 +1,49 @@
+name: verify-pages
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      url:
+        type: string
+        required: false
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - name: Install flatpak
+        run: |
+          sudo add-apt-repository -y ppa:flatpak/stable
+          sudo apt-get update
+          sudo apt-get install -y flatpak
+
+      - name: Install from the published repository
+        env:
+          URL: ${{ inputs.url }}
+        run: |
+          set -eu
+          url=${URL:-https://${{ github.repository_owner }}.github.io/${GITHUB_REPOSITORY#*/}/}
+          ref="${url%/}/tv.plex.PlexMediaPlayer.flatpakref"
+          echo "==> installing from $ref"
+          flatpak remote-add --user --if-not-exists \
+            flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive --from "$ref"
+
+      - name: Check the installation
+        run: |
+          set -eu
+          flatpak run --command=/bin/sh tv.plex.PlexMediaPlayer -c '
+            set -eu
+            cd /app/share/plexmediaplayer/web-client
+            for flavour in desktop tv; do
+              test -s "$flavour/index.html"
+              echo "    present  web-client/$flavour/index.html"
+            done
+            test -s buildid.cmake
+            cat buildid.cmake
+            test -x /app/bin/plexmediaplayer
+            echo "    present  /app/bin/plexmediaplayer"
+          '
+          flatpak info --user tv.plex.PlexMediaPlayer
