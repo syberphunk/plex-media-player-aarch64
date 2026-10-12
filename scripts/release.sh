@@ -7,7 +7,7 @@ usage() {
 usage: release.sh [options]
 
   --arch ARCH        target architecture (default: aarch64)
-  --tag TAG          release tag (default: v<version>-arm64.<next build>)
+  --tag TAG          release tag (default: v<version>-aarch64.<next build>)
   --gh-repo O/N      GitHub repository to publish to (default: origin)
   --build-dir DIR    flatpak-builder build dir (default: ../fp-build)
   --repo-dir DIR     ostree repo dir (default: ../fp-repo)
@@ -90,11 +90,11 @@ if [ -z "$TAG" ]; then
   next=1
   if [ "$PUBLISH" -eq 1 ] && command -v gh >/dev/null && [ -n "$GH_REPO" ]; then
     existing=$(gh release list --repo "$GH_REPO" --limit 100 \
-      --json tagName --jq ".[].tagName | select(startswith(\"v$VERSION-arm64.\"))" \
-      2>/dev/null | sed "s/^v$VERSION-arm64\.//" | sort -n | tail -1)
+      --json tagName --jq ".[].tagName | select(startswith(\"v$VERSION-aarch64.\"))" \
+      2>/dev/null | sed "s/^v$VERSION-aarch64\.//" | sort -n | tail -1)
     [ -n "$existing" ] && next=$((existing + 1))
   fi
-  TAG="v$VERSION-arm64.$next"
+  TAG="v$VERSION-aarch64.$next"
 fi
 
 echo "==> plex-media-player $VERSION, $ARCH, tag $TAG"
