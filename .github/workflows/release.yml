@@ -45,7 +45,8 @@ jobs:
       - name: Check pinned sources
         run: ./scripts/check-sources.py
 
-      - name: Build, verify and publish
+      - name: Resolve the release arguments
+        id: args
         run: |
           set -eu
           args="--arch $ARCH --gh-repo ${{ github.repository }}"
@@ -57,12 +58,18 @@ jobs:
           if [ "${{ inputs.allow_outdated }}" != "false" ]; then
             args="$args --allow-outdated"
           fi
-          ./scripts/release.sh $args
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Build and verify
+        run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
       - name: Attest the bundle's build provenance
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: plex-media-player-${{ env.ARCH }}.flatpak
+
+      - name: Publish
+        run: ./scripts/release.sh ${{ steps.args.outputs.args }} --publish-only
 
       - name: Upload the verification log
         if: always()

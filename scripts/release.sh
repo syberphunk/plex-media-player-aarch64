@@ -15,9 +15,35 @@ usage: release.sh [options]
   --allow-outdated   build even if a newer upstream release exists
   --no-verify        skip the headless verification gate
   --no-publish       build and verify, then stop before publishing
+  --publish-only     publish an already built bundle, skipping steps 1-5
   --offline          skip the source freshness check entirely
 EOF
   exit 1
+}
+
+publish() {
+  command -v gh >/dev/null || { echo "gh not found" >&2; exit 1; }
+  [ -n "$GH_REPO" ] || { echo "no GitHub repository: pass --gh-repo" >&2; exit 1; }
+
+  echo "==> step 6/6: publishing $TAG to $GH_REPO"
+  BODY="${TAG#v}
+
+$(basename "$BUNDLE")
+"
+
+  if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+    gh release edit "$TAG" --repo "$GH_REPO" \
+      --title "${TAG#v}" --notes "$BODY"
+    gh release upload "$TAG" "$BUNDLE" --repo "$GH_REPO" --clobber
+  else
+    gh release create "$TAG" "$BUNDLE" --repo "$GH_REPO" \
+      --title "${TAG#v}" --notes "$BODY"
+  fi
+
+  echo
+  gh release view "$TAG" --repo "$GH_REPO" \
+    --json tagName,name,body,assets \
+    --jq '{tag: .tagName, title: .name, body: .body, assets: [.assets[].name]}'
 }
 
 ARCH=aarch64
@@ -29,6 +55,7 @@ VERIFY_SECONDS=60
 ALLOW_OUTDATED=0
 VERIFY=1
 PUBLISH=1
+PUBLISH_ONLY=0
 OFFLINE=0
 
 while [ $# -gt 0 ]; do
@@ -42,6 +69,7 @@ while [ $# -gt 0 ]; do
     --allow-outdated) ALLOW_OUTDATED=1; shift;;
     --no-verify) VERIFY=0; shift;;
     --no-publish) PUBLISH=0; shift;;
+    --publish-only) PUBLISH_ONLY=1; shift;;
     --offline) OFFLINE=1; shift;;
     -h|--help) usage;;
     *) echo "unknown option: $1" >&2; usage;;
@@ -104,6 +132,18 @@ echo "    repo dir   $REPO_DIR"
 echo "    bundle     $BUNDLE"
 [ "$PUBLISH" -eq 1 ] && echo "    publish to $GH_REPO"
 echo
+
+if [ "$PUBLISH_ONLY" -eq 1 ]; then
+  [ -f "$BUNDLE" ] || {
+    echo "$BUNDLE not found: build it before --publish-only" >&2
+    exit 1
+  }
+  echo "==> steps 1-5/6: skipped, taking $BUNDLE as built"
+  echo "    $(du -h "$BUNDLE" | cut -f1)  $(sha256sum "$BUNDLE" | cut -d' ' -f1)"
+  echo
+  publish
+  exit 0
+fi
 
 echo "==> step 1/6: checking pinned sources"
 check_args=()
@@ -172,25 +212,4 @@ if [ "$PUBLISH" -eq 0 ]; then
   exit 0
 fi
 
-command -v gh >/dev/null || { echo "gh not found" >&2; exit 1; }
-[ -n "$GH_REPO" ] || { echo "no GitHub repository: pass --gh-repo" >&2; exit 1; }
-
-echo "==> step 6/6: publishing $TAG to $GH_REPO"
-BODY="${TAG#v}
-
-$(basename "$BUNDLE")
-"
-
-if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-  gh release edit "$TAG" --repo "$GH_REPO" \
-    --title "${TAG#v}" --notes "$BODY"
-  gh release upload "$TAG" "$BUNDLE" --repo "$GH_REPO" --clobber
-else
-  gh release create "$TAG" "$BUNDLE" --repo "$GH_REPO" \
-    --title "${TAG#v}" --notes "$BODY"
-fi
-
-echo
-gh release view "$TAG" --repo "$GH_REPO" \
-  --json tagName,name,body,assets \
-  --jq '{tag: .tagName, title: .name, body: .body, assets: [.assets[].name]}'
+publish
