@@ -1,13 +1,21 @@
 # Security
 
 This repository is an unofficial fork of
-[plexinc/plex-media-player](https://github.com/plexinc/plex-media-player),
-and the source for the builds attached to its releases. It is not a
-supported product: no advisories are issued, no CVE triage is performed, and no
-release is promised in response to a report. Issues, the wiki and projects are
-disabled, so there is no monitored channel here.
+[plexinc/plex-media-player](https://github.com/plexinc/plex-media-player), and
+the source for the builds attached to its releases. It is not affiliated with,
+endorsed by or supported by Plex, Inc., and it carries no warranty, per sections
+11 and 12 of [LICENSE](LICENSE).
 
-## Where to report
+## Reporting
+
+Private vulnerability reporting is enabled. Use **Security → Report a
+vulnerability** on this repository to send a report that is not publicly
+visible. Issues, the wiki and projects are disabled, so that is the channel for
+this fork's own code and packaging.
+
+A vulnerability in one of the components below belongs with that project, where
+a fix reaches everyone who uses it. It arrives in this build when the pin is
+raised and the bundle rebuilt.
 
 | Subject | Report to |
 | --- | --- |
@@ -21,13 +29,27 @@ disabled, so there is no monitored channel here.
 | org.kde.Platform / org.kde.Sdk | https://invent.kde.org/packaging/flatpak-kde-runtime/-/issues |
 | io.qt.qtwebengine.BaseApp | https://github.com/flathub/io.qt.qtwebengine.BaseApp/issues |
 
+## Fixes
+
+A fix is applied by raising the pin in
+`packaging/flatpak/tv.plex.PlexMediaPlayer.yml`, or by patching this fork's own
+code, and then rebuilding. Every pinned version is listed in
+[README.md](README.md), and a release asset is built only from a tagged commit
+of this repository.
+
+Where a pin is deliberately held back the reason is recorded with it: zlib stays
+at 1.3.1 because CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
+`scripts/check-sources.py --update` reports the newer release and leaves the pin
+alone.
+
 ## What GitHub checks
 
 - Dependabot alerts are enabled. They cover the GitHub Actions versions pinned
   in `.github/workflows/`; GitHub has no ecosystem for a Flatpak manifest, so
   the pinned C and C++ sources are not covered by them.
-- Code scanning, secret scanning and push protection are not available on this
-  repository, so nothing here is scanned by them.
+- Code scanning runs CodeQL over this fork's own C, C++, Python and workflow
+  code.
+- Secret scanning and push protection are enabled.
 
 ## What the build checks
 
@@ -44,19 +66,19 @@ disabled, so there is no monitored channel here.
 - The Flatpak's sandbox permissions are the `finish-args` list in
   `packaging/flatpak/tv.plex.PlexMediaPlayer.yml`.
 - `.github/workflows/release.yml` builds every release asset in GitHub Actions
-  and signs it with a build provenance attestation, which ties the bundle to
-  the workflow and the commit that produced it:
+  and signs it with a build provenance attestation before publishing it, tying
+  the bundle to the workflow and the commit that produced it:
 
   ```
   gh attestation verify plex-media-player-aarch64.flatpak \
     --repo syberphunk/plex-media-player-aarch64
   ```
 
-## What it does not do
+## Updating Chromium
 
-Chromium reaches the application through `io.qt.qtwebengine.BaseApp` at the
-runtime version pinned in the manifest. A release asset is a single-file Flatpak
-bundle, so it carries that Chromium until the manifest's runtime version is
-raised and the bundle is rebuilt; `flatpak update` refreshes the runtimes
-underneath it, not the application. The versions in each release are the ones
-listed in [README.md](README.md).
+`io.qt.qtwebengine.BaseApp` is a build-time base, so the QtWebEngine Chromium
+is copied into the application itself rather than loaded from a runtime.
+`flatpak update` refreshes `org.kde.Platform` underneath the application but
+does not change its Chromium. A newer Chromium arrives only by installing a
+release built against a newer `runtime-version`, so an installed build is
+replaced with a current release rather than left to update itself.
