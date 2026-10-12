@@ -39,6 +39,15 @@ jobs:
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      - name: Report runner facts
+        run: |
+          uname -a
+          getconf PAGE_SIZE
+          nproc
+          free -m
+          df -h /dev/shm /tmp
+          sysctl kernel.unprivileged_userns_clone vm.max_map_count || true
+
       - name: Check pinned sources
         run: ./scripts/check-sources.py
 
@@ -58,6 +67,10 @@ jobs:
           echo "args=$args" >> "$GITHUB_OUTPUT"
 
       - name: Build and verify
+        env:
+          QTWEBENGINE_CHROMIUM_FLAGS: >-
+            --no-sandbox --disable-dev-shm-usage
+            --enable-logging=stderr --log-level=0
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
       - name: Attest the bundle's build provenance
