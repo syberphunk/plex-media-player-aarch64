@@ -36,6 +36,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder xvfb ffmpeg
 
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Check pinned sources
         run: ./scripts/check-sources.py
 
