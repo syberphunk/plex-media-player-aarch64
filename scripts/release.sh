@@ -15,7 +15,7 @@ usage: release.sh [options]
   --allow-outdated   build even if a newer upstream release exists
   --no-verify        skip the headless verification gate
   --no-publish       build and verify, then stop before publishing
-  --publish-only     publish an already built bundle, skipping steps 1-5
+  --publish-only     publish an already built artifact, skipping steps 1-5
   --offline          skip the source freshness check entirely
 EOF
   exit 1
@@ -28,15 +28,15 @@ publish() {
   echo "==> step 6/6: publishing $TAG to $GH_REPO"
   BODY="${TAG#v}
 
-$(basename "$BUNDLE")
+$(basename "$ARTIFACT")
 "
 
   if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
     gh release edit "$TAG" --repo "$GH_REPO" \
       --title "${TAG#v}" --notes "$BODY"
-    gh release upload "$TAG" "$BUNDLE" --repo "$GH_REPO" --clobber
+    gh release upload "$TAG" "$ARTIFACT" --repo "$GH_REPO" --clobber
   else
-    gh release create "$TAG" "$BUNDLE" --repo "$GH_REPO" \
+    gh release create "$TAG" "$ARTIFACT" --repo "$GH_REPO" \
       --title "${TAG#v}" --notes "$BODY"
   fi
 
@@ -84,7 +84,8 @@ REPO_DIR=${REPO_DIR:-$WORKSPACE/fp-repo}
 APP_ID=tv.plex.PlexMediaPlayer
 MANIFEST="$REPO_ROOT/packaging/flatpak/$APP_ID.yml"
 RUNTIME_VERSION=$(sed -n "s/^runtime-version: *'\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$MANIFEST")
-BUNDLE="$REPO_ROOT/plex-media-player-$ARCH.flatpak"
+ARTIFACT="$REPO_ROOT/plex-media-player-$ARCH-repo.tar.gz"
+VERIFY_DIR="$WORKSPACE/fp-repo-verify"
 
 for tool in flatpak flatpak-builder python3 ffmpeg; do
   command -v "$tool" >/dev/null || { echo "$tool not found" >&2; exit 1; }
@@ -129,17 +130,17 @@ echo "==> plex-media-player $VERSION, $ARCH, tag $TAG"
 echo "    manifest   $MANIFEST"
 echo "    build dir  $BUILD_DIR"
 echo "    repo dir   $REPO_DIR"
-echo "    bundle     $BUNDLE"
+echo "    artifact   $ARTIFACT"
 [ "$PUBLISH" -eq 1 ] && echo "    publish to $GH_REPO"
 echo
 
 if [ "$PUBLISH_ONLY" -eq 1 ]; then
-  [ -f "$BUNDLE" ] || {
-    echo "$BUNDLE not found: build it before --publish-only" >&2
+  [ -f "$ARTIFACT" ] || {
+    echo "$ARTIFACT not found: build it before --publish-only" >&2
     exit 1
   }
-  echo "==> steps 1-5/6: skipped, taking $BUNDLE as built"
-  echo "    $(du -h "$BUNDLE" | cut -f1)  $(sha256sum "$BUNDLE" | cut -d' ' -f1)"
+  echo "==> steps 1-5/6: skipped, taking $ARTIFACT as built"
+  echo "    $(du -h "$ARTIFACT" | cut -f1)  $(sha256sum "$ARTIFACT" | cut -d' ' -f1)"
   echo
   publish
   exit 0
@@ -184,22 +185,23 @@ flatpak-builder --arch="$ARCH" --force-clean --disable-rofiles-fuse \
   --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
 
 echo
-echo "==> step 4/6: bundling"
-rm -f "$BUNDLE"
-flatpak build-bundle --arch="$ARCH" \
-  --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
-  "$REPO_DIR" "$BUNDLE" "$APP_ID"
-
-head -c 4096 "$BUNDLE" | strings | grep -q "app/$APP_ID/$ARCH/" || {
-  echo "$BUNDLE is not an $ARCH bundle" >&2
+echo "==> step 4/6: packaging the repository"
+[ -f "$REPO_DIR/refs/heads/app/$APP_ID/$ARCH/master" ] || {
+  echo "$REPO_DIR holds no app/$APP_ID/$ARCH/master" >&2
   exit 1
 }
-echo "    $(du -h "$BUNDLE" | cut -f1)  $(sha256sum "$BUNDLE" | cut -d' ' -f1)"
+flatpak build-update-repo --prune "$REPO_DIR" >/dev/null
+rm -f "$ARTIFACT"
+tar -C "$REPO_DIR" -czf "$ARTIFACT" .
+echo "    $(du -h "$ARTIFACT" | cut -f1)  $(sha256sum "$ARTIFACT" | cut -d' ' -f1)"
 
 echo
 if [ "$VERIFY" -eq 1 ]; then
   echo "==> step 5/6: verifying"
-  "$REPO_ROOT/scripts/verify-facade-flatpak.sh" "$REPO_DIR" "$ARCH" "$VERIFY_SECONDS"
+  rm -rf "$VERIFY_DIR"
+  mkdir -p "$VERIFY_DIR"
+  tar -C "$VERIFY_DIR" -xzf "$ARTIFACT"
+  "$REPO_ROOT/scripts/verify-facade-flatpak.sh" "$VERIFY_DIR" "$ARCH" "$VERIFY_SECONDS"
 else
   echo "==> step 5/6: verification skipped"
 fi
@@ -208,7 +210,7 @@ echo
 if [ "$PUBLISH" -eq 0 ]; then
   echo "==> step 6/6: publishing skipped"
   echo
-  echo "Bundle: $BUNDLE"
+  echo "Artifact: $ARTIFACT"
   exit 0
 fi
 

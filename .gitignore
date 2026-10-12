@@ -26,6 +26,7 @@ toolchain.cmake
 *.flatpak
 facade-verify-*.log
 facade-verify-*.png
+plex-media-player-*-repo.tar.gz
 plex-desktop*.tar.bz2
 Plex-*-linux-*.tar.bz2
 __pycache__/

@@ -73,10 +73,10 @@ jobs:
             --enable-logging=stderr --log-level=0
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
-      - name: Attest the bundle's build provenance
+      - name: Attest the artifact's build provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: plex-media-player-${{ env.ARCH }}.flatpak
+          subject-path: plex-media-player-${{ env.ARCH }}-repo.tar.gz
 
       - name: Publish
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --publish-only

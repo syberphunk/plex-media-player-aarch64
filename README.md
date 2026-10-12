@@ -34,7 +34,7 @@ Requires `flatpak`, `flatpak-builder`, `python3`, `xvfb`, `ffmpeg`, and — when
 aarch64 on another architecture — `qemu-user-static` with its binfmt handlers.
 Publishing additionally requires `gh`.
 
-One command installs the runtime, builds, bundles, verifies and publishes:
+One command installs the runtime, builds, packages, verifies and publishes:
 
 ```
 ./scripts/release.sh --arch aarch64
@@ -51,15 +51,20 @@ flatpak install -y flathub org.kde.Platform/aarch64/6.11 \
     org.kde.Sdk/aarch64/6.11 io.qt.qtwebengine.BaseApp/aarch64/6.11
 flatpak-builder --arch=aarch64 --force-clean --disable-rofiles-fuse \
     --repo=../fp-repo ../fp-build packaging/flatpak/tv.plex.PlexMediaPlayer.yml
-flatpak build-bundle --arch=aarch64 \
-    --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
-    ../fp-repo plex-media-player-aarch64.flatpak tv.plex.PlexMediaPlayer
+flatpak build-update-repo --prune ../fp-repo
+tar -C ../fp-repo -czf plex-media-player-aarch64-repo.tar.gz .
 ./scripts/verify-facade-flatpak.sh ../fp-repo aarch64 60
 ```
 
-`scripts/verify-facade-flatpak.sh` runs the bundle headless and exits non-zero
-unless the web client completes the host handshake, so a build whose client
-never starts cannot be published.
+`scripts/verify-facade-flatpak.sh` installs from the packaged repository and
+runs it headless, and exits non-zero unless the web client completes the host
+handshake, so a build whose client never starts cannot be published.
+
+The release artifact is an OSTree repository rather than a single-file bundle.
+`flatpak install` downloads `extra-data` while pulling from a remote;
+`flatpak_dir_install_bundle` does not pull it, so an application that declares
+`extra-data` can only be installed from a repository unless the payload is
+carried inside the bundle.
 
 ## Sources
 
@@ -89,7 +94,11 @@ zlib is held at 1.3.1. CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
 ## Install
 
 ```
-flatpak install --user plex-media-player-aarch64.flatpak
+mkdir -p plex-media-player-aarch64-repo
+tar -xzf plex-media-player-aarch64-repo.tar.gz -C plex-media-player-aarch64-repo
+flatpak remote-add --user --no-gpg-verify plex-media-player-aarch64 \
+    "file://$PWD/plex-media-player-aarch64-repo"
+flatpak install --user plex-media-player-aarch64 tv.plex.PlexMediaPlayer
 flatpak run tv.plex.PlexMediaPlayer
 ```
 
