@@ -130,20 +130,20 @@ KonvergoWindow
     objectName: "video"
   }
 
+  WebEngineProfilePrototype
+  {
+    id: webProfile
+    storageName: "plexmediaplayer"
+    httpCacheType: WebEngineProfile.DiskHttpCache
+    persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
+  }
+
   WebEngineView
   {
     id: web
     objectName: "web"
     settings.errorPageEnabled: false
     settings.localContentCanAccessRemoteUrls: true
-    profile: WebEngineProfile
-    {
-      storageName: "plexmediaplayer"
-      offTheRecord: false
-      httpUserAgent: components.system.getUserAgent()
-      httpCacheType: WebEngineProfile.DiskHttpCache
-      persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
-    }
     focus: true
     property string currentHoveredUrl: ""
     onLinkHovered: (hoveredUrl) => { web.currentHoveredUrl = hoveredUrl }
@@ -153,6 +153,9 @@ KonvergoWindow
 
     Component.onCompleted:
     {
+      web.profile = webProfile.instance()
+      web.profile.httpUserAgent = components.system.getUserAgent()
+
       var bridge = WebEngine.script()
       bridge.name = "qwebchannel"
       bridge.sourceUrl = "qrc:///qtwebchannel/qwebchannel.js"
