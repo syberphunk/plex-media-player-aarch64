@@ -137,7 +137,7 @@ if len(colours) < 16:
              % len(colours))
 PY
 
-APP_LOG="$HOME/.var/app/$APP_ID/cache/plexmediaplayer/logs/Plex Media Player.log"
+APP_LOG="$HOME/.var/app/$APP_ID/data/plexmediaplayer/logs/plexmediaplayer.log"
 [ -f "$APP_LOG" ] && cat "$APP_LOG" >> "$OUT/run.log"
 
 echo
