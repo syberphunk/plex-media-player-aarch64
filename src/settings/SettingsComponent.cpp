@@ -717,44 +717,6 @@ void SettingsComponent::setupVersion()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void SettingsComponent::setUserRoleList(const QStringList& userRoles)
-{
-  QVariantList values;
-
-  // Channel names and values are aligned with values expected by plex.tv.
-  // See: https://github.com/plexinc/plex-media-player-private/issues/642
-
-  // Public is always available as the default value.
-  QVariantMap publicChannel;
-  publicChannel.insert("value", 0);
-  publicChannel.insert("title", "Public");
-  values << publicChannel;
-
-  if (userRoles.contains("plexpass")) {
-    QVariantMap betaChannel;
-    betaChannel.insert("value", 8);
-    betaChannel.insert("title", "Beta");
-    values << betaChannel;
-  }
-
-  if (userRoles.contains("ninja")) {
-    QVariantMap alphaChannel;
-    alphaChannel.insert("value", 4);
-    alphaChannel.insert("title", "Alpha");
-    values << alphaChannel;
-  }
-
-  if (userRoles.contains("employee")) {
-    QVariantMap qaChannel;
-    qaChannel.insert("value", 2);
-    qaChannel.insert("title", "QA");
-    values << qaChannel;
-  }
-
-  updatePossibleValues(SETTINGS_SECTION_MAIN, "updateChannel", values);
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
 bool SettingsComponent::resetAndSaveOldConfiguration()
 {
   QFile settingsFile(Paths::dataDir("plexmediaplayer.conf"));

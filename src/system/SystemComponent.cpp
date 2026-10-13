@@ -281,14 +281,6 @@ QStringList SystemComponent::networkAddresses() const
 /////////////////////////////////////////////////////////////////////////////////////////
 void SystemComponent::userInformation(const QVariantMap& userModel)
 {
-  QStringList roleList;
-  for(const QVariant& role : userModel.value("roles").toList())
-  { 
-    roleList << role.toMap().value("id").toString();
-  }
-
-  SettingsComponent::Get().setUserRoleList(roleList);
-
   m_authenticationToken = userModel.value("authToken").toString();
   emit userInfoChanged();
 }
