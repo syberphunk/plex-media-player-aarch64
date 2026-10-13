@@ -3,6 +3,7 @@
 #include "settings/SettingsComponent.h"
 #include "system/SystemComponent.h"
 #include "power/PowerComponent.h"
+#include "player/PlayerComponent.h"
 #include "InputKeyboard.h"
 #include "InputSocket.h"
 #include "InputRoku.h"
@@ -224,6 +225,9 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
       queuedActions.append(action.toStringList());
     }
   }
+
+  if (PlayerComponent::Get().inPlayback())
+    m_autoRepeatActions.clear();
 
   if (!m_autoRepeatActions.isEmpty() && keyState != InputBase::KeyPressed)
     m_autoRepeatTimer->start(INITAL_AUTOREPEAT_MSEC);

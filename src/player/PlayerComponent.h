@@ -125,6 +125,8 @@ public:
 
   bool videoWindowVisible() const { return m_windowVisible; }
 
+  bool inPlayback() const { return m_inPlayback; }
+
   const mpv::qt::Handle getMpvHandle() const { return m_mpv; }
 
   virtual void setWindow(QQuickWindow* window);

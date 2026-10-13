@@ -14,6 +14,8 @@
 #include <QKeyEvent>
 #include <QObject>
 
+#define MIN_KEYDOWN_INTERVAL_MSEC 150
+
 static QStringList desktopWhiteListedKeys = { "Media Play",
                                               "Media Pause",
                                               "Media Stop",
@@ -190,6 +192,13 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
         if (m_currentKeyDown == kevent->key())
           return true;
         m_currentKeyDown = kevent->key();
+
+        if (m_lastKeyDown == kevent->key() && m_lastKeyDownTime.isValid() &&
+            m_lastKeyDownTime.elapsed() < MIN_KEYDOWN_INTERVAL_MSEC)
+          return true;
+
+        m_lastKeyDown = kevent->key();
+        m_lastKeyDownTime.start();
       }
     }
     else
