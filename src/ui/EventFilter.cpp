@@ -141,7 +141,8 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
        ((event->type() == QEvent::MouseMove) ||
         (event->type() == QEvent::MouseButtonPress) ||
         (event->type() == QEvent::MouseButtonRelease) ||
-        (event->type() == QEvent::MouseButtonDblClick)))
+        (event->type() == QEvent::MouseButtonDblClick) ||
+        (event->type() == QEvent::Wheel)))
   {
     return true;
   }
@@ -217,7 +218,7 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
   }
   else if (event->type() == QEvent::Wheel)
   {
-    return true;
+    system.setCursorVisibility(true);
   }
   else if (event->type() == QEvent::MouseButtonPress)
   {
