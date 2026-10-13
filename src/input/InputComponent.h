@@ -132,6 +132,9 @@ private:
 
   QVariantMap m_currentLongPressAction;
   QElapsedTimer m_longHoldTimer;
+
+  QStringList m_lastActions;
+  QElapsedTimer m_lastActionTime;
 };
 
 #endif // INPUTADAPTER_H

@@ -23,6 +23,7 @@
 #define LONG_HOLD_MSEC 500
 #define INITAL_AUTOREPEAT_MSEC 450
 #define AUTOREPEAT_MSEC 180
+#define MIN_ACTION_INTERVAL_MSEC 150
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static bool actionRepeats(const QString& action)
@@ -232,8 +233,17 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
   if (!m_autoRepeatActions.isEmpty() && keyState != InputBase::KeyPressed)
     m_autoRepeatTimer->start(INITAL_AUTOREPEAT_MSEC);
 
+  if (m_lastActionTime.isValid() && m_lastActionTime.elapsed() < MIN_ACTION_INTERVAL_MSEC)
+  {
+    for (const auto& action : m_lastActions)
+      queuedActions.removeAll(action);
+  }
+
   if (!queuedActions.isEmpty())
   {
+    m_lastActions = queuedActions;
+    m_lastActionTime.start();
+
     if (SystemComponent::Get().isWebClientConnected())
     {
       QLOG_DEBUG() << "Emit input action:" << queuedActions;
