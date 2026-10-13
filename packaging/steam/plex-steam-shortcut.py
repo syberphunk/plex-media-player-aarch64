@@ -17,8 +17,8 @@ MAP, STR, INT, END = 0x00, 0x01, 0x02, 0x08
 FLOAT, PTR, WSTR, UINT64, INT64 = 0x03, 0x04, 0x05, 0x07, 0x0A
 
 ARTWORK = [
-    ("grid", "%s.png", "landscape capsule, 920x430"),
-    ("poster", "%sp.png", "portrait capsule, 600x900"),
+    ("capsule", "%s.png", "wide capsule, 920x430"),
+    ("portrait", "%sp.png", "portrait capsule, 600x900"),
     ("hero", "%s_hero.png", "hero banner, 1920x620"),
     ("logo", "%s_logo.png", "logo, transparent png"),
 ]
@@ -31,12 +31,9 @@ ICON_SEARCH = [
 HELP = """\
 Add the Plex flatpak to Steam as a non-Steam shortcut.
 
-Run this with Steam shut down. Steam rewrites shortcuts.vdf when it exits, so
-an edit made while it is running is discarded. Restart Steam afterwards.
-
-On a Steam Frame the desktop is reached from the SteamVR dashboard: Launch a
-program, then Desktop. Developer Mode must be on (Settings, System, Developer
-Mode), which also sets the password used for remote desktop.
+Steam reads shortcuts.vdf when it starts and writes its own copy back when it
+exits, so restart Steam afterwards, and shut it down beforehand where that is
+possible. Check the result with --list.
 """
 
 
@@ -302,7 +299,7 @@ def menu(configs, dry_run):
         print()
         print("Plex, Steam shortcut")
         if steam_is_running():
-            print("Steam is running. Shut it down first or the edit will be discarded.")
+            print("Steam is running. Restart it afterwards, then check with 4.")
         print()
         print("  1) Add the shortcut")
         print("  2) Remove the shortcut")
@@ -368,7 +365,7 @@ def main():
         return menu(configs, args.dry_run)
 
     if steam_is_running():
-        print("Steam is running. Shut it down first or the edit will be discarded.",
+        print("Steam is running. Restart it afterwards, then check with --list.",
               file=sys.stderr)
 
     changed = False

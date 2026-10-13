@@ -132,8 +132,9 @@ the install.
 a non-Steam shortcut, calling `flatpak run tv.plex.PlexMediaPlayer`. It needs
 only python3.
 
-Run it with Steam shut down. Steam rewrites `shortcuts.vdf` when it exits, so an
-edit made while it is running is discarded. Restart Steam afterwards.
+Steam reads `shortcuts.vdf` when it starts and writes its own copy back when it
+exits, so restart Steam afterwards, and shut it down beforehand where that is
+possible. `--list` shows what is in the file.
 
 ```
 python3 packaging/steam/plex-steam-shortcut.py
@@ -155,20 +156,27 @@ Steam `userdata/<id>/config` directory, repeatable, when the search paths
 (`~/.steam/steam`, `~/.local/share/Steam`, `~/.steam/root`) do not apply.
 
 The icon is taken from the Flatpak's own exported icon when one is installed, or
-from `--icon FILE`. No artwork is shipped in this repository. Steam's library
-artwork is read from `userdata/<id>/config/grid`, and image files you supply are
-copied there under the names Steam expects:
+from `--icon FILE`. That icon is the small one beside the name in a list; the
+library tiles are separate images, which Steam reads from
+`userdata/<id>/config/grid`, named after the shortcut's app id:
+
+| Option | File | Size | Where it appears |
+| --- | --- | --- | --- |
+| `--portrait` | `<appid>p.png` | 600x900 | the tall tile in the library grid |
+| `--capsule` | `<appid>.png` | 920x430 | the wide tile in rows and lists |
+| `--hero` | `<appid>_hero.png` | 1920x620 | the banner across the top of the page |
+| `--logo` | `<appid>_logo.png` | transparent png | over the banner, in place of the name |
+
+Any image file is accepted and copied under the name in the table; the app id is
+derived from the shortcut, so the script works it out. Each option is
+independent, and menu option 3 asks for the same four.
 
 ```
 python3 packaging/steam/plex-steam-shortcut.py \
-    --grid capsule.png --poster portrait.png --hero hero.png --logo logo.png
+    --portrait tall.png --capsule wide.png --hero banner.png --logo logo.png
 ```
 
-On a Steam Frame the desktop is reached from the SteamVR dashboard: Launch a
-program, then Desktop. Developer Mode must be enabled first, under Settings,
-System, Developer Mode, which also sets the password used for remote desktop.
-Steam's own Games, Add a Non-Steam Game is available in that session; the script
-is there for when it is not reachable.
+No artwork is shipped in this repository.
 
 `shortcuts.vdf` is Valve's binary VDF format, so the script parses the existing
 file and rewrites it, preserving other entries and their tags. It backs up to
