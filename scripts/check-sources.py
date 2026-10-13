@@ -38,6 +38,22 @@ UPSTREAM = {
         "vendor": "libass-%(v)s.tar.gz",
         "readme": ("libass", ""),
     },
+    "hwdata": {
+        "probe": ("github", "vcrhonek/hwdata"),
+        "strip_v": True,
+        "url": "https://github.com/vcrhonek/hwdata/archive/refs/tags/v%(v)s.tar.gz",
+        "vendor": "hwdata-%(v)s.tar.gz",
+        "readme": ("hwdata", "v"),
+    },
+    "libdisplay-info": {
+        "probe": ("gitlab", "https://gitlab.freedesktop.org",
+                  "emersion%2Flibdisplay-info"),
+        "strip_v": True,
+        "asset": ("https://gitlab.freedesktop.org", "emersion%2Flibdisplay-info",
+                  "libdisplay-info-%(v)s.tar.xz"),
+        "vendor": "libdisplay-info-%(v)s.tar.xz",
+        "readme": ("libdisplay-info", ""),
+    },
     "libmpv": {
         "probe": ("github", "mpv-player/mpv"),
         "strip_v": True,
@@ -213,6 +229,17 @@ def latest_version(spec):
                                % sorted(versions))
         return versions.pop()
     raise RuntimeError("unknown probe %r" % (spec,))
+
+
+def release_asset(spec, version):
+    host, project, name = spec
+    wanted = name % {"v": version}
+    releases = fetch_json("%s/api/v4/projects/%s/releases" % (host, project))
+    for release in releases:
+        for link in release.get("assets", {}).get("links", []):
+            if link.get("name") == wanted or link.get("url", "").endswith("/" + wanted):
+                return link["url"]
+    return None
 
 
 def pinned_version(source, module):
@@ -467,7 +494,19 @@ def update(raw, sources, outdated):
             changed = True
             continue
 
-        url = spec["url"] % {"v": latest}
+        if spec.get("asset"):
+            try:
+                url = release_asset(spec["asset"], latest)
+            except Exception as problem:
+                print("    release lookup failed: %s -- leaving the pin alone"
+                      % problem)
+                continue
+            if not url:
+                print("    no release asset found for %s -- leaving the pin alone"
+                      % latest)
+                continue
+        else:
+            url = spec["url"] % {"v": latest}
         ok, _ = head_ok(url)
         if not ok and spec.get("fallback_url"):
             url = spec["fallback_url"] % {"v": latest}

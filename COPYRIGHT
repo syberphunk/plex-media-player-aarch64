@@ -27,8 +27,9 @@ CMakeModules/
     file headers.
 
 vendor-deps/
-    Release archives of libass, libplacebo, mpv and zlib, each under the
-    copyright and licence of its own project. See README.md.
+    Release archives of hwdata, libass, libdisplay-info, libplacebo, mpv and
+    zlib, each under the copyright and licence of its own project. See
+    README.md.
 
 The Plex Desktop web client is proprietary to Plex, Inc. It is not contained
 in this repository or in any release asset, and is not modified by this

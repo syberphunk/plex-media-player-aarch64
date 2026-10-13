@@ -58,6 +58,29 @@ modules:
         path: ../../vendor-deps/libplacebo-v7.360.1.tar.gz
         sha256: 41893531edad334905886c9b5778751db2ec1b78d51c4ecc272057c92bc678a5
 
+  - name: hwdata
+    buildsystem: simple
+    build-commands:
+      - ./configure --prefix=/app --datadir=/app/share --disable-blacklist
+      - make install
+    cleanup:
+      - '*'
+    sources:
+      - type: archive
+        path: ../../vendor-deps/hwdata-0.412.tar.gz
+        sha256: f0c64cd7e31d70a5fb3a52e53ab50a61e74c0421a6381eaa45114eec3bde5fe7
+
+  - name: libdisplay-info
+    buildsystem: meson
+    config-opts:
+      - --libdir=lib
+    cleanup:
+      - /bin
+    sources:
+      - type: archive
+        path: ../../vendor-deps/libdisplay-info-0.4.0.tar.xz
+        sha256: 43b180baa143e2035654759d84e2b2f5ee77d5fe817c423838c7fe59c0d68459
+
   - name: libmpv
     buildsystem: meson
     config-opts:
