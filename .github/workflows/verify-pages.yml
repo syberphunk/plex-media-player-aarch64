@@ -8,6 +8,8 @@ on:
         type: string
         required: false
 
+permissions: {}
+
 jobs:
   install:
     runs-on: ubuntu-24.04-arm
