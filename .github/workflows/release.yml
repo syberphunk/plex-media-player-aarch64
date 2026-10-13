@@ -14,16 +14,16 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
-  pages: write
+permissions: {}
 
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     env:
       ARCH: aarch64
       GH_TOKEN: ${{ github.token }}
@@ -96,6 +96,9 @@ jobs:
   pages:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
