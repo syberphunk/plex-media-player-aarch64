@@ -1,0 +1,48 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      allow_outdated:
+        description: Build even if a newer upstream release exists
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 360
+    env:
+      ARCH: aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo add-apt-repository -y ppa:flatpak/stable
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder xvfb ffmpeg
+
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Check pinned sources
+        run: ./scripts/check-sources.py
+
+      - name: Resolve the build arguments
+        id: args
+        run: |
+          set -eu
+          args="--arch $ARCH"
+          if [ "${{ inputs.allow_outdated }}" != "false" ]; then
+            args="$args --allow-outdated"
+          fi
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Build and verify
+        env:
+          QTWEBENGINE_CHROMIUM_FLAGS: >-
+            --no-sandbox --disable-dev-shm-usage
+            --enable-logging=stderr --log-level=0
+        run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish

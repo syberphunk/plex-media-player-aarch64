@@ -5,9 +5,12 @@
 #include "EventFilter.h"
 #include "system/SystemComponent.h"
 #include "settings/SettingsComponent.h"
+#include "input/InputComponent.h"
 #include "input/InputKeyboard.h"
 #include "KonvergoWindow.h"
 
+#include <QGuiApplication>
+#include <QInputMethodQueryEvent>
 #include <QKeyEvent>
 #include <QObject>
 
@@ -51,6 +54,47 @@ static QString keyEventToKeyString(QKeyEvent *kevent)
   }
 
   return modifiers.toString() + key;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static bool textEntryFocused()
+{
+  QObject* focus = QGuiApplication::focusObject();
+  if (!focus)
+    return false;
+
+  QInputMethodQueryEvent query(Qt::ImEnabled);
+  QCoreApplication::sendEvent(focus, &query);
+
+  return query.value(Qt::ImEnabled).toBool();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static bool belongsToTextEntry(QKeyEvent* kevent)
+{
+  if (kevent->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))
+    return false;
+
+  switch (kevent->key())
+  {
+    case Qt::Key_Escape:
+      return false;
+    case Qt::Key_Left:
+    case Qt::Key_Right:
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+    case Qt::Key_Home:
+    case Qt::Key_End:
+    case Qt::Key_Backspace:
+    case Qt::Key_Delete:
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab:
+      return true;
+    default:
+      return !kevent->text().isEmpty() && kevent->text().at(0).isPrint();
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -120,6 +164,13 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
 
     QString keyName = keyEventToKeyString(kevent);
 
+    if (belongsToTextEntry(kevent) && textEntryFocused())
+    {
+      m_currentKeyDown = -1;
+      InputComponent::Get().cancelAutoRepeat();
+      return QObject::eventFilter(watched, event);
+    }
+
 #ifdef Q_OS_WIN32
     // On Windows, we get some media keys twice. This is because Windows supports both
     // normal key events and APPCOMMAND_ messages for media keys. To avoid getting two
@@ -132,17 +183,17 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
     if (keystatus == InputBase::KeyDown)
     {
       // Swallow auto-repeated keys (isAutoRepeat doesn't always work - QTBUG-57335)
-      // Do this only for non-modifier keys (QKeyEvent::text serves as a heuristic
-      // to distinguish them from normal key presses)
-      if (kevent->text().size())
+      if (kevent->key() != Qt::Key_Shift && kevent->key() != Qt::Key_Control &&
+          kevent->key() != Qt::Key_Alt && kevent->key() != Qt::Key_Meta &&
+          kevent->key() != Qt::Key_AltGr)
       {
-        if (m_currentKeyDown)
+        if (m_currentKeyDown == kevent->key())
           return true;
-        m_currentKeyDown = true;
+        m_currentKeyDown = kevent->key();
       }
     }
     else
-      m_currentKeyDown = false;
+      m_currentKeyDown = -1;
 
     system.setCursorVisibility(false);
     if (kevent->spontaneous() && !kevent->isAutoRepeat())

@@ -12,13 +12,13 @@ class EventFilter : public QObject
 {
   Q_OBJECT
 public:
-  explicit EventFilter(QObject* parent = nullptr) : QObject(parent), m_currentKeyDown(false) {}
+  explicit EventFilter(QObject* parent = nullptr) : QObject(parent), m_currentKeyDown(-1) {}
 
 protected:
   bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
-  bool m_currentKeyDown;
+  int m_currentKeyDown;
 };
 
 #endif //PLEXMEDIAPLAYER_EVENTFILTER_H

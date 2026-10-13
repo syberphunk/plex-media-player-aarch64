@@ -20,21 +20,46 @@
 #endif
 
 #define LONG_HOLD_MSEC 500
-#define INITAL_AUTOREPEAT_MSEC 650
+#define INITAL_AUTOREPEAT_MSEC 450
+#define AUTOREPEAT_MSEC 180
 
-// Synthetic key repeat events are emitted at 60ms intervals. The interval is
-// half of the fastest press-and-release time. Empirical key repeat intervals:
-//   * Key hold on macOS wireless USB keyboard with fastest key repeat preference: ~35s
-//   * Press and release on macOS wireless USB keyboard (like a meth monkey): ~120ms
-//   * Key hold on macOS Apple TV IR remote + FLiRC (3.8 firmware) with fastest key repeat preference: ~35s
-//   * Press and release on macOS Apple TV IR remote + FLiRC (3.8 firmware): ~150ms
-//
-#define AUTOREPEAT_MSEC 60
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static bool actionRepeats(const QString& action)
+{
+  static const QStringList repeatable = {
+    "up",
+    "down",
+    "left",
+    "right",
+    "seek_forward",
+    "seek_backward",
+    "increase_volume",
+    "decrease_volume",
+    "increase_audio_delay",
+    "decrease_audio_delay",
+    "increase_subtitles_delay",
+    "decrease_subtitles_delay",
+  };
+
+  return repeatable.contains(action);
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 InputComponent::InputComponent(QObject* parent) : ComponentBase(parent)
 {
   m_mappings = new InputMapping(this);
+
+  m_autoRepeatTimer = new QTimer(this);
+  connect(m_autoRepeatTimer, &QTimer::timeout, this, [this]()
+  {
+    if (!m_autoRepeatActions.isEmpty())
+    {
+      QLOG_DEBUG() << "Emit input action (autorepeat):" << m_autoRepeatActions;
+      emit hostInput(m_autoRepeatActions);
+    }
+
+    m_autoRepeatTimer->setInterval(AUTOREPEAT_MSEC);
+  });
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,20 +78,6 @@ bool InputComponent::addInput(InputBase* base)
   // needs to be remaped in remapInput and then finally send it out to JS land.
   //
   connect(base, &InputBase::receivedInput, this, &InputComponent::remapInput);
-
-  // for auto-repeating inputs
-  //
-  m_autoRepeatTimer = new QTimer(this);
-  connect(m_autoRepeatTimer, &QTimer::timeout, [=]()
-  {
-    if (!m_autoRepeatActions.isEmpty())
-    {
-      QLOG_DEBUG() << "Emit input action (autorepeat):" << m_autoRepeatActions;
-      emit hostInput(m_autoRepeatActions);
-    }
-
-    m_autoRepeatTimer->setInterval(AUTOREPEAT_MSEC);
-  });
 
   return true;
 }
@@ -187,7 +198,8 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
     if (action.typeId() == QMetaType::QString)
     {
       queuedActions.append(action.toString());
-      m_autoRepeatActions.append(action.toString());
+      if (actionRepeats(action.toString()))
+        m_autoRepeatActions.append(action.toString());
     }
     else if (action.typeId() == QMetaType::QVariantMap)
     {
