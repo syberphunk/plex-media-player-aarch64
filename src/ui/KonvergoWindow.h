@@ -131,6 +131,7 @@ private:
   int m_ignoreFullscreenSettingsChange;
   int m_forcedFullscreenCount;
   bool m_webDesktopMode;
+  bool m_closing;
 
   unsigned long m_osxPresentationOptions;
   QString m_currentScreenName;

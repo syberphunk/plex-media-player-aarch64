@@ -41,6 +41,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   m_debugLayer(false),
   m_ignoreFullscreenSettingsChange(0),
   m_forcedFullscreenCount(0),
+  m_closing(false),
   m_osxPresentationOptions(0)
 {
   // NSWindowCollectionBehaviorFullScreenPrimary is only set on OSX if Qt::WindowFullscreenButtonHint is set on the window.
@@ -136,6 +137,11 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
 /////////////////////////////////////////////////////////////////////////////////////////
 void KonvergoWindow::closingWindow()
 {
+  if (m_closing)
+    return;
+
+  m_closing = true;
+
   if (!SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "fullscreen").toBool())
     saveGeometry();
 
