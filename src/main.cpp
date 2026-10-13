@@ -101,29 +101,9 @@ void ShowLicenseInfo()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-static bool webSecurityDisabled()
-{
-  const QByteArray override = qgetenv("PMP_DISABLE_WEB_SECURITY");
-  if (!override.isEmpty())
-    return override != "0";
-
-  // Warning: this must be the same as the default value as declared in
-  // the settings_description.json file, or confusion will result.
-  QVariant setting = SettingsComponent::readPreinitValue(SETTINGS_SECTION_MAIN, "disableWebSecurity");
-  if (setting.typeId() != QMetaType::Bool)
-    return false;
-
-  return setting.toBool();
-}
-
 static QStringList qtFlags()
 {
-  QStringList flags = { "--disable-gpu" };
-
-  if (webSecurityDisabled())
-    flags << "--disable-web-security";
-
-  return flags;
+  return { "--disable-gpu" };
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
