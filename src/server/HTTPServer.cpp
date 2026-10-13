@@ -19,7 +19,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////
 HttpServer::HttpServer(QObject* parent) : QObject(parent)
 {
-  m_server = new QHttpServer(this);
+  m_server = new HttpListener(this);
   m_baseUrl = ":/konvergo";
   m_port = (quint16)SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "webserverport").toUInt();
 }
@@ -27,7 +27,7 @@ HttpServer::HttpServer(QObject* parent) : QObject(parent)
 /////////////////////////////////////////////////////////////////////////////////////////
 bool HttpServer::start()
 {
-  connect(m_server, &QHttpServer::newRequest, this, &HttpServer::handleRequest);
+  connect(m_server, &HttpListener::newRequest, this, &HttpServer::handleRequest);
 
   const bool remote = SettingsComponent::Get().remoteControlEnabled();
   const QHostAddress address = remote ? QHostAddress(QHostAddress::AnyIPv4)
@@ -44,7 +44,7 @@ bool HttpServer::start()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::writeError(QHttpResponse* response, qhttp::TStatusCode errorCode)
+void HttpServer::writeError(HttpResponse* response, HttpResponse::StatusCode errorCode)
 {
   QByteArray errorStyle = "<style>h1 {color:red;}</style>";
   response->setStatusCode(errorCode);
@@ -53,16 +53,16 @@ void HttpServer::writeError(QHttpResponse* response, qhttp::TStatusCode errorCod
   QByteArray error;
   switch (errorCode)
   {
-    case qhttp::ESTATUS_FORBIDDEN:
+    case HttpResponse::StatusCode::Forbidden:
       error = "Access to file denied. You might want to check permissions";
       break;
-    case qhttp::ESTATUS_NOT_FOUND:
+    case HttpResponse::StatusCode::NotFound:
       error = "Could not find that file. Install might be broken?";
       break;
-    case qhttp::ESTATUS_METHOD_NOT_ALLOWED:
+    case HttpResponse::StatusCode::MethodNotAllowed:
       error = "That method is not allowed.";
       break;
-    case qhttp::ESTATUS_NOT_IMPLEMENTED:
+    case HttpResponse::StatusCode::NotImplemented:
       error = "This request is not yet implemented";
       break;
     default:
@@ -75,7 +75,7 @@ void HttpServer::writeError(QHttpResponse* response, qhttp::TStatusCode errorCod
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-bool HttpServer::writeFile(const QString& file, QHttpResponse* response)
+bool HttpServer::writeFile(const QString& file, HttpResponse* response)
 {
   QLOG_DEBUG() << "Going to request file:" << qPrintable(file);
   if (QFile::exists(file))
@@ -85,9 +85,8 @@ bool HttpServer::writeFile(const QString& file, QHttpResponse* response)
     {
       auto mime = m_mime.mimeTypeForFile(QFileInfo(fp));
 
-      response->setStatusCode(qhttp::ESTATUS_OK);
+      response->setStatusCode(HttpResponse::StatusCode::Ok);
       response->addHeader("Content-Type", mime.name().toUtf8());
-      response->addHeader("Content-Length", QByteArray::number(fp.size()));
       response->write(fp.readAll());
 
       fp.close();
@@ -95,26 +94,26 @@ bool HttpServer::writeFile(const QString& file, QHttpResponse* response)
     }
     else
     {
-      writeError(response, qhttp::ESTATUS_FORBIDDEN);
+      writeError(response, HttpResponse::StatusCode::Forbidden);
       return false;
     }
   }
   else
   {
-    writeError(response, qhttp::ESTATUS_NOT_FOUND);
+    writeError(response, HttpResponse::StatusCode::NotFound);
     return false;
   }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleWebClientRequest(QHttpRequest* request, QHttpResponse* response)
+void HttpServer::handleWebClientRequest(const QHttpServerRequest& request, HttpResponse* response)
 {
-  switch (request->method())
+  switch (request.method())
   {
-    case qhttp::EHTTP_GET:
+    case QHttpServerRequest::Method::Get:
     {
       // cut the WEB_CLIENT_PATH prefix
-      QString relativeUrl = request->url().path();
+      QString relativeUrl = request.url().path();
       relativeUrl.replace(WEB_CLIENT_PATH, "");
       QString rUrl = m_baseUrl + relativeUrl;
 
@@ -124,8 +123,8 @@ void HttpServer::handleWebClientRequest(QHttpRequest* request, QHttpResponse* re
 
     default:
     {
-      writeError(response, qhttp::ESTATUS_METHOD_NOT_ALLOWED);
-      QLOG_WARN() << "Method" << qPrintable(request->methodString()) << "is not supported";
+      writeError(response, HttpResponse::StatusCode::MethodNotAllowed);
+      QLOG_WARN() << "Method" << qPrintable(httpMethodName(request.method())) << "is not supported";
     }
   }
 
@@ -133,36 +132,36 @@ void HttpServer::handleWebClientRequest(QHttpRequest* request, QHttpResponse* re
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleResource(QHttpRequest* request, QHttpResponse* response)
+void HttpServer::handleResource(const QHttpServerRequest& request, HttpResponse* response)
 {
   RemoteComponent::Get().handleResource(request, response);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleRemoteController(QHttpRequest* request, QHttpResponse* response)
+void HttpServer::handleRemoteController(const QHttpServerRequest& request, HttpResponse* response)
 {
   RemoteComponent::Get().handleCommand(request, response);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleFilesRequest(QHttpRequest* request, QHttpResponse* response)
+void HttpServer::handleFilesRequest(const QHttpServerRequest& request, HttpResponse* response)
 {
-  if (request->url().path() == "/files/qwebchannel.js")
+  if (request.url().path() == "/files/qwebchannel.js")
     writeFile(":/qtwebchannel/qwebchannel.js", response);
   else
-    writeError(response, qhttp::ESTATUS_NOT_FOUND);
+    writeError(response, HttpResponse::StatusCode::NotFound);
 
   response->end();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleSoundsRequest(QHttpRequest* request, QHttpResponse* response)
+void HttpServer::handleSoundsRequest(const QHttpServerRequest& request, HttpResponse* response)
 {
-  auto sound = QFileInfo(request->url().path()).fileName();
+  auto sound = QFileInfo(request.url().path()).fileName();
   auto soundPath = Paths::soundsPath(sound);
 
   if (soundPath.isEmpty())
-    writeError(response, qhttp::ESTATUS_NOT_FOUND);
+    writeError(response, HttpResponse::StatusCode::NotFound);
   else
     writeFile(Paths::soundsPath(sound), response);
 
@@ -183,10 +182,10 @@ QString HttpServer::machineIdentifier() const
                                   QCryptographicHash::Sha1).toHex();
 }
 
-void HttpServer::writeMediaContainer(QHttpRequest* request, QHttpResponse* response,
+void HttpServer::writeMediaContainer(const QHttpServerRequest& request, HttpResponse* response,
                                      const QVariantMap& attributes)
 {
-  const bool wantsJson = request->headers().value("accept").contains("json");
+  const bool wantsJson = request.value("accept").contains("json");
 
   QByteArray body;
   if (wantsJson)
@@ -207,32 +206,30 @@ void HttpServer::writeMediaContainer(QHttpRequest* request, QHttpResponse* respo
     body += " />\n";
   }
 
-  response->setStatusCode(qhttp::ESTATUS_OK);
+  response->setStatusCode(HttpResponse::StatusCode::Ok);
   response->addHeader("Content-Type", wantsJson ? "application/json" : "text/xml;charset=utf-8");
-  response->addHeader("Content-Length", QByteArray::number(body.size()));
   response->addHeader("Access-Control-Allow-Origin", "*");
   response->end(body);
 }
 
-bool HttpServer::handleEmbeddedServerRequest(QHttpRequest* request, QHttpResponse* response)
+bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, HttpResponse* response)
 {
   if (!SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "embeddedServer").toBool())
     return false;
 
-  const QString path = request->url().path();
+  const QString path = request.url().path();
 
   if (path != "/identity" && path != "/media/providers" && path != "/media/subscriptions"
       && path != "/media/providers/remote/status")
     return false;
 
-  if (request->method() == qhttp::EHTTP_OPTIONS)
+  if (request.method() == QHttpServerRequest::Method::Options)
   {
-    response->setStatusCode(qhttp::ESTATUS_OK);
+    response->setStatusCode(HttpResponse::StatusCode::Ok);
     response->addHeader("Access-Control-Allow-Origin", "*");
     response->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     response->addHeader("Access-Control-Allow-Headers", "*");
     response->addHeader("Access-Control-Max-Age", "86400");
-    response->addHeader("Content-Length", "0");
     response->end();
     return true;
   }
@@ -266,9 +263,8 @@ bool HttpServer::handleEmbeddedServerRequest(QHttpRequest* request, QHttpRespons
                       + "\" version=\"" + QCoreApplication::applicationVersion().toUtf8()
                       + "\" />\n";
 
-    response->setStatusCode(qhttp::ESTATUS_OK);
+    response->setStatusCode(HttpResponse::StatusCode::Ok);
     response->addHeader("Content-Type", "text/xml;charset=utf-8");
-    response->addHeader("Content-Length", QByteArray::number(body.size()));
     response->addHeader("Access-Control-Allow-Origin", "*");
     response->end(body);
     return true;
@@ -278,11 +274,11 @@ bool HttpServer::handleEmbeddedServerRequest(QHttpRequest* request, QHttpRespons
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleRequest(QHttpRequest* request, QHttpResponse* response)
+void HttpServer::handleRequest(const QHttpServerRequest& request, HttpResponse* response)
 {
-  QLOG_DEBUG() << "Incoming request to:" << request->url().toString() << "from" << request->remoteAddress();
+  QLOG_DEBUG() << "Incoming request to:" << request.url().toString() << "from" << request.remoteAddress().toString();
 
-  QString path = request->url().path();
+  QString path = request.url().path();
   if (handleEmbeddedServerRequest(request, response))
   {
   }
@@ -308,12 +304,12 @@ void HttpServer::handleRequest(QHttpRequest* request, QHttpResponse* response)
   }
   else if (path == "/")
   {
-    response->setStatusCode(qhttp::ESTATUS_OK);
+    response->setStatusCode(HttpResponse::StatusCode::Ok);
     response->end("You should not be here :-)");
   }
   else
   {
-    writeError(response, qhttp::ESTATUS_NOT_FOUND);
+    writeError(response, HttpResponse::StatusCode::NotFound);
     response->end();
   }
 }

@@ -6,7 +6,7 @@
 #define PLEXMEDIAPLAYER_ROKUREMOTECOMPONENT_H
 
 #include "input/InputComponent.h"
-#include "qhttpserver.hpp"
+#include "server/HttpListener.h"
 #include <QUdpSocket>
 
 class InputRoku : public InputBase
@@ -19,18 +19,18 @@ public:
   const char* inputName() override { return "roku"; };
 
 private:
-  void handleRequest(qhttp::server::QHttpRequest* request, qhttp::server::QHttpResponse* response);
-  void handleQueryApps(qhttp::server::QHttpRequest* request, qhttp::server::QHttpResponse* response);
-  void handleKeyPress(qhttp::server::QHttpRequest* request, qhttp::server::QHttpResponse* response);
-  void handleQueryDeviceInfo(qhttp::server::QHttpRequest* request, qhttp::server::QHttpResponse* response);
+  void handleRequest(const QHttpServerRequest& request, HttpResponse* response);
+  void handleQueryApps(const QHttpServerRequest& request, HttpResponse* response);
+  void handleKeyPress(const QHttpServerRequest& request, HttpResponse* response);
+  void handleQueryDeviceInfo(const QHttpServerRequest& request, HttpResponse* response);
 
-  qhttp::server::QHttpServer* m_server;
+  HttpListener* m_server;
   QUdpSocket* m_ssdpSocket;
 
   void ssdpRead();
   void parseSSDPData(const QByteArray& data, const QHostAddress& sender, quint16 port);
   QByteArray getSSDPPacket(const QHostAddress& sender);
-  void handleRootInfo(qhttp::server::QHttpRequest* request, qhttp::server::QHttpResponse* response);
+  void handleRootInfo(const QHttpServerRequest& request, HttpResponse* response);
 };
 
 #endif //PLEXMEDIAPLAYER_ROKUREMOTECOMPONENT_H

@@ -167,20 +167,23 @@ void RemoteSubscriber::setCommandId(quint64 playerCommandId, quint64 controllerC
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-RemotePollSubscriber::RemotePollSubscriber(const QString &clientIdentifier, const QString &deviceName, QHttpResponse *response, QObject *parent) :
+RemotePollSubscriber::RemotePollSubscriber(const QString &clientIdentifier, const QString &deviceName, HttpResponse *response, QObject *parent) :
   RemoteSubscriber(clientIdentifier, deviceName, QUrl(""), parent), m_response(response)
 {
 
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void RemotePollSubscriber::setHTTPResponse(QHttpResponse *response)
+void RemotePollSubscriber::setHTTPResponse(HttpResponse *response)
 {
+  if (m_response && m_response != response)
+    disconnect(m_response, &HttpResponse::done, this, &RemotePollSubscriber::responseDone);
+
   m_response = response;
   m_response->addHeader("Content-Type", "application/xml");
   m_response->addHeader("Access-Control-Expose-Headers", "X-Plex-Client-Identifier");
 
-  connect(m_response, &QHttpResponse::done, this, &RemotePollSubscriber::responseDone);
+  connect(m_response, &HttpResponse::done, this, &RemotePollSubscriber::responseDone);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -189,7 +192,7 @@ void RemotePollSubscriber::sendUpdate()
   if (m_response)
   {
     // if we have a response, we are handling a poll request
-    m_response->setStatusCode(qhttp::ESTATUS_OK);
+    m_response->setStatusCode(HttpResponse::StatusCode::Ok);
     m_response->write(getTimeline());
 
     m_response->end();

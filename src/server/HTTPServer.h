@@ -5,11 +5,7 @@
 #include <QString>
 #include <QMimeDatabase>
 
-#include "qhttpserverrequest.hpp"
-#include "qhttpserver.hpp"
-#include "qhttpserverresponse.hpp"
-
-using namespace qhttp::server;
+#include "HttpListener.h"
 
 class HttpServer : public QObject
 {
@@ -19,23 +15,23 @@ public:
   bool start();
 
 private slots:
-  void handleRequest(QHttpRequest* request, QHttpResponse* response);
-  void handleWebClientRequest(QHttpRequest* request, QHttpResponse* response);
-  void handleResource(QHttpRequest* request, QHttpResponse* response);
-  void handleRemoteController(QHttpRequest* request, QHttpResponse* response);
-  void handleFilesRequest(QHttpRequest* request, QHttpResponse* response);
-  void writeError(QHttpResponse* response, qhttp::TStatusCode errorCode);
+  void handleRequest(const QHttpServerRequest& request, HttpResponse* response);
+  void handleWebClientRequest(const QHttpServerRequest& request, HttpResponse* response);
+  void handleResource(const QHttpServerRequest& request, HttpResponse* response);
+  void handleRemoteController(const QHttpServerRequest& request, HttpResponse* response);
+  void handleFilesRequest(const QHttpServerRequest& request, HttpResponse* response);
+  void writeError(HttpResponse* response, HttpResponse::StatusCode errorCode);
 
 private:
-  bool writeFile(const QString& file, QHttpResponse* response);
-  void handleSoundsRequest(QHttpRequest* request, QHttpResponse* response);
+  bool writeFile(const QString& file, HttpResponse* response);
+  void handleSoundsRequest(const QHttpServerRequest& request, HttpResponse* response);
 
-  bool handleEmbeddedServerRequest(QHttpRequest* request, QHttpResponse* response);
-  void writeMediaContainer(QHttpRequest* request, QHttpResponse* response,
+  bool handleEmbeddedServerRequest(const QHttpServerRequest& request, HttpResponse* response);
+  void writeMediaContainer(const QHttpServerRequest& request, HttpResponse* response,
                            const QVariantMap& attributes);
   QString machineIdentifier() const;
 
-  QHttpServer* m_server;
+  HttpListener* m_server;
   QString m_baseUrl;
   quint16 m_port;
   QMimeDatabase m_mime;

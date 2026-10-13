@@ -8,7 +8,6 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | --- | --- | --- |
 | Plex Media Player | `d9685b2` | https://github.com/plexinc/plex-media-player |
 | Plex Desktop web client | 1.115.0.426-4e960a1d | https://www.plex.tv/media-server-downloads/#plex-app |
-| http-parser | 2.9.4 (`ec8b5ee`) | https://github.com/nodejs/http-parser |
 | libass | 0.17.5 | https://github.com/libass/libass |
 | libplacebo | v7.360.1 | https://code.videolan.org/videolan/libplacebo |
 | mpv (libmpv) | v0.41.0 | https://github.com/mpv-player/mpv |
@@ -21,7 +20,6 @@ archives listed above; the Flatpak manifest builds from those copies, so the
 build downloads nothing. The Plex Desktop client is declared as Flatpak
 `extra-data` and is fetched from plex.tv by `flatpak install`, on the machine
 the application is installed on.
-`external/qhttp/3rdparty/http-parser/` holds the http-parser copy listed above.
 
 Packaging references:
 

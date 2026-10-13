@@ -14,7 +14,7 @@
 #include <QQueue>
 #include <QElapsedTimer>
 
-#include "qhttpserverresponse.hpp"
+#include "server/HttpResponse.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////
 class RemoteSubscriber : public QObject
@@ -75,12 +75,12 @@ protected:
 class RemotePollSubscriber : public RemoteSubscriber
 {
 public:
-  RemotePollSubscriber(const QString& clientIdentifier, const QString& deviceName, qhttp::server::QHttpResponse *response, QObject* parent = nullptr);
-  void setHTTPResponse(qhttp::server::QHttpResponse *response);
+  RemotePollSubscriber(const QString& clientIdentifier, const QString& deviceName, HttpResponse* response, QObject* parent = nullptr);
+  void setHTTPResponse(HttpResponse* response);
   void sendUpdate() override;
 
 private :
-   QPointer<qhttp::server::QHttpResponse> m_response;
+   QPointer<HttpResponse> m_response;
 
 public Q_SLOTS:
    void responseDone();

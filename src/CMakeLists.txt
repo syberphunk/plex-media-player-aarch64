@@ -1,5 +1,4 @@
 include_directories(
-  ${CMAKE_SOURCE_DIR}/external/qhttp/src
   ${CMAKE_SOURCE_DIR}/external/qslog
   ${CMAKE_SOURCE_DIR}/src/player
   core
@@ -125,7 +124,6 @@ endif()
 
 target_link_libraries(${MAIN_TARGET}
   shared
-  qhttp
   qslog
   ${MPV_LIBRARY}
   ${OPENGL_LIBS}

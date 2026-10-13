@@ -14,8 +14,6 @@
 #include "ComponentManager.h"
 #include "GDMManager.h"
 #include "server/HTTPServer.h"
-#include "qhttpserverresponse.hpp"
-#include "qhttpserver.hpp"
 #include "RemoteSubscriber.h"
 
 class RemoteComponent : public ComponentBase
@@ -34,10 +32,10 @@ public:
   static QVariantMap GDMInformation();
   static QVariantMap HeaderInformation();
 
-  void handleResource(QHttpRequest* request, QHttpResponse* response);
-  void handleCommand(QHttpRequest* request, QHttpResponse* response);
+  void handleResource(const QHttpServerRequest& request, HttpResponse* response);
+  void handleCommand(const QHttpServerRequest& request, HttpResponse* response);
 
-  static QVariantMap HeaderToMap(const qhttp::THeaderHash& hash, const QUrl *url = nullptr);
+  static QVariantMap HeaderToMap(const QHttpHeaders& headers, const QUrl *url = nullptr);
   static QVariantMap QueryToMap(const QUrl& url);
 
   Q_INVOKABLE void commandResponse(const QVariantMap& responseArguments);
@@ -56,13 +54,13 @@ private Q_SLOTS:
 
 private:
   explicit RemoteComponent(QObject* parent = nullptr);
-  void handleSubscription(QHttpRequest * request, QHttpResponse * response, bool poll=false);
+  void handleSubscription(const QHttpServerRequest& request, HttpResponse* response, bool poll=false);
   void subscribeToWeb(bool subscribe);
 
   GDMManager* m_gdmManager;
 
   quint64 m_commandId;
-  QMap<quint64, QHttpResponse*> m_responseMap;
+  QMap<quint64, HttpResponse*> m_responseMap;
   QMutex m_responseLock;
 
   QMutex m_subscriberLock;

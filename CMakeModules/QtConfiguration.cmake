@@ -22,9 +22,9 @@ message(STATUS "Qt root directory: ${QTROOT}")
 list(APPEND CMAKE_FIND_ROOT_PATH ${QTROOT})
 list(APPEND CMAKE_PREFIX_PATH ${QTROOT})
 
-set(REQUIRED_QT_VERSION "6.5.0")
+set(REQUIRED_QT_VERSION "6.8.0")
 
-set(components Core Gui Network WebChannel Qml Quick QuickControls2 Xml WebEngineQuick Widgets OpenGL)
+set(components Core Gui Network HttpServer WebChannel Qml Quick QuickControls2 Xml WebEngineQuick Widgets OpenGL)
 
 if(LINUX_DBUS)
   set(components ${components} DBus)

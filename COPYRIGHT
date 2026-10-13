@@ -11,16 +11,6 @@ repository's git history.
 
 Third-party components in this repository:
 
-external/qhttp/
-    Copyright © 2014 Amir Zamani
-    MIT. See external/qhttp/LICENSE.
-
-external/qhttp/3rdparty/http-parser/
-    Copyright © Joyent, Inc. and other Node contributors
-    Copyright © Igor Sysoev
-    Copyright © Fedor Indutny
-    MIT. See external/qhttp/3rdparty/http-parser/LICENSE-MIT.
-
 external/qslog/
     Copyright © 2013-2014 Razvan Petru
     Copyright © 2014 Omar Carey

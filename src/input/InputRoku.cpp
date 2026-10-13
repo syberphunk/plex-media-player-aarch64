@@ -6,15 +6,10 @@
 #include "QsLog.h"
 #include "settings/SettingsComponent.h"
 
-#include "qhttpserverresponse.hpp"
-#include "qhttpserverrequest.hpp"
-
 #include <QUrl>
 #include <QUdpSocket>
 #include <QTimeZone>
 #include <QXmlStreamWriter>
-
-using namespace qhttp::server;
 
 #define ROKU_SERIAL_NUMBER "12345678900"
 
@@ -28,7 +23,7 @@ bool InputRoku::initInput()
     return false;
   }
 
-  m_server = new QHttpServer(this);
+  m_server = new HttpListener(this);
 
   if (!m_server->listen(QHostAddress::Any, 8060))
   {
@@ -36,7 +31,7 @@ bool InputRoku::initInput()
     return false;
   }
 
-  connect(m_server, &QHttpServer::newRequest, this, &InputRoku::handleRequest);
+  connect(m_server, &HttpListener::newRequest, this, &InputRoku::handleRequest);
 
   m_ssdpSocket = new QUdpSocket(this);
   if (!m_ssdpSocket->bind(QHostAddress::AnyIPv4, 1900, QUdpSocket::ReuseAddressHint | QUdpSocket::ShareAddress))
@@ -100,9 +95,9 @@ QByteArray InputRoku::getSSDPPacket(const QHostAddress& sender)
   return packetData;
 }
 /////////////////////////////////////////////////////////////////////////////////////////
-void InputRoku::handleRequest(QHttpRequest* request, QHttpResponse* response)
+void InputRoku::handleRequest(const QHttpServerRequest& request, HttpResponse* response)
 {
-  QString path = request->url().path();
+  QString path = request.url().path();
 
   if (path == "/")
   {
@@ -123,17 +118,17 @@ void InputRoku::handleRequest(QHttpRequest* request, QHttpResponse* response)
   else
   {
     QLOG_WARN() << "Could not handle roku input:" << path;
-    response->setStatusCode(qhttp::ESTATUS_NOT_FOUND);
+    response->setStatusCode(HttpResponse::StatusCode::NotFound);
     response->end();
   }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void InputRoku::handleQueryApps(QHttpRequest* request, QHttpResponse* response)
+void InputRoku::handleQueryApps(const QHttpServerRequest& request, HttpResponse* response)
 {
-  if (request->method() != qhttp::EHTTP_GET)
+  if (request.method() != QHttpServerRequest::Method::Get)
   {
-    response->setStatusCode(qhttp::ESTATUS_METHOD_NOT_ALLOWED);
+    response->setStatusCode(HttpResponse::StatusCode::MethodNotAllowed);
     response->end();
     return;
   }
@@ -150,14 +145,15 @@ void InputRoku::handleQueryApps(QHttpRequest* request, QHttpResponse* response)
   writer.writeEndElement(); // apps
   writer.writeEndDocument();
 
-  response->setStatusCode(qhttp::ESTATUS_OK);
+  response->setStatusCode(HttpResponse::StatusCode::Ok);
   response->write(data);
   response->end();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void InputRoku::handleQueryDeviceInfo(QHttpRequest* request, QHttpResponse* response)
+void InputRoku::handleQueryDeviceInfo(const QHttpServerRequest& request, HttpResponse* response)
 {
+  Q_UNUSED(request);
 
   QByteArray data;
   QXmlStreamWriter writer(&data);
@@ -192,40 +188,40 @@ void InputRoku::handleQueryDeviceInfo(QHttpRequest* request, QHttpResponse* resp
   writer.writeEndElement(); // device-info
   writer.writeEndDocument();
 
-  response->setStatusCode(qhttp::ESTATUS_OK);
+  response->setStatusCode(HttpResponse::StatusCode::Ok);
   response->write(data);
   response->end();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void InputRoku::handleKeyPress(QHttpRequest* request, QHttpResponse* response)
+void InputRoku::handleKeyPress(const QHttpServerRequest& request, HttpResponse* response)
 {
-  QString path = request->url().path();
+  QString path = request.url().path();
   QStringList pathsplit = path.split("/");
   if (pathsplit.count() != 3)
   {
-    response->setStatusCode(qhttp::ESTATUS_BAD_REQUEST);
+    response->setStatusCode(HttpResponse::StatusCode::BadRequest);
     response->end();
     return;
   }
 
-  auto url = request->url().toString();
-  if (url.startsWith("/keydown/"))
+  if (path.startsWith("/keydown/"))
     emit receivedInput("roku", pathsplit.value(2), KeyDown);
-  else if (url.startsWith("/keyup/"))
+  else if (path.startsWith("/keyup/"))
     emit receivedInput("roku", pathsplit.value(2), KeyUp);
-  else if (url.startsWith("/keypress/"))
+  else if (path.startsWith("/keypress/"))
     emit receivedInput("roku", pathsplit.value(2), KeyPressed);
 
-
-  response->setStatusCode(qhttp::ESTATUS_OK);
+  response->setStatusCode(HttpResponse::StatusCode::Ok);
   response->end();
   return;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void InputRoku::handleRootInfo(QHttpRequest* request, QHttpResponse* response)
+void InputRoku::handleRootInfo(const QHttpServerRequest& request, HttpResponse* response)
 {
+  Q_UNUSED(request);
+
   QByteArray data;
   QXmlStreamWriter writer(&data);
   writer.setAutoFormatting(true);
@@ -263,7 +259,7 @@ void InputRoku::handleRootInfo(QHttpRequest* request, QHttpResponse* response)
   writer.writeEndElement(); // root
   writer.writeEndDocument();
 
-  response->setStatusCode(qhttp::ESTATUS_OK);
+  response->setStatusCode(HttpResponse::StatusCode::Ok);
   response->write(data);
   response->end();
 }
