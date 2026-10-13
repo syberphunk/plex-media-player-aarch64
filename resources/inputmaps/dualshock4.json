@@ -44,7 +44,7 @@
     // Playstation button
     "KEY_BUTTON_12": {
       "short": "home",
-      "long": "exit"
+      "long": "host:close"
     },
 
     // Trackpad press

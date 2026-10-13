@@ -8,6 +8,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 BUILD=${BUILD:-$(cd "$HERE/../../.." && pwd)/build}
 PAGE=${PAGE:-$HERE/drivepage/index.html}
 CLIP=${CLIP:-$HERE/testclip.mp4}
+MODE=${MODE:-desktop}
 RUNDIR=$HERE/run-$TAG
 
 [ -x "$BUILD/src/plexmediaplayer" ] || { echo "no binary at $BUILD/src/plexmediaplayer" >&2; exit 1; }
@@ -37,17 +38,19 @@ for kv in "$@"; do export "${kv?}"; done
 CONF="$XDG_DATA_HOME/plexmediaplayer/plexmediaplayer.conf"
 timeout 20 "$BUILD/src/plexmediaplayer" --help >/dev/null 2>&1
 mkdir -p "$(dirname "$CONF")"
-python3 -I - "$CONF" "$PAGE" "$CLIP" <<'PY'
+python3 -I - "$CONF" "$PAGE" "$CLIP" "$MODE" <<'PY'
 import json, os, sys
-path, page, clip = sys.argv[1:4]
+path, page, clip, mode = sys.argv[1:5]
 conf = json.load(open(path)) if os.path.exists(path) else {}
 conf.setdefault("version", 4)
 s = conf.setdefault("sections", {})
-s.setdefault("path", {})["startupurl_desktop"] = "file://" + page + "?clip=file://" + clip
-s.setdefault("main", {})["webMode"] = "desktop"
+url = "file://" + page + "?clip=file://" + clip
+s.setdefault("path", {})["startupurl_desktop"] = url
+s["path"]["startupurl_tv"] = url
+s.setdefault("main", {})["webMode"] = mode
 s.setdefault("system", {})["logLevel"] = "debug"
 json.dump(conf, open(path, "w"), indent=2)
-print("startupurl ->", s["path"]["startupurl_desktop"])
+print("startupurl ->", url, "mode ->", mode)
 PY
 
 timeout "$SECS" "$BUILD/src/plexmediaplayer" >"$RUNDIR/stdout.log" 2>&1 &

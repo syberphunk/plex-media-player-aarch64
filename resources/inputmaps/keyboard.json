@@ -11,7 +11,7 @@
     "(Return|Enter)": "enter",
     "(Esc|Backspace)": {
       "short": "back",
-      "long": "exit"
+      "long": "host:close"
     },
 
     // map X and Shift+X to X. This allows normal number input
@@ -48,7 +48,7 @@
     "Ctrl\\+F": "search",
     "Ctrl\\+M": "host:minimize",
     "Meta\\+Down": "host:minimize",
-    "Ctrl\\+W": "host:quit",
+    "Ctrl\\+W": "host:close",
 
     // application shortcuts
     "Ctrl\\+Shift\\+F": "host:toggleWebMode",

@@ -123,6 +123,7 @@ private:
   bool addInput(InputBase* base);
   void handleAction(const QString& action);
   QStringList throttleActions(const QStringList& actions, bool inPlayback);
+  void dispatchActions(const QStringList& actions);
 
   QHash<QString, ReceiverSlot*> m_hostCommands;
   QList<InputBase*> m_inputs;
@@ -137,6 +138,10 @@ private:
 
   QElapsedTimer m_actionClock;
   QHash<QString, qint64> m_actionSeen;
+
+  QString m_lastSource;
+  qint64 m_lastSourceSeen;
+  QString m_suppressedSource;
 };
 
 #endif // INPUTADAPTER_H

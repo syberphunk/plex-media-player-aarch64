@@ -26,6 +26,7 @@
 #define AUTOREPEAT_MAX_MSEC 4000
 #define ACTION_RATE_MSEC 120
 #define ACTION_DEBOUNCE_MSEC 400
+#define SOURCE_OVERLAP_MSEC 150
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static bool actionRepeats(const QString& action)
@@ -49,7 +50,7 @@ static bool actionRepeats(const QString& action)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-InputComponent::InputComponent(QObject* parent) : ComponentBase(parent)
+InputComponent::InputComponent(QObject* parent) : ComponentBase(parent), m_lastSourceSeen(0)
 {
   m_mappings = new InputMapping(this);
 
@@ -202,6 +203,12 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
 
   if (keyState == InputBase::KeyUp)
   {
+    if (source == m_suppressedSource)
+    {
+      m_suppressedSource.clear();
+      return;
+    }
+
     cancelAutoRepeat();
 
     if (!m_currentLongPressAction.isEmpty())
@@ -216,12 +223,28 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
 
       m_currentLongPressAction.clear();
 
-      QLOG_DEBUG() << "Emit input action (" + type + "):" << action;
-      emit hostInput(QStringList{action});
+      QLOG_DEBUG() << "Input action (" + type + "):" << action;
+      dispatchActions(QStringList{action});
     }
 
     return;
   }
+
+  const qint64 arrived = m_actionClock.elapsed();
+
+  if (!m_lastSource.isEmpty() && source != m_lastSource &&
+      arrived - m_lastSourceSeen < SOURCE_OVERLAP_MSEC)
+  {
+    QLOG_DEBUG() << "Dropped overlapping input from source:" << source;
+    m_suppressedSource = source;
+    return;
+  }
+
+  if (source == m_suppressedSource)
+    m_suppressedSource.clear();
+
+  m_lastSource = source;
+  m_lastSourceSeen = arrived;
 
   QStringList queuedActions;
   m_autoRepeatActions.clear();
@@ -270,20 +293,34 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
     m_autoRepeatTimer->start(INITAL_AUTOREPEAT_MSEC);
   }
 
-  queuedActions = throttleActions(queuedActions, inPlayback);
+  dispatchActions(throttleActions(queuedActions, inPlayback));
+}
 
-  if (!queuedActions.isEmpty())
+/////////////////////////////////////////////////////////////////////////////////////////
+void InputComponent::dispatchActions(const QStringList& actions)
+{
+  QStringList webActions;
+
+  for (const auto& action : actions)
   {
-    if (SystemComponent::Get().isWebClientConnected())
-    {
-      QLOG_DEBUG() << "Emit input action:" << queuedActions;
-      emit hostInput(queuedActions);
-    }
+    if (action.startsWith("host:"))
+      handleAction(action);
     else
-    {
-      QLOG_DEBUG() << "Web Client has not connected, handling input in host instead.";
-      executeActions(queuedActions);
-    }
+      webActions.append(action);
+  }
+
+  if (webActions.isEmpty())
+    return;
+
+  if (SystemComponent::Get().isWebClientConnected())
+  {
+    QLOG_DEBUG() << "Emit input action:" << webActions;
+    emit hostInput(webActions);
+  }
+  else
+  {
+    QLOG_DEBUG() << "Web Client has not connected, handling input in host instead.";
+    executeActions(webActions);
   }
 }
 
