@@ -91,6 +91,9 @@ modules:
 
   - name: plex-media-player
     buildsystem: cmake-ninja
+    build-options:
+      cflags: -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -fstack-clash-protection -mbranch-protection=standard
+      cxxflags: -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -fstack-clash-protection -mbranch-protection=standard
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DQTROOT=/usr
