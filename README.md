@@ -126,6 +126,55 @@ network access. It verifies the download against the `sha256` and `size` pinned
 in the manifest, then stages and verifies it on the target; a mismatch fails
 the install.
 
+## Steam shortcut
+
+`packaging/steam/plex-steam-shortcut.py` adds the installed Flatpak to Steam as
+a non-Steam shortcut, calling `flatpak run tv.plex.PlexMediaPlayer`. It needs
+only python3.
+
+Run it with Steam shut down. Steam rewrites `shortcuts.vdf` when it exits, so an
+edit made while it is running is discarded. Restart Steam afterwards.
+
+```
+python3 packaging/steam/plex-steam-shortcut.py
+```
+
+With no arguments it presents a menu: add the shortcut, remove it, set artwork,
+list what is installed, quit. The same operations are available non
+interactively:
+
+```
+python3 packaging/steam/plex-steam-shortcut.py --add
+python3 packaging/steam/plex-steam-shortcut.py --remove
+python3 packaging/steam/plex-steam-shortcut.py --list
+python3 packaging/steam/plex-steam-shortcut.py -n --add    # dry run
+```
+
+`--add` leaves an existing entry alone; `-f` replaces it. `--config` names a
+Steam `userdata/<id>/config` directory, repeatable, when the search paths
+(`~/.steam/steam`, `~/.local/share/Steam`, `~/.steam/root`) do not apply.
+
+The icon is taken from the Flatpak's own exported icon when one is installed, or
+from `--icon FILE`. No artwork is shipped in this repository. Steam's library
+artwork is read from `userdata/<id>/config/grid`, and image files you supply are
+copied there under the names Steam expects:
+
+```
+python3 packaging/steam/plex-steam-shortcut.py \
+    --grid capsule.png --poster portrait.png --hero hero.png --logo logo.png
+```
+
+On a Steam Frame the desktop is reached from the SteamVR dashboard: Launch a
+program, then Desktop. Developer Mode must be enabled first, under Settings,
+System, Developer Mode, which also sets the password used for remote desktop.
+Steam's own Games, Add a Non-Steam Game is available in that session; the script
+is there for when it is not reachable.
+
+`shortcuts.vdf` is Valve's binary VDF format, so the script parses the existing
+file and rewrites it, preserving other entries and their tags. It backs up to
+`shortcuts.vdf.bak` on first write, re-parses what it is about to write before
+writing it, and replaces the file atomically.
+
 ## License
 
 GPL-2.0, per `LICENSE`. Copyright holders are listed in `COPYRIGHT`.
