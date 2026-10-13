@@ -120,6 +120,7 @@ KonvergoWindow
   {
     id: web
     objectName: "web"
+    profile: webProfile.instance()
     settings.errorPageEnabled: false
     settings.localContentCanAccessRemoteUrls: true
     focus: true
@@ -131,7 +132,6 @@ KonvergoWindow
 
     Component.onCompleted:
     {
-      web.profile = webProfile.instance()
       web.profile.httpUserAgent = components.system.getUserAgent()
 
       var bridge = WebEngine.script()
