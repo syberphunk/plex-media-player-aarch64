@@ -109,38 +109,43 @@ void InputSDLWorker::run()
 
         case SDL_JOYHATMOTION:
         {
-
-          QString hatName("KEY_HAT_");
-          bool pressed = true;
+          auto which = event.jhat.which;
+          QString previous = m_lastHat.value(which);
+          QString current;
 
           switch (event.jhat.value)
           {
-            case SDL_HAT_CENTERED:
-              if (!m_lastHat.isEmpty())
-                hatName = m_lastHat;
-              else
-                hatName += "CENTERED";
-              pressed = false;
-              break;
             case SDL_HAT_UP:
-              hatName += "UP";
+              current = "KEY_HAT_UP";
               break;
             case SDL_HAT_DOWN:
-              hatName += "DOWN";
+              current = "KEY_HAT_DOWN";
               break;
             case SDL_HAT_RIGHT:
-              hatName += "RIGHT";
+              current = "KEY_HAT_RIGHT";
               break;
             case SDL_HAT_LEFT:
-              hatName += "LEFT";
+              current = "KEY_HAT_LEFT";
               break;
             default:
               break;
           }
 
-          m_lastHat = hatName;
+          if (previous == current)
+            break;
 
-          emit receivedInput(nameForId(event.jhat.which), hatName, pressed ? InputBase::KeyDown : InputBase::KeyUp);
+          if (!previous.isEmpty())
+            emit receivedInput(nameForId(which), previous, InputBase::KeyUp);
+
+          if (current.isEmpty())
+          {
+            m_lastHat.remove(which);
+          }
+          else
+          {
+            m_lastHat.insert(which, current);
+            emit receivedInput(nameForId(which), current, InputBase::KeyDown);
+          }
 
           break;
         }
@@ -149,6 +154,7 @@ void InputSDLWorker::run()
         {
           auto axis = event.jaxis.axis;
           auto value = event.jaxis.value;
+          const quint64 state = (static_cast<quint64>(static_cast<quint32>(event.jaxis.which)) << 8) | axis;
 
           QLOG_DEBUG() << "JoyAxisMotion:" << axis << value;
 
@@ -156,21 +162,22 @@ void InputSDLWorker::run()
           if (std::abs(value) > 32768 / 2)
           {
             bool up = value < 0;
-            if (!m_axisState.contains(axis))
+            if (m_axisState.contains(state) && m_axisState.value(state) != up)
             {
-              emit receivedInput(nameForId(event.jaxis.which), QString("KEY_AXIS_%1_%2").arg(axis).arg(up ? "UP" : "DOWN"), InputBase::KeyDown);
-              m_axisState.insert(axis, up);
+              emit receivedInput(nameForId(event.jaxis.which), QString("KEY_AXIS_%1_%2").arg(axis).arg(m_axisState.value(state) ? "UP" : "DOWN"), InputBase::KeyUp);
+              m_axisState.remove(state);
             }
-            else if (m_axisState.value(axis) != up)
+
+            if (!m_axisState.contains(state))
             {
-              emit receivedInput(nameForId(event.jaxis.which), QString("KEY_AXIS_%1_%2").arg(axis).arg(m_axisState.value(axis) ? "UP" : "DOWN"), InputBase::KeyUp);
-              m_axisState.remove(axis);
+              m_axisState.insert(state, up);
+              emit receivedInput(nameForId(event.jaxis.which), QString("KEY_AXIS_%1_%2").arg(axis).arg(up ? "UP" : "DOWN"), InputBase::KeyDown);
             }
           }
-          else if (std::abs(value) < 10000 && m_axisState.contains(axis)) // back to the center.
+          else if (std::abs(value) < 10000 && m_axisState.contains(state)) // back to the center.
           {
-            emit receivedInput(nameForId(event.jaxis.which), QString("KEY_AXIS_%1_%2").arg(axis).arg(m_axisState.value(axis) ? "UP" : "DOWN"), InputBase::KeyUp);
-            m_axisState.remove(axis);
+            emit receivedInput(nameForId(event.jaxis.which), QString("KEY_AXIS_%1_%2").arg(axis).arg(m_axisState.value(state) ? "UP" : "DOWN"), InputBase::KeyUp);
+            m_axisState.remove(state);
           }
           break;
         }
@@ -201,6 +208,8 @@ void InputSDLWorker::refreshJoystickList()
   }
 
   m_joysticks.clear();
+  m_axisState.clear();
+  m_lastHat.clear();
 
   // list all the joysticks and open them
   int numJoysticks = SDL_NumJoysticks();
@@ -217,7 +226,6 @@ void InputSDLWorker::refreshJoystickList()
                   << SDL_JoystickNumButtons(joystick) << " buttons and " << SDL_JoystickNumAxes(joystick)
                   << "axes";
       m_joysticks[instanceid] = joystick;
-      m_axisState.clear();
     }
   }
 }
