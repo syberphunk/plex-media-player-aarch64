@@ -122,6 +122,7 @@ private:
   explicit InputComponent(QObject *parent = nullptr);
   bool addInput(InputBase* base);
   void handleAction(const QString& action);
+  QStringList throttleActions(const QStringList& actions, bool inPlayback);
 
   QHash<QString, ReceiverSlot*> m_hostCommands;
   QList<InputBase*> m_inputs;
@@ -129,12 +130,13 @@ private:
 
   QTimer* m_autoRepeatTimer;
   QStringList m_autoRepeatActions;
+  QElapsedTimer m_autoRepeatStarted;
 
   QVariantMap m_currentLongPressAction;
   QElapsedTimer m_longHoldTimer;
 
-  QStringList m_lastActions;
-  QElapsedTimer m_lastActionTime;
+  QElapsedTimer m_actionClock;
+  QHash<QString, qint64> m_actionSeen;
 };
 
 #endif // INPUTADAPTER_H

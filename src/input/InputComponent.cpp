@@ -23,7 +23,9 @@
 #define LONG_HOLD_MSEC 500
 #define INITAL_AUTOREPEAT_MSEC 450
 #define AUTOREPEAT_MSEC 180
-#define MIN_ACTION_INTERVAL_MSEC 150
+#define AUTOREPEAT_MAX_MSEC 4000
+#define ACTION_RATE_MSEC 120
+#define ACTION_DEBOUNCE_MSEC 400
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static bool actionRepeats(const QString& action)
@@ -51,14 +53,20 @@ InputComponent::InputComponent(QObject* parent) : ComponentBase(parent)
 {
   m_mappings = new InputMapping(this);
 
+  m_actionClock.start();
+
   m_autoRepeatTimer = new QTimer(this);
   connect(m_autoRepeatTimer, &QTimer::timeout, this, [this]()
   {
-    if (!m_autoRepeatActions.isEmpty())
+    if (m_autoRepeatActions.isEmpty() ||
+        (m_autoRepeatStarted.isValid() && m_autoRepeatStarted.elapsed() > AUTOREPEAT_MAX_MSEC))
     {
-      QLOG_DEBUG() << "Emit input action (autorepeat):" << m_autoRepeatActions;
-      emit hostInput(m_autoRepeatActions);
+      cancelAutoRepeat();
+      return;
     }
+
+    QLOG_DEBUG() << "Emit input action (autorepeat):" << m_autoRepeatActions;
+    emit hostInput(m_autoRepeatActions);
 
     m_autoRepeatTimer->setInterval(AUTOREPEAT_MSEC);
   });
@@ -162,6 +170,30 @@ void InputComponent::handleAction(const QString& action)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+QStringList InputComponent::throttleActions(const QStringList& actions, bool inPlayback)
+{
+  QStringList passed;
+  const qint64 now = m_actionClock.elapsed();
+
+  for (const auto& action : actions)
+  {
+    const bool rateLimited = actionRepeats(action) && !inPlayback;
+    const qint64 window = rateLimited ? ACTION_RATE_MSEC : ACTION_DEBOUNCE_MSEC;
+    const bool expired = !m_actionSeen.contains(action) || now - m_actionSeen.value(action) >= window;
+
+    if (expired || !rateLimited)
+      m_actionSeen.insert(action, now);
+
+    if (expired)
+      passed.append(action);
+    else
+      QLOG_DEBUG() << "Dropped repeated input action:" << action;
+  }
+
+  return passed;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void InputComponent::remapInput(const QString &source, const QString &keycode, InputBase::InputkeyState keyState)
 {
   QLOG_DEBUG() << "Input received: source:" << source << "keycode:" << keycode << ":" << keyState;
@@ -227,23 +259,21 @@ void InputComponent::remapInput(const QString &source, const QString &keycode, I
     }
   }
 
-  if (PlayerComponent::Get().inPlayback())
-    m_autoRepeatActions.clear();
+  const bool inPlayback = PlayerComponent::Get().inPlayback();
+
+  if (inPlayback)
+    cancelAutoRepeat();
 
   if (!m_autoRepeatActions.isEmpty() && keyState != InputBase::KeyPressed)
-    m_autoRepeatTimer->start(INITAL_AUTOREPEAT_MSEC);
-
-  if (m_lastActionTime.isValid() && m_lastActionTime.elapsed() < MIN_ACTION_INTERVAL_MSEC)
   {
-    for (const auto& action : m_lastActions)
-      queuedActions.removeAll(action);
+    m_autoRepeatStarted.start();
+    m_autoRepeatTimer->start(INITAL_AUTOREPEAT_MSEC);
   }
+
+  queuedActions = throttleActions(queuedActions, inPlayback);
 
   if (!queuedActions.isEmpty())
   {
-    m_lastActions = queuedActions;
-    m_lastActionTime.start();
-
     if (SystemComponent::Get().isWebClientConnected())
     {
       QLOG_DEBUG() << "Emit input action:" << queuedActions;
