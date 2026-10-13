@@ -99,7 +99,7 @@ timeout --signal=TERM "$RUN_SECONDS" \
   flatpak run --arch="$ARCH" --socket=x11 --nosocket=wayland --env=DISPLAY="$DISPLAY" \
     --env=LIBGL_ALWAYS_SOFTWARE=1 --env=QT_X11_NO_MITSHM=1 \
     "${EXTRA_ENV[@]}" "$APP_ID" \
-    --terminal --desktop --windowed --no-updates \
+    --terminal --desktop --windowed \
   > "$OUT/run.log" 2>&1
 rc=$?
 set -e

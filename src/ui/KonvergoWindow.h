@@ -111,7 +111,6 @@ private slots:
   void updateWindowState(bool saveGeo = true);
   void updateDebugInfo();
   void playerWindowVisible(bool visible);
-  void showUpdateDialog();
   void onScreenAdded(QScreen *screen);
   void onScreenRemoved(QScreen *screen);
   void updateCurrentScreen();
@@ -132,7 +131,6 @@ private:
   int m_ignoreFullscreenSettingsChange;
   int m_forcedFullscreenCount;
   bool m_webDesktopMode;
-  bool m_showedUpdateDialog;
 
   unsigned long m_osxPresentationOptions;
   QString m_currentScreenName;

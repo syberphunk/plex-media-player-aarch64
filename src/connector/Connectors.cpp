@@ -15,7 +15,6 @@
 #include "player/PlayerComponent.h"
 #include "settings/SettingsComponent.h"
 #include "system/SystemComponent.h"
-#include "system/UpdaterComponent.h"
 #include "utils/Utils.h"
 
 namespace

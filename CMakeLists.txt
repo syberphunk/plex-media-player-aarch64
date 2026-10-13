@@ -28,10 +28,6 @@ if(BUILD_TARGET STREQUAL "RPI")
   Message(STATUS "Build for Raspberry PI target")
 endif(BUILD_TARGET STREQUAL "RPI")
 
-option(ENABLE_HELPER "Enable PMP Helper" ON)
-if (ENABLE_HELPER)
-  add_definitions(-DENABLE_HELPER=1)
-endif(ENABLE_HELPER)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMakeModules/")

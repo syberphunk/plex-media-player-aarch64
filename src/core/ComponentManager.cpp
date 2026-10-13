@@ -10,7 +10,6 @@
 #include "player/PlayerComponent.h"
 #include "display/DisplayComponent.h"
 #include "system/SystemComponent.h"
-#include "system/UpdaterComponent.h"
 #include "settings/SettingsComponent.h"
 #include "remote/RemoteComponent.h"
 
@@ -65,7 +64,6 @@ void ComponentManager::initialize()
   registerComponent(&InputComponent::Get());
   registerComponent(&SystemComponent::Get());
   registerComponent(&DisplayComponent::Get());
-  registerComponent(&UpdaterComponent::Get());
   registerComponent(&RemoteComponent::Get());
   registerComponent(&PlayerComponent::Get());
   registerComponent(&PowerComponent::Get());

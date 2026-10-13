@@ -35,7 +35,6 @@ add_subdirectory(settings)
 add_subdirectory(power)
 add_subdirectory(remote)
 add_subdirectory(connector)
-add_subdirectory(tools)
 
 get_property(ALL_SRCS GLOBAL PROPERTY SRCS_LIST)
 set(MAIN_SRCS main.cpp)

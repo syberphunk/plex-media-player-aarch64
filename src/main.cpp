@@ -12,8 +12,6 @@
 
 #include "shared/Names.h"
 #include "system/SystemComponent.h"
-#include "system/UpdateManager.h"
-#include "system/UpdaterComponent.h"
 #include "QsLog.h"
 #include "Paths.h"
 #include "player/CodecsComponent.h"
@@ -30,7 +28,6 @@
 #include "Globals.h"
 #include "ui/ErrorMessage.h"
 #include "UniqueApplication.h"
-#include "utils/HelperLauncher.h"
 #include "utils/Log.h"
 #include "shared/SessionEnv.h"
 
@@ -116,13 +113,11 @@ int main(int argc, char *argv[])
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addOptions({{{"l", "licenses"},         "Show license information"},
-                       {{"a", "from-auto-update"}, "When invoked from auto-update"},
                        {"desktop",                 "Start in desktop mode"},
                        {"tv",                      "Start in TV mode"},
                        {"auto-layout",             "Use auto-layout mode"},
                        {"windowed",                "Start in windowed mode"},
                        {"fullscreen",              "Start in fullscreen"},
-                       {"no-updates",              "Disable auto-updating"},
                        {"terminal",                "Log to terminal"}});
 
     auto scaleOption = QCommandLineOption("scale-factor", "Set to a integer or default auto which controls" \
@@ -217,13 +212,6 @@ int main(int argc, char *argv[])
     if (!SessionEnv::graphicsEnvReport().isEmpty())
       QLOG_INFO() << "Graphics env:" << qPrintable(SessionEnv::graphicsEnvReport());
 
-    // Quit app and apply update if we find one.
-    if (!parser.isSet("no-updates") && !SessionEnv::insideFlatpak() && UpdateManager::CheckForUpdates())
-    {
-      app.quit();
-      return 0;
-    }
-
     detectOpenGLLate();
 
     Codecs::preinitCodecs();
@@ -235,15 +223,8 @@ int main(int argc, char *argv[])
 
     ConnectorManager::Get().initialize();
 
-    if (parser.isSet("no-updates"))
-      UpdaterComponent::Get().disable();
-
     SettingsComponent::Get().setCommandLineValues(parser.optionNames());
 
-    // start our helper
-#if ENABLE_HELPER
-    HelperLauncher::Get().connectToHelper();
-#endif
     // load QtWebChannel so that we can register our components with it.
     QQmlApplicationEngine *engine = Globals::Engine();
 

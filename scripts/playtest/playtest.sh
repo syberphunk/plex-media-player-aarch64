@@ -16,7 +16,7 @@ rm -rf "$RUNDIR"; mkdir -p "$RUNDIR/data"
 
 reap() {
   pkill -f "$BUILD/src/plexmediaplayer" 2>/dev/null
-  for _ in 1 2; do pkill -9 -f "$BUILD/src/pmphelper" 2>/dev/null; sleep 1; done
+  for _ in 1 2; do sleep 1; pkill -9 -f "$BUILD/src/plexmediaplayer" 2>/dev/null; done
   return 0
 }
 reap
