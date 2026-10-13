@@ -10,8 +10,8 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | Plex Desktop web client | 1.115.0.426-4e960a1d | https://www.plex.tv/media-server-downloads/#plex-app |
 | http-parser | 2.9.4 (`ec8b5ee`) | https://github.com/nodejs/http-parser |
 | libass | 0.17.5 | https://github.com/libass/libass |
-| libplacebo | v7.349.0 | https://code.videolan.org/videolan/libplacebo |
-| mpv (libmpv) | v0.39.0 | https://github.com/mpv-player/mpv |
+| libplacebo | v7.360.1 | https://code.videolan.org/videolan/libplacebo |
+| mpv (libmpv) | v0.41.0 | https://github.com/mpv-player/mpv |
 | zlib (minizip) | 1.3.1 | https://zlib.net |
 | org.kde.Platform / org.kde.Sdk | 6.11 | https://invent.kde.org/packaging/flatpak-kde-runtime |
 | io.qt.qtwebengine.BaseApp | 6.11 | https://github.com/flathub/io.qt.qtwebengine.BaseApp |
