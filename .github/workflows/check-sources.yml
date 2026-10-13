@@ -37,3 +37,65 @@ jobs:
             cat check-sources.out || echo "the check produced no output"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  repin:
+    needs: check
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Take a newer web client
+        id: repin
+        run: |
+          set -o pipefail
+          ./scripts/check-sources.py --update | tee repin.out
+          moved=$(sed -n 's/^==> \([^ ]*\) [^ ]* -> [^ ]*$/\1/p' repin.out | sort -u | tr '\n' ' ')
+          moved=${moved% }
+          echo "moved=${moved}" >> "$GITHUB_OUTPUT"
+          if [ -z "$moved" ]; then
+            echo "every pin is current" | tee -a repin.out
+            exit 0
+          fi
+          if [ "$moved" != "plex-media-player" ]; then
+            echo "moved: ${moved} -- library pins are taken by hand" | tee -a repin.out
+            git checkout -- .
+            git clean -fdq vendor-deps
+            exit 0
+          fi
+          touched=$(git status --porcelain | awk '{print $2}' | sort | tr '\n' ' ')
+          touched=${touched% }
+          if [ "$touched" != "README.md packaging/flatpak/tv.plex.PlexMediaPlayer.yml" ]; then
+            echo "unexpected working tree: ${touched}" | tee -a repin.out
+            exit 1
+          fi
+          ./scripts/check-sources.py | tee -a repin.out
+          echo "push=yes" >> "$GITHUB_OUTPUT"
+
+      - name: Push the branch
+        if: steps.repin.outputs.push == 'yes'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c auto-repin
+          git add README.md packaging/flatpak/tv.plex.PlexMediaPlayer.yml
+          git commit -m "web client pin"
+          git push -f origin auto-repin
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '```'
+            cat repin.out || echo "the update produced no output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
