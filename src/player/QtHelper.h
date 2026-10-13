@@ -27,6 +27,7 @@
  */
 
 #include <cstring>
+#include <new>
 
 #include <QVariant>
 #include <QString>
@@ -111,15 +112,15 @@ private:
     mpv_node node_;
     mpv_node_list *create_list(mpv_node *dst, bool is_map, int num) {
         dst->format = is_map ? MPV_FORMAT_NODE_MAP : MPV_FORMAT_NODE_ARRAY;
-        mpv_node_list *list = new mpv_node_list();
+        mpv_node_list *list = new (std::nothrow) mpv_node_list();
         dst->u.list = list;
         if (!list)
             goto err;
-        list->values = new mpv_node[num]();
+        list->values = new (std::nothrow) mpv_node[num]();
         if (!list->values)
             goto err;
         if (is_map) {
-            list->keys = new char*[num]();
+            list->keys = new (std::nothrow) char*[num]();
             if (!list->keys)
                 goto err;
         }
@@ -130,7 +131,7 @@ private:
     }
     char *dup_qstring(const QString &s) {
         QByteArray b = s.toUtf8();
-        char *r = new char[b.size() + 1];
+        char *r = new (std::nothrow) char[b.size() + 1];
         if (r)
             std::memcpy(r, b.data(), b.size() + 1);
         return r;
