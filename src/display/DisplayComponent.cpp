@@ -7,9 +7,7 @@
 #include <QWindow>
 #include <math.h>
 
-#if defined(TARGET_RPI)
-#include "rpi/DisplayManagerRPI.h"
-#elif defined(USE_X11XRANDR)
+#if defined(USE_X11XRANDR)
 #include "x11/DisplayManagerX11.h"
 #endif
 
@@ -49,8 +47,6 @@ bool DisplayComponent::componentInitialize()
 {
 #if 0
   m_displayManager = new DisplayManagerDummy(this);
-#elif defined(TARGET_RPI)
-  m_displayManager = new DisplayManagerRPI(this);
 #elif defined(USE_X11XRANDR)
   m_displayManager = new DisplayManagerX11(this);
 #endif
@@ -67,12 +63,6 @@ bool DisplayComponent::componentInitialize()
       connect(screen, SIGNAL(refreshRateChanged(qreal)), this, SLOT(monitorChange()));
       connect(screen, SIGNAL(geometryChanged(QRect)), this, SLOT(monitorChange()));
     }
-
-#ifdef TARGET_RPI
-    // The firmware doesn't always make the best decision. Hope we do better.
-    QLOG_INFO() << "Trying to switch to best display mode.";
-    switchToBestOverallVideoMode(0);
-#endif
 
     return true;
   }
@@ -142,42 +132,6 @@ bool DisplayComponent::switchToBestVideoMode(float frameRate)
   }
 
   return false;
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-bool DisplayComponent::switchToBestOverallVideoMode(int display)
-{
-  initializeDisplayManager();
-
-  if (!m_displayManager || !m_displayManager->isValidDisplay(display))
-    return false;
-
-  if (!SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "hdmi_poweron").toBool())
-  {
-    QLOG_INFO() << "Switching to best mode disabled.";
-    return false;
-  }
-
-  int bestmode = m_displayManager->findBestMode(display);
-  if (bestmode < 0)
-    return false;
-
-  QLOG_INFO() << "We think mode" << bestmode << "is the best mode.";
-
-  if (bestmode == m_displayManager->getCurrentDisplayMode(display))
-  {
-    QLOG_INFO() << "This mode is the currently active one. Not switching.";
-    return false;
-  }
-
-  if (!m_displayManager->setDisplayMode(display, bestmode))
-  {
-    QLOG_INFO() << "Switching mode failed.";
-    return false;
-  }
-
-  QLOG_INFO() << "Switching mode successful.";
-  return true;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////

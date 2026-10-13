@@ -41,10 +41,8 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   m_debugLayer(false),
   m_ignoreFullscreenSettingsChange(0),
   m_forcedFullscreenCount(0),
-  m_closing(false),
-  m_osxPresentationOptions(0)
+  m_closing(false)
 {
-  // NSWindowCollectionBehaviorFullScreenPrimary is only set on OSX if Qt::WindowFullscreenButtonHint is set on the window.
   setFlags(flags() | Qt::WindowFullscreenButtonHint);
 
   m_infoTimer = new QTimer(this);
@@ -62,14 +60,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   InputComponent::Get().registerHostCommand("minimize", this, "minimizeWindow");
   InputComponent::Get().registerHostCommand("switchMode", this, "toggleWebMode");
 
-#ifdef TARGET_RPI
-  // On RPI, we use dispmanx layering - the video is on a layer below Konvergo,
-  // and during playback the Konvergo window is partially transparent. The OSD
-  // will be visible on top of the video as part of the Konvergo window.
-  setColor(QColor("transparent"));
-#else
   setColor(QColor("#000000"));
-#endif
 
 #ifdef USE_X11EXTRAS
   // On Gnome show a darker title bar
@@ -116,15 +107,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
 
   connect(qApp, &QCoreApplication::aboutToQuit, this, &KonvergoWindow::closingWindow);
 
-#ifdef Q_OS_MAC
-  m_osxPresentationOptions = 0;
-#endif
-
-#ifdef KONVERGO_OPENELEC
-  setVisibility(QWindow::FullScreen);
-#else
   updateWindowState(false);
-#endif
 
   updateScreens();
 
@@ -204,15 +187,7 @@ QRect KonvergoWindow::loadGeometry()
 
     if (myScreen)
     {
-      // On OSX we need to set the geometry to the size we want when we
-      // return from fullscreen otherwise when we exit fullscreen it
-      // will stay small or big. On Windows we need to set it to max
-      // resolution for the screen (i.e. fullscreen) otherwise it will
-      // just scale the webcontent to the minimum size we have defined
-      //
-  #ifndef Q_OS_MAC
       nsize = myScreen->geometry();
-  #endif
       setGeometry(nsize);
 
       setScreen(myScreen);
@@ -312,19 +287,6 @@ void KonvergoWindow::playerWindowVisible(bool visible)
   QQuickItem *web = findChild<QQuickItem *>("web");
   if (web)
     web->setProperty("backgroundColor", visible ? "transparent" : "#000000");
-
-#ifdef Q_OS_MAC
-  // On OSX, initializing VideoTooolbox (hardware decoder API) will mysteriously
-  // show the hidden mouse pointer again. The VTDecompressionSessionCreate API
-  // function does this, and we have no influence over its behavior.
-  if (visible && !SystemComponent::Get().cursorVisible())
-  {
-    // "Refresh" it. (There doesn't seem to be a nicer way, and we have to do
-    // this on the Cocoa level too.)
-    SystemComponent::Get().setCursorVisibility(true);
-    SystemComponent::Get().setCursorVisibility(false);
-  }
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -409,8 +371,7 @@ static const int kMaxForcedFullscreenAttempts = 5;
 
 static bool alwaysFullscreenSession()
 {
-  return SystemComponent::Get().isOpenELEC()
-      || SessionEnv::insideGamescope()
+  return SessionEnv::insideGamescope()
       || SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "forceAlwaysFS").toBool();
 }
 
@@ -478,20 +439,6 @@ void KonvergoWindow::onVisibilityChanged(QWindow::Visibility visibility)
 {
   QLOG_DEBUG() << "QWindow visibility set to" << visibility;
 
-#ifdef Q_OS_WIN32
-  if (visibility == QWindow::Windowed)
-  {
-    QScreen* realScreen = findCurrentScreen();
-    if (realScreen && realScreen->geometry() == geometry())
-    {
-      QLOG_WARN() << "winging it!";
-      setScreen(realScreen);
-      setVisibility(QWindow::FullScreen);
-      return;
-    }
-  }
-#endif
-
   if (visibility == QWindow::Windowed && alwaysFullscreenSession())
   {
     if (++m_forcedFullscreenCount > kMaxForcedFullscreenAttempts)
@@ -532,16 +479,6 @@ void KonvergoWindow::onVisibilityChanged(QWindow::Visibility visibility)
 /////////////////////////////////////////////////////////////////////////////////////////
 void KonvergoWindow::focusOutEvent(QFocusEvent * ev)
 {
-#ifdef Q_OS_WIN32
-  // Do this to workaround DWM compositor bugs with fullscreened OpenGL applications.
-  // The compositor will not properly redraw anything when focusing other windows.
-  if (visibility() == QWindow::FullScreen && SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "minimizeOnDefocus").toBool())
-  {
-    QLOG_DEBUG() << "minimizing window";
-    showMinimized();
-  }
-#endif
-
   QQuickWindow::focusOutEvent(ev);
 }
 
@@ -570,18 +507,6 @@ void KonvergoWindow::updateDebugInfo()
   {
     info << "  Screen" << scr->name() << scr->geometry() << "\n";
   }
-
-#ifdef Q_OS_WIN32
-  HMONITOR mon = MonitorFromWindow((HWND)winId(), MONITOR_DEFAULTTONEAREST);
-  MONITORINFO moninfo = {};
-  moninfo.cbSize = sizeof(moninfo);
-  RECT winrc;
-  if (GetMonitorInfo(mon, &moninfo) &&GetWindowRect((HWND)winId(), &winrc))
-  {
-    RECT rc = moninfo.rcMonitor;
-    info << "  Win32 window" << QString("%1/%2 %3x%4").arg(rc.left).arg(rc.top).arg(rc.right).arg(rc.bottom) << QString("%1/%2 %3x%4").arg(winrc.left).arg(winrc.top).arg(winrc.right).arg(winrc.bottom) << "\n";
-  }
-#endif
 
   info << "\n";
   m_debugInfo += infoString;

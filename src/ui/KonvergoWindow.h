@@ -133,7 +133,6 @@ private:
   bool m_webDesktopMode;
   bool m_closing;
 
-  unsigned long m_osxPresentationOptions;
   QString m_currentScreenName;
 
   void setWebMode(bool newDesktopMode, bool fullscreen);

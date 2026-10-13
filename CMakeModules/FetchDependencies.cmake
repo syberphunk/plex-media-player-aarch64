@@ -3,24 +3,7 @@ include(CMakeParseArguments)
 set(DEPENDENCY_CACHE_DIR ${CMAKE_BINARY_DIR}/dependencies CACHE PATH "Cache downloaded deps in this directory")
 set(DEPENDENCY_UNTAR_DIR ${CMAKE_BINARY_DIR}/dependencies CACHE PATH "Where to untar deps")
 
-if(APPLE)
-  set(ARCHSTR "darwin-x86_64")
-elseif(WIN32)
-  set(OS "windows-i386")
-  if (CMAKE_SIZEOF_VOID_P MATCHES 8)
-    set(ARCHSTR "windows-x86_64")
-  else()
-    set(ARCHSTR "windows-i386")
-  endif()
-elseif(OPENELEC)
-  if (OE_ARCH STREQUAL "x86_64")
-    set(ARCHSTR "linux-openelec-x86_64")
-  elseif(OE_ARCH STREQUAL "armv7")
-    set(ARCHSTR "linux-openelec-armv7")
-  endif()
-elseif(UNIX)
-  set(ARCHSTR ${PLEX_BUILD_TARGET})
-endif(APPLE)
+set(ARCHSTR ${PLEX_BUILD_TARGET})
 
 option(ENABLE_CODECS "Enable downloading for Codecs on Demand" OFF)
 if(ENABLE_CODECS)
@@ -70,7 +53,6 @@ function(download_deps DD_NAME)
                      VARIANT
                      DEPHASH_VAR
                      ARCHSTR
-                     DYLIB_SCRIPT_PATH
                      BASE_URL
                      TOKEN)
 
@@ -190,19 +172,6 @@ function(download_deps DD_NAME)
     if(NOT UNPACK_RESULT EQUAL 0)
       message(FATAL_ERROR "Failed to unpack deps..")
     endif(NOT UNPACK_RESULT EQUAL 0)
-
-    if(APPLE AND DD_DYLIB_SCRIPT_PATH)
-      message(STATUS "Fixing install library names...${DEP_DIR}/${DEP_DIRNAME}")
-      execute_process(
-        COMMAND ${DD_DYLIB_SCRIPT_PATH} ${DEP_DIR}/${DEP_DIRNAME}
-        WORKING_DIRECTORY ${DEP_DIR}
-        RESULT_VARIABLE DYLIB_RESULT
-      )
-      if(NOT DYLIB_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to run ${DD_DYLIB_SCRIPT_PATH}")
-      endif()
-      message(STATUS "Done")
-    endif()
 
     if(EXISTS ${DEP_DIR}/${DEP_DIRNAME}/etc)
       message(STATUS "Removing etc in dependency bundle")

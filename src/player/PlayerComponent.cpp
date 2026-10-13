@@ -24,18 +24,7 @@
 #include <shared/Paths.h>
 #include <shared/SessionEnv.h>
 
-#if !defined(Q_OS_WIN)
 #include <unistd.h>
-#endif
-
-#if !defined(Q_OS_WIN)
-#include <unistd.h>
-#endif
-
-#ifdef TARGET_RPI
-#include <bcm_host.h>
-#include <interface/vmcs_host/vcgencmd.h>
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static void wakeup_cb(void *context)
@@ -127,7 +116,6 @@ bool PlayerComponent::componentInitialize()
 
   mpv::qt::set_property(m_mpv, "tls-verify", "yes");
 
-#if !defined(Q_OS_WIN) && !defined(Q_OS_MAC)
   QList<QByteArray> list;
   list << "/etc/ssl/certs/ca-certificates.crt"
        << "/etc/pki/tls/certs/ca-bundle.crt"
@@ -151,23 +139,6 @@ bool PlayerComponent::componentInitialize()
 
   if (!success)
     throw FatalException(tr("Failed to locate CA bundle."));
-#endif
-
-  // Apply some low-memory settings on RPI, which is relatively memory-constrained.
-#ifdef TARGET_RPI
-  mpv::qt::set_property(m_mpv, "demuxer-max-back-bytes", 10 * 1024 * 1024);
-  // The demuxer queue is used for the readahead, and also for dealing with badly
-  // interlaved audio/video. Setting it too low increases sensitivity to network
-  // issues, and could cause playback failure with "bad" files.
-  mpv::qt::set_property(m_mpv, "demuxer-max-bytes", 50 * 1024 * 1024); // bytes
-  // Specifically for enabling mpeg4.
-  mpv::qt::set_property(m_mpv, "hwdec-codecs", "all");
-  // Do not use exact seeks by default. (This affects the start position in the "loadfile"
-  // command in particular. We override the seek mode for normal "seek" commands.)
-  mpv::qt::set_property(m_mpv, "hr-seek", "no");
-  // Force vo_rpi to fullscreen.
-  mpv::qt::set_property(m_mpv, "fullscreen", true);
-#endif
 
   if (mpv_initialize(m_mpv) < 0)
     throw FatalException(tr("Failed to initialize mpv."));
@@ -294,11 +265,6 @@ void PlayerComponent::setQtQuickWindow(QQuickWindow* window)
 void PlayerComponent::setWindow(QQuickWindow* window)
 {
   QString vo = "libmpv";
-
-#ifdef TARGET_RPI
-  window->setFlags(Qt::FramelessWindowHint);
-  vo = "rpi";
-#endif
 
   m_window = window;
   if (!window)
@@ -454,9 +420,6 @@ bool PlayerComponent::switchDisplayFrameRate()
   }
 
   bool fs = SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "fullscreen").toBool();
-#if KONVERGO_OPENELEC
-  fs = true;
-#endif
   if (!fs)
   {
     QLOG_DEBUG() << "Not switching refresh-rate (not in fullscreen mode).";
@@ -1386,11 +1349,9 @@ void PlayerComponent::updateVideoSettings()
   QVariant deinterlace = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "deinterlace");
   mpv::qt::set_property(m_mpv, "deinterlace", deinterlace.toBool() ? "yes" : "no");
 
-#ifndef TARGET_RPI
   double displayFps = DisplayComponent::Get().currentRefreshRate();
   if (qIsFinite(displayFps) && displayFps > 0)
     mpv::qt::set_property(m_mpv, "display-fps-override", displayFps);
-#endif
 
   setAudioDelay(m_playbackAudioDelay);
 
@@ -1415,13 +1376,6 @@ void PlayerComponent::initializeCodecSupport()
   for (auto name : all.keys())
   {
     bool ok = true;
-#ifdef TARGET_RPI
-    char res[100] = "";
-    bcm_host_init();
-    if (vc_gencmd(res, sizeof(res), "codec_enabled %s", all[name].toUtf8().data()))
-      res[0] = '\0'; // error
-    ok = !!strstr(res, "=enabled");
-#endif
     m_codecSupport[name] = ok;
     QLOG_INFO() << "Codec" << name << (ok ? "present" : "disabled");
   }

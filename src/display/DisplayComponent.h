@@ -29,9 +29,6 @@ public:
   // changed, return false. Return false on failure too.
   bool switchToBestVideoMode(float frameRate);
 
-  // Switch to best overall video mode. This will also switch the resolution.
-  bool switchToBestOverallVideoMode(int display);
-
   // The syntax is as follows: the command string consists of multiple arguments separated
   // by spaces. Each argument can be one of the following:
   //    <N>hz (e.g.: "24hz"): change the refresh rate

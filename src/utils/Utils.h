@@ -32,16 +32,9 @@ private:
   enum Platform
   {
     PLATFORM_UNKNOWN = 0,
-    PLATFORM_OSX = (1 << 0),
     PLATFORM_LINUX = (1 << 1),
-    PLATFORM_OE_X86 = (1 << 2),
-    PLATFORM_OE_RPI = (1 << 3),
-    PLATFORM_WINDOWS = (1 << 4),
-    PLATFORM_OE = (PLATFORM_OE_RPI | PLATFORM_OE_X86),
-    PLATFORM_ANY = (PLATFORM_OSX | PLATFORM_WINDOWS | PLATFORM_LINUX | PLATFORM_OE)
+    PLATFORM_ANY = PLATFORM_LINUX
   };
-
-#define PLATFORM_ANY_EXCEPT(x) (PLATFORM_ANY & (~(x)))
 
 namespace Utils
 {

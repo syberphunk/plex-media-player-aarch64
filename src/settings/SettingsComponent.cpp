@@ -655,18 +655,8 @@ int SettingsComponent::platformMaskFromObject(const QJsonObject& object)
 /////////////////////////////////////////////////////////////////////////////////////////
 Platform SettingsComponent::platformFromString(const QString& platformString)
 {
-  if (platformString == "osx")
-    return PLATFORM_OSX;
-  else if (platformString == "windows")
-    return PLATFORM_WINDOWS;
-  else if (platformString == "linux")
+  if (platformString == "linux")
     return PLATFORM_LINUX;
-  else if (platformString == "oe")
-    return PLATFORM_OE;
-  else if (platformString == "oe_rpi")
-    return PLATFORM_OE_RPI;
-  else if (platformString == "oe_x86")
-    return PLATFORM_OE_X86;
   else if (platformString == "any")
     return PLATFORM_ANY;
 
@@ -727,10 +717,6 @@ bool SettingsComponent::resetAndSaveOldConfiguration()
 QString SettingsComponent::getWebClientUrl(bool desktop)
 {
   QString url;
-
-#ifdef KONVERGO_OPENELEC
-  desktop = false;
-#endif
 
   if (desktop)
     url = SettingsComponent::Get().value(SETTINGS_SECTION_PATH, "startupurl_desktop").toString();

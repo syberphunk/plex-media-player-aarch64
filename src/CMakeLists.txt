@@ -137,7 +137,6 @@ target_link_libraries(${MAIN_TARGET}
   ${BREAKPAD_LIBRARIES}
   ${ICU_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
-  ${RPI_LIBS}
   ${MINIZIP_LIBS}
 )
 

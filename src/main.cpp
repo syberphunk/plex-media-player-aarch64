@@ -58,20 +58,6 @@ static void preinitQt()
 
   QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
   QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
-
-#ifdef Q_OS_WIN32
-  QVariant useOpengl = SettingsComponent::readPreinitValue(SETTINGS_SECTION_MAIN, "useOpenGL");
-
-  // Warning: this must be the same as the default value as declared in
-  // the settings_description.json file, or confusion will result.
-  if (useOpengl.typeId() != QMetaType::Bool)
-    useOpengl = false;
-
-  if (useOpengl.toBool())
-    QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
-  else
-    QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
-#endif
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

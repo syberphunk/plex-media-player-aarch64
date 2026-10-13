@@ -16,7 +16,6 @@
 #define SETTINGS_SECTION_SUBTITLES "subtitles"
 #define SETTINGS_SECTION_OVERRIDES "overrides"
 #define SETTINGS_SECTION_CEC "cec"
-#define SETTINGS_SECTION_APPLEREMOTE "appleremote"
 
 #define WEB_CLIENT_LOGIN_FRAGMENT "#!/login"
 

@@ -10,24 +10,11 @@ project(PlexMediaPlayer CXX C)
 # we want this to be able to run clang-tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
 
-option(OPENELEC "Make an OpenELEC build" OFF)
 option(LINUX_X11POWER "Enable non D-Bus screensaver management" OFF)
 
 if((NOT LINUX_X11POWER) AND UNIX)
   set(LINUX_DBUS ON)
 endif()
-
-if(OPENELEC)
-  add_definitions(-DKONVERGO_OPENELEC=1)
-  Message(STATUS "Making an OpenELEC build")
-endif(OPENELEC)
-
-if(BUILD_TARGET STREQUAL "RPI")
-  add_definitions(-DTARGET_RPI=1)
-  set(RPI_LIBS bcm_host)
-  Message(STATUS "Build for Raspberry PI target")
-endif(BUILD_TARGET STREQUAL "RPI")
-
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMakeModules/")

@@ -16,12 +16,6 @@
 #include "QsLog.h"
 #include "utils/Utils.h"
 
-#if defined(Q_OS_WIN32)
-#include <windows.h>
-#include <dwmapi.h>
-#include <avrt.h>
-#endif
-
 #ifdef USE_X11EXTRAS
 #include <QGuiApplication>
 #include <QtGui/qguiapplication_platform.h>
@@ -37,25 +31,13 @@ static void* get_proc_address(void* ctx, const char* name)
     return nullptr;
 
   void *res = (void *)glctx->getProcAddress(QByteArray(name));
-#ifdef Q_OS_WIN32
-  // wglGetProcAddress(), which is used by Qt, does not always resolve all
-  // builtin functions with all drivers (only extensions). Qt compensates this
-  // for a degree, but does this only for functions Qt happens to need. So
-  // we need our own falback as well.
-  if (!res)
-  {
-    HMODULE handle = (HMODULE)QOpenGLContext::openGLModuleHandle();
-    if (handle)
-      res = (void *)GetProcAddress(handle, name);
-  }
-#endif
   return res;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
-  m_playbackActive(false), m_hAvrtHandle(nullptr)
+  m_playbackActive(false)
 {
   m_item->m_renderer = this;
 }
@@ -65,8 +47,6 @@ PlayerRenderer::~PlayerRenderer()
 {
   if (m_item->m_renderer == this)
     m_item->m_renderer = nullptr;
-
-  setThreadCharacteristics(false);
 
   // Keep in mind that the m_mpv handle must be held until this is done.
   if (m_mpvGL)
@@ -80,11 +60,6 @@ PlayerRenderer::~PlayerRenderer()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 bool PlayerRenderer::init()
 {
-#ifdef Q_OS_WIN32
-  // Request Multimedia Class Schedule Service.
-  DwmEnableMMCSS(TRUE);
-#endif
-
   mpv_opengl_init_params opengl_params = {
       .get_proc_address = get_proc_address,
       .get_proc_address_ctx = NULL,
@@ -110,25 +85,6 @@ bool PlayerRenderer::init()
     return true;
   }
   return false;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::setThreadCharacteristics(bool active)
-{
-#ifdef Q_OS_WIN32
-  if (active && !m_hAvrtHandle)
-  {
-    DWORD handle = 0;
-    m_hAvrtHandle = AvSetMmThreadCharacteristicsW(L"Low Latency", &handle);
-  }
-  else if (!active && m_hAvrtHandle)
-  {
-    AvRevertMmThreadCharacteristics(m_hAvrtHandle);
-    m_hAvrtHandle = 0;
-  }
-#else
-  Q_UNUSED(active);
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -210,11 +166,7 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
     m_graphicsInfo.clear();
   }
 
-  if (m_playbackActive != player->m_playbackActive)
-  {
-    m_playbackActive = player->m_playbackActive;
-    setThreadCharacteristics(m_playbackActive);
-  }
+  m_playbackActive = player->m_playbackActive;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

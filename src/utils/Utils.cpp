@@ -82,17 +82,7 @@ QJsonDocument Utils::OpenJsonDocument(const QString& path, QJsonParseError* err)
 /////////////////////////////////////////////////////////////////////////////////////////
 Platform Utils::CurrentPlatform()
 {
-#if KONVERGO_OPENELEC
-  #if TARGET_RPI
-    return PLATFORM_OE_RPI;
-  #else
-    return PLATFORM_OE_X86;
-  #endif
-#elif defined(Q_OS_LINUX)
   return PLATFORM_LINUX;
-#else
-  return PLATFORM_UNKNOWN;
-#endif
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

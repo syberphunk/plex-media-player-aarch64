@@ -22,7 +22,6 @@
         "value": "webMode",
         "default": "tv",
         "hidden": true,
-        "platforms": [ "windows", "macosx", "linux" ],
         "possible_values": [
           [ "desktop", "desktop" ],
           [ "tv", "tv" ]
@@ -44,14 +43,7 @@
       },
       {
         "value": "fullscreen",
-        "default": false,
-        "platforms_excluded": "oe"
-      },
-      {
-        "value": "minimizeOnDefocus",
-        "default": false,
-        "platforms": [ "windows" ],
-        "hidden": true
+        "default": false
       },
       {
         "value": "alwaysOnTop",
@@ -88,12 +80,6 @@
         "hidden": true
       },
       {
-        "value": "hdmi_poweron",
-        "default": false,
-        "hidden": true,
-        "platforms": [ "oe_rpi" ]
-      },
-      {
         "value": "disablemouse",
         "default": false
       },
@@ -112,12 +98,6 @@
         ]
       },
       {
-        "value": "useOpenGL",
-        // Warning: the default must be the same as the one in preinitQt().
-        "default": false,
-        "platforms": [ "windows" ]
-      },
-      {
         "value": "clientUUID",
         "default": "",
         "hidden": true
@@ -129,16 +109,7 @@
       },
       {
         "value": "useSystemVideoCodecs",
-        "default": [
-          {
-            "value": true,
-            // MMAL works just fine
-            "platforms": [ "oe" ]
-          },
-          {
-            "value": false
-          }
-        ],
+        "default": false,
         "hidden": true
       },
       {
@@ -148,7 +119,6 @@
       },
       {
         "value": "forceFSScreen",
-        "platforms_excluded": [ "oe" ],
         "default": ""
       },
       {
@@ -177,15 +147,7 @@
       },
       {
         "value": "channels",
-        "default": [
-          {
-            "value": "auto",
-            "platforms": [ "osx" ]
-          },
-          {
-            "value": "2.0"
-          }
-        ],
+        "default": "2.0",
         "possible_values": [
           [ "auto", "audio.auto" ],
           [ "2.0", "audio.stereo" ],
@@ -204,7 +166,7 @@
       {
         "value": "exclusive",
         "default": false,
-        "platforms": [ "osx", "windows" ]
+        "hidden": true
       },
       {
         "value": "passthrough.ac3",
@@ -216,18 +178,15 @@
       },
       {
         "value": "passthrough.eac3",
-        "default": false,
-        "platforms_excluded": [ "osx", "oe_rpi" ]
+        "default": false
       },
       {
         "value": "passthrough.dts-hd",
-        "default": false,
-        "platforms_excluded": [ "osx", "oe_rpi" ]
+        "default": false
       },
       {
         "value": "passthrough.truehd",
-        "default": false,
-        "platforms_excluded": [ "osx", "oe_rpi" ]
+        "default": false
       }
     ]
   },
@@ -255,28 +214,16 @@
       },
       {
         "value": "hardwareDecoding",
-        "default": [
-          {
-            "value": "enabled",
-            "platforms": [ "oe", "linux" ]
-          },
-          {
-            "value": "disabled"
-          }
-        ],
+        "default": "enabled",
         "possible_values": [
-          [ "enabled", "video.decode.enabled", { "platforms_excluded": "osx" } ],
-          [ "enabled", "video.decode.enabled.modern", { "platforms": "osx" } ],
-          [ "osx_compat", "video.decode.enabled.old", { "platforms": "osx" } ],
+          [ "enabled", "video.decode.enabled" ],
           [ "copy", "video.decode.copy" ],
           [ "disabled", "video.decode.disabled" ]
-        ],
-        "platforms_excluded": "oe_rpi"
+        ]
       },
       {
         "value": "deinterlace",
-        "default": false,
-        "platforms_excluded": "oe_rpi"
+        "default": false
       },
       {
         "value": "directPlay",
@@ -341,8 +288,8 @@
         "possible_values": [
           [ 10, "video.cache.tiny" ],
           [ 75, "video.cache.default" ],
-          [ 150, "video.cache.large", { "platforms_excluded": "oe_rpi" } ],
-          [ 500, "video.cache.vlarge", { "platforms_excluded": "oe_rpi" } ]
+          [ 150, "video.cache.large" ],
+          [ 500, "video.cache.vlarge" ]
         ]
       },
       {
@@ -475,16 +422,6 @@
     ]
   },
   {
-    "section": "appleremote",
-    "hidden": true,
-    "values": [
-      {
-        "value": "emulatepht",
-        "default": true
-      }
-    ]
-  },
-  {
     "section": "webclient",
     "hidden": true,
     "storage": true,
@@ -493,27 +430,11 @@
   {
     "section": "system",
     "values": [
-        {
-          "value": "systemname",
-          "default": "PlexMediaPlayer",
-          "hidden": true,
-          "platforms": [ "oe" ]
-        },
-        {
-          "value": "lircd_enabled",
-          "default": false,
-          "platforms": [ "oe" ]
-        },
-        {
-          "value": "smbd_enabled",
-          "default": false,
-          "platforms": [ "oe" ]
-        },
-        {
-          "value": "sshd_enabled",
-          "default": false,
-          "platforms": [ "oe" ]
-        }
+      {
+        "value": "systemname",
+        "default": "PlexMediaPlayer",
+        "hidden": true
+      }
     ]
   },
   {

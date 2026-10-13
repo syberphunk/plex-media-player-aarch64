@@ -7,17 +7,12 @@
 #include "Paths.h"
 #include "Names.h"
 
-// System modifiers
-#define SYSTEM_MODIFIER_OPENELEC "OpenELEC"
-
 class SystemComponent : public ComponentBase
 {
   Q_OBJECT
   DEFINE_SINGLETON(SystemComponent);
 
 public:
-  Q_PROPERTY(bool isMacos READ platformIsMac CONSTANT)
-  Q_PROPERTY(bool isWindows READ platformIsWindows CONSTANT)
   Q_PROPERTY(bool isLinux READ platformIsLinux CONSTANT)
   Q_PROPERTY(qreal scale MEMBER m_scale CONSTANT)
 
@@ -58,10 +53,7 @@ public:
   enum PlatformType
   {
     platformTypeUnknown,
-    platformTypeOsx,
-    platformTypeWindows,
-    platformTypeLinux,
-    platformTypeOpenELEC
+    platformTypeLinux
   };
 
   // possible values for target types
@@ -70,7 +62,6 @@ public:
     platformArchUnknown,
     platformArchX86_32,
     platformArchX86_64,
-    platformArchRpi2,
     platformArchAarch64
   };
 
@@ -80,7 +71,6 @@ public:
   QString getPlatformTypeString() const;
   QString getPlatformArchString() const;
 
-  inline bool isOpenELEC() const { return m_platformType == platformTypeOpenELEC; }
   bool isWebClientConnected() const { return !m_webClientVersion.isEmpty(); }
 
   inline QString authenticationToken() { return m_authenticationToken; }
@@ -100,8 +90,6 @@ private:
   explicit SystemComponent(QObject* parent = nullptr);
   static QMap<QString, QString> networkInterfaces();
 
-  bool platformIsWindows() const { return m_platformType == platformTypeWindows; }
-  bool platformIsMac() const { return m_platformType == platformTypeOsx; }
   bool platformIsLinux() const { return m_platformType == platformTypeLinux; }
 
   QTimer* m_mouseOutTimer;

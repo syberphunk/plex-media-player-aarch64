@@ -39,7 +39,7 @@ endforeach(COMP ${components})
 
 message(STATUS "Qt version: ${Qt6Core_VERSION}")
 
-if(UNIX AND (NOT BUILD_TARGET STREQUAL "RPI"))
+if(UNIX)
   find_package(X11)
   if(X11_FOUND)
     add_definitions(-DUSE_X11EXTRAS)

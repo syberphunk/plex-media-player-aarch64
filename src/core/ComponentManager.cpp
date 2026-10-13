@@ -15,10 +15,6 @@
 
 #include "server/HTTPServer.h"
 
-#if KONVERGO_OPENELEC
-#include "system/openelec/OESystemComponent.h"
-#endif
-
 #include "QsLog.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -67,10 +63,6 @@ void ComponentManager::initialize()
   registerComponent(&RemoteComponent::Get());
   registerComponent(&PlayerComponent::Get());
   registerComponent(&PowerComponent::Get());
-
-#if KONVERGO_OPENELEC
-  registerComponent(&OESystemComponent::Get());
-#endif
 
   for(ComponentBase* component : m_components.values())
     component->componentPostInitialize();

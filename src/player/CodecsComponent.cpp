@@ -66,18 +66,9 @@ static const Codec Encoders[] = {
 // We might want to use Codec.quality to decide this one day.
 // But for now, it's better if we can quickly change these.
 static QSet<QString> g_systemVideoDecoderWhitelist = {
-  // RPI
-  "h264_mmal",
-  "mpeg2_mmal",
-  "mpeg4_mmal",
-  "vc1_mmal",
 };
 
 static QSet<QString> g_systemAudioDecoderWhitelist = {
-  // OSX
-  "eac3_at",
-  // Windows
-  "eac3_mf",
 };
 
 static QSet<QString> g_systemAudioEncoderWhitelist = {
@@ -96,30 +87,14 @@ static QProcess* g_eaeProcess;
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static QString getBuildType()
 {
-#ifdef Q_OS_MAC
-  return "darwin-x86_64";
-#elif defined(TARGET_RPI)
-  return "openelec-armv7";
-#else
   return SystemComponent::Get().getPlatformTypeString() + "-" +
          SystemComponent::Get().getPlatformArchString();
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static QString getEAEBuildType()
 {
-#if defined(Q_OS_MAC)
-  return "darwin-x86_64";
-#elif defined(Q_OS_WIN)
-  return sizeof(void *) > 4 ? "windows-x86_64" : "windows-i386";
-#elif defined(TARGET_RPI)
-  return "linux-raspi2-arm7";
-#elif defined(Q_OS_LINUX)
   return sizeof(void *) > 4 ? "linux-ubuntu-x86_64" : "linux-ubuntu-i686";
-#else
-  return "unknown";
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -160,11 +135,7 @@ static QString eaePrefixPath()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static QString eaeBinaryPath()
 {
-QString exeSuffix = "";
-#ifdef Q_OS_WIN
-  exeSuffix = ".exe";
-#endif
-  return eaePrefixPath() + "/EasyAudioEncoder/EasyAudioEncoder" + exeSuffix;
+  return eaePrefixPath() + "/EasyAudioEncoder/EasyAudioEncoder";
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -262,15 +233,6 @@ QString CodecDriver::getPath() const
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 bool CodecDriver::isSystemCodec() const
 {
-  // MS Windows
-  if (driver.endsWith("_mf"))
-    return true;
-  // OSX
-  if (driver.endsWith("_at"))
-    return true;
-  // Linux on RPI
-  if (driver.endsWith("_mmal"))
-    return true;
   // Not really a system codec, but treated as such for convenience
   if (driver.endsWith("_eae"))
     return true;
@@ -337,11 +299,6 @@ static QString findOldDeviceID()
 {
   // First we try to reuse the ID from other Plex products (i.e. PMS) or older paths.
   QStringList candidates = {
-#ifdef Q_OS_MAC
-    QDir::home().path() + "/Library/Application Support/Plex/Codecs/.device-id",
-    QDir::home().path() + "/Library/Application Support/Plex Media Server/Codecs/.device-id",
-    QDir::home().path() + "/Library/Application Support/Plex/Plex Media Server/Codecs/.device-id",
-#endif
     QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Plex/Codecs/.device-id",
     QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Plex/codecs/.device-id",
     QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Plex Media Server/Codecs/.device-id",
@@ -401,11 +358,7 @@ static QString getFFmpegVersion()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static void setEnv(QString var, QString val)
 {
-#ifdef Q_OS_WIN
-  SetEnvironmentVariableW(var.toStdWString().c_str(), val.toStdWString().c_str());
-#else
   qputenv(var.toUtf8().data(), val.toUtf8().data());
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -502,15 +455,6 @@ static void probeCodecs()
     QLOG_DEBUG() << "h264_mf max. resolution:" << g_mediaFoundationH264MaxResolution;
   }
 #endif
-
-#ifdef Q_OS_MAC
-  // Unsupported, but avoid picking up broken Perian decoders.
-  if (QSysInfo::MacintoshVersion <= QSysInfo::MV_10_10)
-    g_systemAudioDecoderWhitelist.remove("ac3_at");
-  // Unknown Apple crashes
-  if (QSysInfo::MacintoshVersion <= QSysInfo::MV_10_11)
-    g_systemAudioDecoderWhitelist.remove("aac_at");
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -518,10 +462,6 @@ static void updateCodecs()
 {
   QStringList candidates = {
     codecsRootPath(),
-#ifdef Q_OS_MAC
-    QDir::home().path() + "/Library/Application Support/Plex/Codecs/",
-    QDir::home().path() + "/Library/Application Support/Plex Media Server/Codecs/",
-#endif
     QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Plex/Codecs/",
     QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Plex/codecs/",
     QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Plex Media Server/Codecs/",
@@ -800,11 +740,7 @@ void CodecsFetcher::codecInfoDownloadDone(QVariant userData, bool success, const
 
 static voidpf unz_open_file(voidpf opaque, const char* filename, int mode)
 {
-#ifdef Q_OS_WIN32
-  return _wfopen(QString::fromUtf8(filename).toStdWString().c_str(), L"rb");
-#else
   return fopen(filename, "rb");
-#endif
 }
 
 static uLong unz_read_file(voidpf opaque, voidpf stream, void* buf, uLong size)
@@ -964,7 +900,6 @@ static bool extractZip(QString zip, QString dest)
       goto fail;
     }
 
-#ifndef _WIN32
     // Set the executable bit.
     // We could try setting the full permissions as stored in the file, but why bother.
     if (finfo.external_fa & 0x400000)
@@ -975,7 +910,6 @@ static bool extractZip(QString zip, QString dest)
         goto fail;
       }
     }
-#endif
   }
 
   success = true;

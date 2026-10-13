@@ -34,14 +34,7 @@ public Q_SLOTS:
   bool canPowerOff() { return checkCap(CAP_POWER_OFF); }
   bool canReboot() { return checkCap(CAP_REBOOT); }
   bool canSuspend() { return checkCap(CAP_SUSPEND); }
-  bool canRelaunch()
-  {
-#if OPENELEC
-      return true;
-#else
-      return false;
-#endif
-  }
+  bool canRelaunch() { return false; }
 
   virtual int getPowerCapabilities() { return 0; }
 

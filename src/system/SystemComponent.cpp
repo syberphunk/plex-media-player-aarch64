@@ -21,14 +21,10 @@
 #define MOUSE_TIMEOUT 5 * 1000
 
 #define KONVERGO_PRODUCTID_DEFAULT  3
-#define KONVERGO_PRODUCTID_OPENELEC 4
 
 // Platform types map
-QMap<SystemComponent::PlatformType, QString> g_platformTypeNames = { \
-  { SystemComponent::platformTypeOsx, "macosx" }, \
-  { SystemComponent::platformTypeWindows, "windows" },
+QMap<SystemComponent::PlatformType, QString> g_platformTypeNames = {
   { SystemComponent::platformTypeLinux, "linux" },
-  { SystemComponent::platformTypeOpenELEC, "openelec" },
   { SystemComponent::platformTypeUnknown, "unknown" },
 };
 
@@ -36,7 +32,6 @@ QMap<SystemComponent::PlatformType, QString> g_platformTypeNames = { \
 QMap<SystemComponent::PlatformArch, QString> g_platformArchNames = {
   { SystemComponent::platformArchX86_32, "i386" },
   { SystemComponent::platformArchX86_64, "x86_64" },
-  { SystemComponent::platformArchRpi2, "rpi2" },
   { SystemComponent::platformArchAarch64, "aarch64" },
   { SystemComponent::platformArchUnknown, "unknown" }
 };
@@ -48,21 +43,9 @@ SystemComponent::SystemComponent(QObject* parent) : ComponentBase(parent), m_pla
   m_mouseOutTimer->setSingleShot(true);
   connect(m_mouseOutTimer, &QTimer::timeout, [&] () { setCursorVisibility(false); });
 
-// define OS Type
-#if defined(Q_OS_MAC)
-  m_platformType = platformTypeOsx;
-#elif defined(Q_OS_WIN)
-  m_platformType = platformTypeWindows;
-#elif defined(KONVERGO_OPENELEC)
-  m_platformType = platformTypeOpenELEC;
-#elif defined(Q_OS_LINUX)
   m_platformType = platformTypeLinux;
-#endif
 
-// define target type
-#if TARGET_RPI
-  m_platformArch = platformArchRpi2;
-#elif defined(Q_PROCESSOR_X86_32)
+#if defined(Q_PROCESSOR_X86_32)
   m_platformArch = platformArchX86_32;
 #elif defined(Q_PROCESSOR_X86_64)
   m_platformArch = platformArchX86_64;
@@ -128,28 +111,10 @@ QVariantMap SystemComponent::systemInformation() const
   QString arch;
   int productid = KONVERGO_PRODUCTID_DEFAULT;
 
-#ifdef Q_OS_WIN
-  arch = (sizeof(void *) == 8) ? "x86_64" : "i386";
-#else
   arch = QSysInfo::currentCpuArchitecture();
-#endif
 
   build = getPlatformTypeString();
   dist = getPlatformTypeString();
-
-#if defined(KONVERGO_OPENELEC)
-  productid = KONVERGO_PRODUCTID_OPENELEC;
-  dist = "openelec";
-
-  if (m_platformArch == platformArchRpi2)
-  {
-    build = "rpi2";
-  }
-  else
-  {
-    build = "generic";
-  }
-#endif
 
   info["build"] = build + "-" + arch;
   info["dist"] = dist;

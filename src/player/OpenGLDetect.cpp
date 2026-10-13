@@ -11,27 +11,6 @@
 #include "OpenGLDetect.h"
 #include "shared/SessionEnv.h"
 
-#if defined(Q_OS_MAC)
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void detectOpenGLEarly()
-{
-  // Request OpenGL 4.1 if possible on OSX, otherwise it defaults to 2.0
-  // This needs to be done before we create the QGuiApplication
-  //
-  QSurfaceFormat format = QSurfaceFormat::defaultFormat();
-  format.setMajorVersion(3);
-  format.setMinorVersion(2);
-  format.setProfile(QSurfaceFormat::CoreProfile);
-  QSurfaceFormat::setDefaultFormat(format);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void detectOpenGLLate()
-{
-}
-
-#elif defined(Q_OS_LINUX)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Attempt to reuse mpv's code for detecting whether we want GLX or EGL (which
@@ -92,53 +71,3 @@ void detectOpenGLEarly()
 void detectOpenGLLate()
 {
 }
-
-#elif defined(Q_OS_WIN)
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void detectOpenGLEarly()
-{
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-void detectOpenGLLate()
-{
-  if (!QCoreApplication::testAttribute(Qt::AA_UseOpenGLES))
-    return;
-
-  // Workaround for broken QSGDefaultDistanceFieldGlyphCache::resizeTexture in ES 3 mode
-  qputenv("QML_USE_GLYPHCACHE_WORKAROUND", "1");
-
-  QList<int> versions = { 3, 2 };
-  for (auto version : versions)
-  {
-    QLOG_INFO() << "Trying GLES version" << version;
-    QSurfaceFormat fmt = QSurfaceFormat::defaultFormat();
-    fmt.setMajorVersion(version);
-#ifdef HAVE_OPTIMALORIENTATION
-    fmt.setOption(QSurfaceFormat::UseOptimalOrientation);
-#endif
-    QOpenGLContext ctx;
-    ctx.setFormat(fmt);
-    if (ctx.create())
-    {
-      QLOG_INFO() << "Using GLES version" << version;
-      QSurfaceFormat::setDefaultFormat(fmt);
-      break;
-    }
-  }
-}
-
-#else
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void detectOpenGLEarly()
-{
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void detectOpenGLLate()
-{
-}
-
-#endif

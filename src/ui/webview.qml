@@ -21,33 +21,14 @@ KonvergoWindow
   Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    sequence: {
-      if (components.system.isMacos) return "Ctrl+Shift+F";
-      return "F11";
-    }
+    sequence: "F11"
     onActivated: mainWindow.toggleWebMode()
   }
 
   Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    sequence:
-    {
-      if (components.system.isMacos) return "Ctrl+Meta+F"
-      return "Shift+F11"
-    }
-    onActivated: mainWindow.toggleFullscreen()
-  }
-
-  Shortcut
-  {
-    sequence: "Alt+Return"
-    enabled:
-    {
-      if (mainWindow.webDesktopMode && components.system.isWindows)
-        return true;
-      return false;
-    }
+    sequence: "Shift+F11"
     onActivated: mainWindow.toggleFullscreen()
   }
 
@@ -61,10 +42,7 @@ KonvergoWindow
   Shortcut
   {
     enabled: mainWindow.webDesktopMode
-    sequence: {
-      if (components.system.isMacos) return "Ctrl+M";
-      return "Meta+Down";
-    }
+    sequence: "Meta+Down"
     onActivated: mainWindow.minimizeWindow()
   }
 

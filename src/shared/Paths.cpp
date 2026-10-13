@@ -77,17 +77,10 @@ QString Paths::cacheDir(const QString& file)
 /////////////////////////////////////////////////////////////////////////////////////////
 QString Paths::logDir(const QString& file)
 {
-#ifdef Q_OS_MAC
-  QDir ldir = QDir(QStandardPaths::locate(QStandardPaths::HomeLocation, "", QStandardPaths::LocateDirectory));
-  ldir.mkpath(ldir.absolutePath() + "/Library/Logs/" + Names::MainName());
-  ldir.cd("Library/Logs/" + Names::MainName());
-  return ldir.filePath(file);
-#else
   QDir ldir = writableLocation(QStandardPaths::GenericDataLocation);
   ldir.mkpath(ldir.absolutePath() + "/logs");
   ldir.cd("logs");
   return ldir.filePath(file);
-#endif
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

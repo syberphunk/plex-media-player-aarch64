@@ -7,12 +7,6 @@
 #include <mpv/client.h>
 #include <mpv/render.h>
 
-#ifdef Q_OS_WIN32
-#include <windows.h>
-#else
-typedef void* HANDLE;
-#endif
-
 #include "PlayerComponent.h"
 #include "QtHelper.h"
 
@@ -33,7 +27,6 @@ protected:
 private:
   bool init();
   void collectGraphicsInfo();
-  void setThreadCharacteristics(bool active);
 
   PlayerQuickItem* m_item;
   mpv::qt::Handle m_mpv;
@@ -41,7 +34,6 @@ private:
   bool m_initialized;
   bool m_playbackActive;
   QString m_graphicsInfo;
-  HANDLE m_hAvrtHandle;
 };
 
 class PlayerQuickItem : public QQuickFramebufferObject

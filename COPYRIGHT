@@ -30,10 +30,6 @@ src/player/QtHelper.h
     Copyright © 2017 the mpv developers
     ISC. See the file header.
 
-src/plugins/RPI_jpeg/
-    Copyright © 2012 Broadcom Europe Ltd
-    BSD 3-Clause. See the file headers.
-
 CMakeModules/
     FindBreakpad.cmake, FindGLES2.cmake, FindICU.cmake, FindMPV.cmake,
     FindSDL2.cmake, GetGitRevisionDescription.cmake and
