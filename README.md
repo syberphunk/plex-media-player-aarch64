@@ -102,6 +102,8 @@ flatpak install --user --from \
 flatpak run tv.plex.PlexMediaPlayer
 ```
 
+`--reinstall` replaces an existing installation of the same branch.
+
 `flatpak update` then follows the published repository. The release artifact is
 the same repository as a tarball, for installing without it:
 
