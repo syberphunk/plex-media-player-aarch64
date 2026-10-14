@@ -70,7 +70,9 @@ flatpak kill "$APP_ID" 2>/dev/null || true
 
 rm -rf "$HOME/.var/app/$APP_ID/config/plex.tv" \
        "$HOME/.var/app/$APP_ID/data/plexmediaplayer" \
-       "$HOME/.var/app/$APP_ID/cache/plexmediaplayer"
+       "$HOME/.var/app/$APP_ID/cache/plexmediaplayer" \
+       "$HOME/.var/app/$APP_ID/cache/mesa_shader_cache" \
+       "$HOME/.var/app/$APP_ID/cache/qtshadercache-"*
 
 EXTRA_ENV=()
 if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
