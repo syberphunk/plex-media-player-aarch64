@@ -10,10 +10,6 @@ set(INPUT_SRCS
   InputRoku.h
 )
 
-if(SDL2_FOUND)
-  list(APPEND INPUT_SRCS InputSDL.cpp InputSDL.h)
-endif(SDL2_FOUND)
-
 if(ENABLE_LIRC)
   list(APPEND INPUT_SRCS InputLIRC.cpp InputLIRC.h)
 endif(ENABLE_LIRC)

@@ -125,11 +125,6 @@
         "value": "forceAlwaysFS",
         "default": false,
         "hidden": true
-      },
-      {
-        "value": "sdlEnabled",
-        "default": true,
-        "hidden": true
       }
     ]
   },
