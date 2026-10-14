@@ -29,7 +29,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install build tools
         run: |
@@ -87,7 +87,7 @@ jobs:
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: facade-verify-${{ env.ARCH }}
           path: |
@@ -97,7 +97,7 @@ jobs:
           retention-days: 7
 
       - name: Attest the artifact's build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: plex-media-player-${{ env.ARCH }}-repo.tar.gz
 
@@ -111,9 +111,10 @@ jobs:
             "https://${{ github.repository_owner }}.github.io/${GITHUB_REPOSITORY#*/}" \
             pages
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: pages
+          include-hidden-files: true
 
   pages:
     needs: build
@@ -128,7 +129,7 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   verify-pages:
     needs: pages
