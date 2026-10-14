@@ -172,7 +172,11 @@ def steam_is_running():
 def ours(entry):
     if not isinstance(entry, dict):
         return False
-    return entry.get("LaunchOptions") == LAUNCH or FLATPAK_ID in str(entry.get("Exe", ""))
+    if entry.get("LaunchOptions") == LAUNCH or FLATPAK_ID in str(entry.get("Exe", "")):
+        return True
+    exe = quoted_exe()
+    return entry.get("appid") in (signed_appid(exe, APPNAME),
+                                  unsigned_appid(exe, APPNAME))
 
 
 def new_entry(icon):
