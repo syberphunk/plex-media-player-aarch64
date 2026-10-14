@@ -50,7 +50,7 @@ The individual steps:
 flatpak install -y flathub org.kde.Platform/aarch64/6.11 \
     org.kde.Sdk/aarch64/6.11 io.qt.qtwebengine.BaseApp/aarch64/6.11
 flatpak-builder --arch=aarch64 --force-clean --disable-rofiles-fuse \
-    --repo=../fp-repo ../fp-build packaging/flatpak/tv.plex.PlexMediaPlayer.yml
+    --repo=../fp-repo ../fp-build packaging/flatpak/io.github.syberphunk.PlexMediaPlayer.yml
 flatpak build-update-repo --prune ../fp-repo
 tar -C ../fp-repo -czf plex-media-player-aarch64-repo.tar.gz .
 ./scripts/verify-facade-flatpak.sh ../fp-repo aarch64 60
@@ -98,14 +98,14 @@ That workflow also runs on its own against the live site.
 
 ```
 flatpak install --user --from \
-    https://syberphunk.github.io/plex-media-player-aarch64/tv.plex.PlexMediaPlayer.flatpakref
-flatpak run tv.plex.PlexMediaPlayer
+    https://syberphunk.github.io/plex-media-player-aarch64/io.github.syberphunk.PlexMediaPlayer.flatpakref
+flatpak run io.github.syberphunk.PlexMediaPlayer
 ```
 
 Once installed, the remote is in place and later releases follow from it:
 
 ```
-flatpak update tv.plex.PlexMediaPlayer
+flatpak update io.github.syberphunk.PlexMediaPlayer
 ```
 
 `--reinstall` is not honoured when installing `--from` a flatpakref; repeating
@@ -114,7 +114,7 @@ installation rather than update it, remove both the application and the remote
 the flatpakref created:
 
 ```
-flatpak uninstall --user -y tv.plex.PlexMediaPlayer
+flatpak uninstall --user -y io.github.syberphunk.PlexMediaPlayer
 flatpak remote-delete --user plex-media-player-aarch64
 ```
 
@@ -132,13 +132,13 @@ tar -xzf plex-media-player-aarch64-repo.tar.gz -C plex-media-player-aarch64-repo
 gpg --dearmor < packaging/flatpak/signing-key.asc > signing-key.gpg
 flatpak remote-add --user --gpg-import=signing-key.gpg plex-media-player-aarch64 \
     "file://$PWD/plex-media-player-aarch64-repo"
-flatpak install --user plex-media-player-aarch64 tv.plex.PlexMediaPlayer
-flatpak run tv.plex.PlexMediaPlayer
+flatpak install --user plex-media-player-aarch64 io.github.syberphunk.PlexMediaPlayer
+flatpak run io.github.syberphunk.PlexMediaPlayer
 ```
 
 This takes the same remote name the flatpakref uses, and both carry
-`app/tv.plex.PlexMediaPlayer/aarch64/master`, so the two cannot be installed at
-once: remove the published remote first, as above.
+`app/io.github.syberphunk.PlexMediaPlayer/aarch64/master`, so the two cannot
+be installed at once: remove the published remote first, as above.
 
 The repository and its summary are signed with `packaging/flatpak/signing-key.asc`,
 whose fingerprint is `5B835A64 C562436E BF9BBDDB B9634B40 3133AD1F`. The
@@ -153,8 +153,8 @@ the install.
 ## Steam shortcut
 
 `packaging/steam/plex-steam-shortcut.py` adds the installed Flatpak to Steam as
-a non-Steam shortcut, calling `flatpak run tv.plex.PlexMediaPlayer`. It needs
-only python3.
+a non-Steam shortcut, calling
+`flatpak run io.github.syberphunk.PlexMediaPlayer`. It needs only python3.
 
 Steam reads `shortcuts.vdf` when it starts and writes its own copy back when it
 exits, so restart Steam afterwards, and shut it down beforehand where that is

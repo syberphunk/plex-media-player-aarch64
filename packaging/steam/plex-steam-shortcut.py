@@ -10,7 +10,7 @@ from glob import glob
 
 APPNAME = "Plex"
 EXE = "/usr/bin/flatpak"
-FLATPAK_ID = "tv.plex.PlexMediaPlayer"
+FLATPAK_ID = "io.github.syberphunk.PlexMediaPlayer"
 LAUNCH = "run " + FLATPAK_ID
 
 MAP, STR, INT, END = 0x00, 0x01, 0x02, 0x08

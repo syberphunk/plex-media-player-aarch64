@@ -23,7 +23,7 @@ import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "packaging", "flatpak",
-                        "tv.plex.PlexMediaPlayer.yml")
+                        "io.github.syberphunk.PlexMediaPlayer.yml")
 VENDOR = os.path.join(REPO, "vendor-deps")
 
 PLEX_DESKTOP_API = "https://plex.tv/api/downloads/6.json"

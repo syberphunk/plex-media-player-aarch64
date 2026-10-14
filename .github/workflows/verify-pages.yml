@@ -27,7 +27,7 @@ jobs:
         run: |
           set -eu
           url=${URL:-https://${{ github.repository_owner }}.github.io/${GITHUB_REPOSITORY#*/}/}
-          ref="${url%/}/tv.plex.PlexMediaPlayer.flatpakref"
+          ref="${url%/}/io.github.syberphunk.PlexMediaPlayer.flatpakref"
           echo "==> installing from $ref"
           flatpak remote-add --user --if-not-exists \
             flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -36,7 +36,7 @@ jobs:
       - name: Check the installation
         run: |
           set -eu
-          flatpak run --command=/bin/sh tv.plex.PlexMediaPlayer -c '
+          flatpak run --command=/bin/sh io.github.syberphunk.PlexMediaPlayer -c '
             set -eu
             cd /app/share/plexmediaplayer/web-client
             for flavour in desktop tv; do
@@ -48,4 +48,4 @@ jobs:
             test -x /app/bin/plexmediaplayer
             echo "    present  /app/bin/plexmediaplayer"
           '
-          flatpak info --user tv.plex.PlexMediaPlayer
+          flatpak info --user io.github.syberphunk.PlexMediaPlayer

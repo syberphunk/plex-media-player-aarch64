@@ -81,7 +81,7 @@ WORKSPACE="$(cd "$REPO_ROOT/.." && pwd)"
 BUILD_DIR=${BUILD_DIR:-$WORKSPACE/fp-build}
 REPO_DIR=${REPO_DIR:-$WORKSPACE/fp-repo}
 
-APP_ID=tv.plex.PlexMediaPlayer
+APP_ID=io.github.syberphunk.PlexMediaPlayer
 MANIFEST="$REPO_ROOT/packaging/flatpak/$APP_ID.yml"
 PUBKEY="$REPO_ROOT/packaging/flatpak/signing-key.asc"
 RUNTIME_VERSION=$(sed -n "s/^runtime-version: *'\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$MANIFEST")

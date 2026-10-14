@@ -32,8 +32,8 @@ raised and the bundle rebuilt.
 ## Fixes
 
 A fix is applied by raising the pin in
-`packaging/flatpak/tv.plex.PlexMediaPlayer.yml`, or by patching this fork's own
-code, and then rebuilding. Every pinned version is listed in
+`packaging/flatpak/io.github.syberphunk.PlexMediaPlayer.yml`, or by patching
+this fork's own code, and then rebuilding. Every pinned version is listed in
 [README.md](README.md), and a release asset is built only from a tagged commit
 of this repository.
 
@@ -64,7 +64,7 @@ alone.
   the release when the client does not complete the host handshake or when a
   subresource integrity check is blocked.
 - The Flatpak's sandbox permissions are the `finish-args` list in
-  `packaging/flatpak/tv.plex.PlexMediaPlayer.yml`.
+  `packaging/flatpak/io.github.syberphunk.PlexMediaPlayer.yml`.
 - `.github/workflows/release.yml` builds every release asset in GitHub Actions
   and signs it with a build provenance attestation before publishing it, tying
   the bundle to the workflow and the commit that produced it:

@@ -16,6 +16,7 @@ Everything sent to Plex is sent by Plex's own client and server software, and is
 governed by Plex's privacy policy:
 https://www.plex.tv/about/privacy-legal/privacy-preferences/
 
-Local state is written under `~/.var/app/tv.plex.PlexMediaPlayer/`: the Plex
-Desktop client's cookies, cache and local storage, the application's settings
-and its log file. Removing that directory removes all of it.
+Local state is written under
+`~/.var/app/io.github.syberphunk.PlexMediaPlayer/`: the Plex Desktop client's
+cookies, cache and local storage, the application's settings and its log file.
+Removing that directory removes all of it.

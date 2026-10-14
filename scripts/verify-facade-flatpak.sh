@@ -6,8 +6,8 @@ REPO_DIR=${1:?usage: verify-facade-flatpak.sh <repo-dir> [arch] [seconds]}
 ARCH=${2:-$(flatpak --default-arch)}
 RUN_SECONDS=${3:-45}
 
-APP_ID=tv.plex.PlexMediaPlayer
-REMOTE=pmp-verify-$ARCH
+APP_ID=io.github.syberphunk.PlexMediaPlayer
+REMOTE=plex-media-player-aarch64-verify-$ARCH
 OUT=$(mktemp -d)
 PUBKEY=$(cd "$(dirname "$0")/.." && pwd)/packaging/flatpak/signing-key.asc
 

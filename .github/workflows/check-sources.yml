@@ -74,7 +74,7 @@ jobs:
           fi
           touched=$(git status --porcelain | awk '{print $2}' | sort | tr '\n' ' ')
           touched=${touched% }
-          if [ "$touched" != "README.md packaging/flatpak/tv.plex.PlexMediaPlayer.yml" ]; then
+          if [ "$touched" != "README.md packaging/flatpak/io.github.syberphunk.PlexMediaPlayer.yml" ]; then
             echo "unexpected working tree: ${touched}" | tee -a repin.out
             exit 1
           fi
@@ -87,7 +87,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c auto-repin
-          git add README.md packaging/flatpak/tv.plex.PlexMediaPlayer.yml
+          git add README.md packaging/flatpak/io.github.syberphunk.PlexMediaPlayer.yml
           git commit -m "web client pin"
           git push -f origin auto-repin
 

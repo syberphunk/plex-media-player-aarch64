@@ -6,7 +6,7 @@ REPO_DIR=${1:?usage: stage-pages.sh <repo-dir> <base-url> <out-dir>}
 BASE_URL=${2:?usage: stage-pages.sh <repo-dir> <base-url> <out-dir>}
 OUT=${3:?usage: stage-pages.sh <repo-dir> <base-url> <out-dir>}
 
-APP_ID=tv.plex.PlexMediaPlayer
+APP_ID=io.github.syberphunk.PlexMediaPlayer
 REMOTE_NAME=plex-media-player-aarch64
 BASE_URL=${BASE_URL%/}
 PUBKEY=$(cd "$(dirname "$0")/.." && pwd)/packaging/flatpak/signing-key.asc
