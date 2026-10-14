@@ -124,22 +124,21 @@ was signed therefore stays unverified, whatever is installed through it later;
 deleting it lets the flatpakref recreate it with the key.
 
 The release artifact is the same repository as a tarball, for installing
-without the published one. It uses its own remote name, because
-`plex-media-player-aarch64` is the name the flatpakref takes:
+without the published one:
 
 ```
 mkdir -p plex-media-player-aarch64-repo
 tar -xzf plex-media-player-aarch64-repo.tar.gz -C plex-media-player-aarch64-repo
 gpg --dearmor < packaging/flatpak/signing-key.asc > signing-key.gpg
-flatpak remote-add --user --gpg-import=signing-key.gpg pmp-local \
+flatpak remote-add --user --gpg-import=signing-key.gpg plex-media-player-aarch64 \
     "file://$PWD/plex-media-player-aarch64-repo"
-flatpak install --user pmp-local tv.plex.PlexMediaPlayer
+flatpak install --user plex-media-player-aarch64 tv.plex.PlexMediaPlayer
 flatpak run tv.plex.PlexMediaPlayer
 ```
 
-Only one of the two can be installed at a time: both carry
-`app/tv.plex.PlexMediaPlayer/aarch64/master`, and flatpak refuses the same
-reference from a second remote.
+This takes the same remote name the flatpakref uses, and both carry
+`app/tv.plex.PlexMediaPlayer/aarch64/master`, so the two cannot be installed at
+once: remove the published remote first, as above.
 
 The repository and its summary are signed with `packaging/flatpak/signing-key.asc`,
 whose fingerprint is `5B835A64 C562436E BF9BBDDB B9634B40 3133AD1F`. The
