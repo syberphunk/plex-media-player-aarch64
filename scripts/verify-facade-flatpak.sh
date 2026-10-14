@@ -138,7 +138,9 @@ if len(colours) < 16:
 PY
 
 APP_LOG="$HOME/.var/app/$APP_ID/data/plexmediaplayer/logs/plexmediaplayer.log"
-[ -f "$APP_LOG" ] && cat "$APP_LOG" >> "$OUT/run.log"
+if [ -f "$APP_LOG" ] && ! grep -qE '\[ (DEBUG|INFO|WARN|ERROR) +\]' "$OUT/run.log"; then
+  cat "$APP_LOG" >> "$OUT/run.log"
+fi
 
 echo
 echo "==> bridge calls observed"
