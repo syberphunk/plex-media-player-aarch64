@@ -102,15 +102,22 @@ flatpak install --user --from \
 flatpak run tv.plex.PlexMediaPlayer
 ```
 
-`--reinstall` is not honoured when installing `--from` a flatpakref; the
-install fails with `branch master already installed`. Uninstall first:
+Once installed, the remote is in place and later releases follow from it:
+
+```
+flatpak update tv.plex.PlexMediaPlayer
+```
+
+`--reinstall` is not honoured when installing `--from` a flatpakref; repeating
+the install command fails with `branch master already installed`. To replace an
+installation rather than update it, uninstall first:
 
 ```
 flatpak uninstall --user -y tv.plex.PlexMediaPlayer
 ```
 
-`flatpak update` then follows the published repository. The release artifact is
-the same repository as a tarball, for installing without it:
+The release artifact is the same repository as a tarball, for installing
+without the published one:
 
 ```
 mkdir -p plex-media-player-aarch64-repo
