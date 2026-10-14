@@ -167,7 +167,7 @@ echo
 echo "==> step 2/6: installing the $ARCH runtime"
 flatpak remote-add --if-not-exists --user \
   flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install -y --user --noninteractive \
+flatpak install -y --user --noninteractive flathub \
   "org.kde.Platform/$ARCH/$RUNTIME_VERSION" \
   "org.kde.Sdk/$ARCH/$RUNTIME_VERSION" \
   "io.qt.qtwebengine.BaseApp/$ARCH/$RUNTIME_VERSION"
