@@ -110,24 +110,36 @@ flatpak update tv.plex.PlexMediaPlayer
 
 `--reinstall` is not honoured when installing `--from` a flatpakref; repeating
 the install command fails with `branch master already installed`. To replace an
-installation rather than update it, uninstall first:
+installation rather than update it, remove both the application and the remote
+the flatpakref created:
 
 ```
 flatpak uninstall --user -y tv.plex.PlexMediaPlayer
+flatpak remote-delete --user plex-media-player-aarch64
 ```
 
+Uninstalling the application leaves the remote behind, and a remote keeps the
+`gpg-verify` setting it was created with. A remote added before the repository
+was signed therefore stays unverified, whatever is installed through it later;
+deleting it lets the flatpakref recreate it with the key.
+
 The release artifact is the same repository as a tarball, for installing
-without the published one:
+without the published one. It uses its own remote name, because
+`plex-media-player-aarch64` is the name the flatpakref takes:
 
 ```
 mkdir -p plex-media-player-aarch64-repo
 tar -xzf plex-media-player-aarch64-repo.tar.gz -C plex-media-player-aarch64-repo
 gpg --dearmor < packaging/flatpak/signing-key.asc > signing-key.gpg
-flatpak remote-add --user --gpg-import=signing-key.gpg plex-media-player-aarch64 \
+flatpak remote-add --user --gpg-import=signing-key.gpg pmp-local \
     "file://$PWD/plex-media-player-aarch64-repo"
-flatpak install --user plex-media-player-aarch64 tv.plex.PlexMediaPlayer
+flatpak install --user pmp-local tv.plex.PlexMediaPlayer
 flatpak run tv.plex.PlexMediaPlayer
 ```
+
+Only one of the two can be installed at a time: both carry
+`app/tv.plex.PlexMediaPlayer/aarch64/master`, and flatpak refuses the same
+reference from a second remote.
 
 The repository and its summary are signed with `packaging/flatpak/signing-key.asc`,
 whose fingerprint is `5B835A64 C562436E BF9BBDDB B9634B40 3133AD1F`. The
