@@ -79,9 +79,8 @@ if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
   echo "==> Chromium flags from the environment: $QTWEBENGINE_CHROMIUM_FLAGS"
   EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS")
 elif [ "$ARCH" != "$(flatpak --default-arch)" ]; then
-  echo "==> $ARCH != host $(flatpak --default-arch): emulated run," \
-       "forcing single-process Chromium"
-  EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="--single-process --no-sandbox --disable-gpu-sandbox")
+  echo "==> $ARCH != host $(flatpak --default-arch): emulated run, disabling the Chromium sandbox"
+  EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox")
 fi
 
 GRAB_AT=$((RUN_SECONDS - 8))
