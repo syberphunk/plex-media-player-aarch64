@@ -69,7 +69,9 @@ jobs:
 
       - name: Build and verify
         env:
-          QTWEBENGINE_CHROMIUM_FLAGS: --no-sandbox
+          QTWEBENGINE_CHROMIUM_FLAGS: >-
+            --no-sandbox
+            --enable-logging=stderr --log-level=0
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
       - if: failure()
