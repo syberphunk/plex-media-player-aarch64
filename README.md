@@ -122,11 +122,17 @@ without the published one:
 ```
 mkdir -p plex-media-player-aarch64-repo
 tar -xzf plex-media-player-aarch64-repo.tar.gz -C plex-media-player-aarch64-repo
-flatpak remote-add --user --no-gpg-verify plex-media-player-aarch64 \
+gpg --dearmor < packaging/flatpak/signing-key.asc > signing-key.gpg
+flatpak remote-add --user --gpg-import=signing-key.gpg plex-media-player-aarch64 \
     "file://$PWD/plex-media-player-aarch64-repo"
 flatpak install --user plex-media-player-aarch64 tv.plex.PlexMediaPlayer
 flatpak run tv.plex.PlexMediaPlayer
 ```
+
+The repository and its summary are signed with `packaging/flatpak/signing-key.asc`,
+whose fingerprint is `5B835A64 C562436E BF9BBDDB B9634B40 3133AD1F`. The
+flatpakref and flatpakrepo carry the same key, so an install from the published
+URL verifies without any further step.
 
 The install step downloads the Plex Desktop client from plex.tv, so it needs
 network access. It verifies the download against the `sha256` and `size` pinned

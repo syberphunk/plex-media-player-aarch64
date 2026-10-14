@@ -9,6 +9,7 @@ RUN_SECONDS=${3:-45}
 APP_ID=tv.plex.PlexMediaPlayer
 REMOTE=pmp-verify-$ARCH
 OUT=$(mktemp -d)
+PUBKEY=$(cd "$(dirname "$0")/.." && pwd)/packaging/flatpak/signing-key.asc
 
 command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; exit 1; }
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found (apt install ffmpeg)" >&2; exit 1; }
@@ -54,8 +55,17 @@ start_xvfb
 REPO_URL=file://$(cd "$REPO_DIR" && pwd)
 
 echo "==> installing $APP_ID/$ARCH from $REPO_URL"
-flatpak --user remote-add --no-gpg-verify --no-enumerate --if-not-exists "$REMOTE" "$REPO_URL"
-flatpak --user remote-modify --no-gpg-verify --url="$REPO_URL" "$REMOTE"
+GPG_REMOTE_ARGS=(--no-gpg-verify)
+if [ -n "${FP_GPG_HOMEDIR:-}" ]; then
+  [ -f "$PUBKEY" ] || { echo "$PUBKEY not found" >&2; exit 1; }
+  command -v gpg >/dev/null || { echo "gpg not found" >&2; exit 1; }
+  gpg --dearmor < "$PUBKEY" > "$OUT/signing-key.gpg"
+  GPG_REMOTE_ARGS=(--gpg-import="$OUT/signing-key.gpg")
+  echo "==> the remote verifies against $PUBKEY"
+fi
+
+flatpak --user remote-delete --force "$REMOTE" 2>/dev/null || true
+flatpak --user remote-add "${GPG_REMOTE_ARGS[@]}" --no-enumerate "$REMOTE" "$REPO_URL"
 flatpak --user install -y --arch="$ARCH" --reinstall "$REMOTE" "$APP_ID" >/dev/null
 
 INSTALLED_COMMIT=$(flatpak --user info --show-commit --arch="$ARCH" "$APP_ID")

@@ -43,6 +43,18 @@ jobs:
           fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
 
+      - name: Import the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -eu
+          [ -n "$GPG_PRIVATE_KEY" ] || { echo "GPG_PRIVATE_KEY is not set" >&2; exit 1; }
+          d="$RUNNER_TEMP/gnupg"
+          mkdir -p "$d"
+          chmod 700 "$d"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --homedir "$d" --batch --import
+          echo "FP_GPG_HOMEDIR=$d" >> "$GITHUB_ENV"
+
       - name: Build and verify
         env:
           QTWEBENGINE_CHROMIUM_FLAGS: >-

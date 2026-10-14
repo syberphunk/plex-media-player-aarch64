@@ -83,6 +83,7 @@ REPO_DIR=${REPO_DIR:-$WORKSPACE/fp-repo}
 
 APP_ID=tv.plex.PlexMediaPlayer
 MANIFEST="$REPO_ROOT/packaging/flatpak/$APP_ID.yml"
+PUBKEY="$REPO_ROOT/packaging/flatpak/signing-key.asc"
 RUNTIME_VERSION=$(sed -n "s/^runtime-version: *'\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$MANIFEST")
 ARTIFACT="$REPO_ROOT/plex-media-player-$ARCH-repo.tar.gz"
 VERIFY_DIR="$WORKSPACE/fp-repo-verify"
@@ -90,6 +91,21 @@ VERIFY_DIR="$WORKSPACE/fp-repo-verify"
 for tool in flatpak flatpak-builder python3 ffmpeg; do
   command -v "$tool" >/dev/null || { echo "$tool not found" >&2; exit 1; }
 done
+
+GPG_ARGS=()
+if [ -n "${FP_GPG_HOMEDIR:-}" ]; then
+  [ -d "$FP_GPG_HOMEDIR" ] || { echo "FP_GPG_HOMEDIR $FP_GPG_HOMEDIR is not a directory" >&2; exit 1; }
+  [ -f "$PUBKEY" ] || { echo "$PUBKEY not found" >&2; exit 1; }
+  command -v gpg >/dev/null || { echo "gpg not found" >&2; exit 1; }
+  FP_GPG_KEY=$(gpg --with-colons --import-options show-only --import "$PUBKEY" \
+    | awk -F: '/^fpr:/{print $10; exit}')
+  [ -n "$FP_GPG_KEY" ] || { echo "no key fingerprint in $PUBKEY" >&2; exit 1; }
+  gpg --homedir "$FP_GPG_HOMEDIR" --list-secret-keys "$FP_GPG_KEY" >/dev/null 2>&1 || {
+    echo "$FP_GPG_HOMEDIR holds no secret key for $FP_GPG_KEY" >&2
+    exit 1
+  }
+  GPG_ARGS=(--gpg-sign="$FP_GPG_KEY" --gpg-homedir="$FP_GPG_HOMEDIR")
+fi
 
 MIN_FLATPAK=1.15.1
 FLATPAK_VERSION=$(flatpak --version | awk '{print $NF}')
@@ -181,8 +197,13 @@ fi
 
 echo
 echo "==> step 3/6: building"
+if [ ${#GPG_ARGS[@]} -gt 0 ]; then
+  echo "    signing with $FP_GPG_KEY"
+else
+  echo "    unsigned (FP_GPG_HOMEDIR is not set)"
+fi
 flatpak-builder --arch="$ARCH" --force-clean --disable-rofiles-fuse \
-  --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
+  "${GPG_ARGS[@]}" --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
 
 echo
 echo "==> step 4/6: packaging the repository"
@@ -191,7 +212,7 @@ echo "==> step 4/6: packaging the repository"
   exit 1
 }
 rm -f "$REPO_DIR/refs/heads/runtime/$APP_ID.Debug/$ARCH/master"
-flatpak build-update-repo --prune "$REPO_DIR" >/dev/null
+flatpak build-update-repo "${GPG_ARGS[@]}" --prune "$REPO_DIR" >/dev/null
 rm -f "$ARTIFACT"
 tar -C "$REPO_DIR" -czf "$ARTIFACT" .
 echo "    $(du -h "$ARTIFACT" | cut -f1)  $(sha256sum "$ARTIFACT" | cut -d' ' -f1)"
