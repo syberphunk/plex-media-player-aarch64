@@ -61,32 +61,12 @@ static void preinitQt()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-char** appendCommandLineArguments(int argc, char **argv, const QStringList& args)
-{
-  size_t newSize = (argc + args.length() + 1) * sizeof(char*);
-  char** newArgv = (char**)calloc(1, newSize);
-  memcpy(newArgv, argv, (size_t)(argc * sizeof(char*)));
-
-  int pos = argc;
-  for(const QString& str : args)
-    newArgv[pos++] = qstrdup(str.toUtf8().data());
-
-  return newArgv;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
 void ShowLicenseInfo()
 {
   QFile licenses(":/misc/licenses.txt");
   licenses.open(QIODevice::ReadOnly | QIODevice::Text);
   QByteArray contents = licenses.readAll();
   printf("%.*s\n", contents.size(), contents.data());
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-static QStringList qtFlags()
-{
-  return { "--disable-gpu" };
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -111,10 +91,6 @@ int main(int argc, char *argv[])
     scaleOption.setValueName("scale");
     scaleOption.setDefaultValue("auto");
     parser.addOption(scaleOption);
-
-    const QStringList flags = qtFlags();
-    char **newArgv = appendCommandLineArguments(argc, argv, flags);
-    int newArgc = argc + flags.size();
 
     // Qt calls setlocale(LC_ALL, "") in a bunch of places, which breaks
     // float/string processing in mpv and ffmpeg.
@@ -141,7 +117,7 @@ int main(int argc, char *argv[])
       // a small chicken-or-egg problem, which we "solve" by making
       // this temporary console app.
       //
-      QCoreApplication core(newArgc, newArgv);
+      QCoreApplication core(argc, argv);
 
       // Now parse the command line.
       parser.process(arguments);
@@ -172,7 +148,7 @@ int main(int argc, char *argv[])
 
     QtWebEngineQuick::initialize();
 
-    QApplication app(newArgc, newArgv);
+    QApplication app(argc, argv);
     app.setWindowIcon(QIcon(":/images/icon.png"));
 
     // init breakpad.
