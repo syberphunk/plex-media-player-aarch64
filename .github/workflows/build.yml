@@ -50,6 +50,13 @@ jobs:
             --enable-logging=stderr --log-level=0
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plex-media-player-${{ env.ARCH }}-repo
+          path: plex-media-player-${{ env.ARCH }}-repo.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
