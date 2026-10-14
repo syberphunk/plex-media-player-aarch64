@@ -74,6 +74,16 @@ jobs:
             --enable-logging=stderr --log-level=0
         run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
 
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: facade-verify-${{ env.ARCH }}
+          path: |
+            facade-verify-${{ env.ARCH }}.png
+            facade-verify-${{ env.ARCH }}.log
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Attest the artifact's build provenance
         uses: actions/attest-build-provenance@v2
         with:
