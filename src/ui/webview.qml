@@ -3,6 +3,7 @@ import Konvergo 1.0
 import QtWebEngine
 import QtWebChannel
 import QtQuick.Window
+import "qrc:/ui"
 
 KonvergoWindow
 {
@@ -108,21 +109,11 @@ KonvergoWindow
     objectName: "video"
   }
 
-  WebEngineProfilePrototype
-  {
-    id: webProfile
-    storageName: "plexmediaplayer"
-    httpCacheType: WebEngineProfile.DiskHttpCache
-    persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
-  }
-
   WebEngineView
   {
     id: web
     objectName: "web"
-    profile: webProfile.instance()
-    settings.errorPageEnabled: false
-    settings.localContentCanAccessRemoteUrls: true
+    profile: WebProfile.instance()
     focus: true
     property string currentHoveredUrl: ""
     onLinkHovered: (hoveredUrl) => { web.currentHoveredUrl = hoveredUrl }
@@ -132,6 +123,8 @@ KonvergoWindow
 
     Component.onCompleted:
     {
+      web.settings.errorPageEnabled = false
+      web.settings.localContentCanAccessRemoteUrls = true
       web.profile.httpUserAgent = components.system.getUserAgent()
 
       var bridge = WebEngine.script()
