@@ -1,6 +1,11 @@
 #include "HttpListener.h"
 
 #include <QTcpServer>
+#include <QWebSocket>
+
+#include <QtHttpServer/QHttpServerWebSocketUpgradeResponse>
+
+#include "QsLog.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////
 QString httpMethodName(QHttpServerRequest::Method method)
@@ -23,6 +28,45 @@ QString httpMethodName(QHttpServerRequest::Method method)
 /////////////////////////////////////////////////////////////////////////////////////////
 HttpListener::HttpListener(QObject* parent) : QAbstractHttpServer(parent)
 {
+  connect(this, &QAbstractHttpServer::newWebSocketConnection,
+          this, &HttpListener::adoptWebSocket);
+
+  addWebSocketUpgradeVerifier(this, [this](const QHttpServerRequest& request)
+  {
+    if (m_webSocketPaths.contains(request.url().path()))
+      return QHttpServerWebSocketUpgradeResponse::accept();
+    return QHttpServerWebSocketUpgradeResponse::passToNext();
+  });
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+void HttpListener::acceptWebSocketPath(const QString& path)
+{
+  if (!m_webSocketPaths.contains(path))
+    m_webSocketPaths.append(path);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+void HttpListener::adoptWebSocket()
+{
+  while (hasPendingWebSocketConnections())
+  {
+    auto socket = nextPendingWebSocketConnection().release();
+    if (!socket)
+      break;
+
+    socket->setParent(this);
+    m_webSockets.append(socket);
+
+    QLOG_DEBUG() << "Accepted websocket on" << socket->requestUrl().path()
+                 << "from" << socket->peerAddress().toString();
+
+    connect(socket, &QWebSocket::disconnected, this, [this, socket]()
+    {
+      m_webSockets.removeAll(socket);
+      socket->deleteLater();
+    });
+  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

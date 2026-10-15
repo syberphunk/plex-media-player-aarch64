@@ -15,6 +15,7 @@
 #include "Paths.h"
 
 #define WEB_CLIENT_PATH "/web/tv"
+#define NOTIFICATIONS_PATH "/:/websockets/notifications"
 
 /////////////////////////////////////////////////////////////////////////////////////////
 HttpServer::HttpServer(QObject* parent) : QObject(parent)
@@ -28,6 +29,9 @@ HttpServer::HttpServer(QObject* parent) : QObject(parent)
 bool HttpServer::start()
 {
   connect(m_server, &HttpListener::newRequest, this, &HttpServer::handleRequest);
+
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "embeddedServer").toBool())
+    m_server->acceptWebSocketPath(NOTIFICATIONS_PATH);
 
   const bool remote = SettingsComponent::Get().remoteControlEnabled();
   const QHostAddress address = remote ? QHostAddress(QHostAddress::AnyIPv4)
