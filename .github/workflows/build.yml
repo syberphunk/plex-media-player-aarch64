@@ -19,7 +19,7 @@ jobs:
       ARCH: aarch64
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install build tools
         run: |
@@ -65,7 +65,7 @@ jobs:
             --enable-logging=stderr --log-level=0
         run: ./scripts/release.sh $ARGS --no-publish
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: plex-media-player-${{ env.ARCH }}-repo
           path: plex-media-player-${{ env.ARCH }}-repo.tar.gz
@@ -73,7 +73,7 @@ jobs:
           retention-days: 14
 
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: facade-verify-${{ env.ARCH }}
           path: |

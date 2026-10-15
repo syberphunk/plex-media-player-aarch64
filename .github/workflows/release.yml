@@ -28,7 +28,7 @@ jobs:
       ARCH: aarch64
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Install build tools
         run: |
@@ -100,7 +100,7 @@ jobs:
         run: ./scripts/release.sh $ARGS --no-publish
 
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: facade-verify-${{ env.ARCH }}
           path: |
@@ -110,7 +110,7 @@ jobs:
           retention-days: 7
 
       - name: Attest the artifact's build provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: plex-media-player-${{ env.ARCH }}-repo.tar.gz
 
@@ -129,7 +129,7 @@ jobs:
             "https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}" \
             pages
 
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
         with:
           path: pages
           include-hidden-files: true
@@ -147,7 +147,7 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
 
   verify-pages:
     needs: pages

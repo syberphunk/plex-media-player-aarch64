@@ -33,6 +33,19 @@ PLEX_TARBALL = ("https://downloads.plex.tv/plex-desktop/%s/linux_tarball/"
 BASE_APP_REPO = "flathub/io.qt.qtwebengine.BaseApp"
 BASE_APP_COMMIT = "ab059370c5faf2f7579cfad6eebedad167024886"
 
+WORKFLOWS = os.path.join(REPO, ".github", "workflows")
+
+ACTIONS = {
+    "actions/checkout": ("v7.0.1", "3d3c42e5aac5ba805825da76410c181273ba90b1"),
+    "actions/upload-artifact": ("v7.0.2", "cf430e030ddbb5b0abf93d22962f4752f3646cd9"),
+    "actions/attest-build-provenance": ("v4.2.2", "4d101475d8b20a2381f78447822ac1eab6504dd8"),
+    "actions/upload-pages-artifact": ("v5.0.0", "fc324d3547104276b827a68afc52ff2a11cc49c9"),
+    "actions/deploy-pages": ("v5.0.1", "368f82528645a54fb793d4d04e342629a3f51346"),
+}
+
+USES_RE = re.compile(r"^\s*(?:-\s+)?uses:\s*(\S+)\s*$")
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
 UPSTREAM = {
     "libass": {
         "probe": ("github", "libass/libass"),
@@ -230,6 +243,76 @@ def check_base_app(branch):
           % ("newer", "base-version %s" % branch,
              BASE_APP_COMMIT[:12], sha[:12], subject))
     return True, False
+
+
+def workflow_uses():
+    found = []
+    if not os.path.isdir(WORKFLOWS):
+        return found
+    for name in sorted(os.listdir(WORKFLOWS)):
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        path = os.path.join(WORKFLOWS, name)
+        with open(path, encoding="utf-8") as fp:
+            for number, line in enumerate(fp.read().splitlines(), 1):
+                match = USES_RE.match(line)
+                if match and not match.group(1).startswith("./"):
+                    found.append((name, number, match.group(1)))
+    return found
+
+
+def action_latest(action):
+    data = fetch_json("https://api.github.com/repos/%s/releases/latest" % action)
+    return data["tag_name"]
+
+
+def check_actions(offline):
+    print()
+    print("==> workflow actions")
+
+    failures = []
+    newer = []
+    seen = set()
+
+    for name, number, reference in workflow_uses():
+        action, _, pin = reference.partition("@")
+        seen.add(action)
+        where = "%s:%d" % (name, number)
+        if action not in ACTIONS:
+            failures.append(report(action, False, "%s is not pinned here" % where))
+            continue
+        version, sha = ACTIONS[action]
+        if not SHA_RE.match(pin):
+            failures.append(report(action, False,
+                                   "%s uses the mutable ref %s" % (where, pin)))
+        elif pin != sha:
+            failures.append(report(action, False,
+                                   "%s is %s, expected %s (%s)"
+                                   % (where, pin[:12], sha[:12], version)))
+
+    for action in sorted(set(ACTIONS) - seen):
+        failures.append(report(action, False, "pinned here but used by no workflow"))
+
+    if not failures:
+        report("workflow actions", True,
+               "%d action(s) pinned by commit" % len(seen))
+
+    if offline:
+        return failures, newer
+
+    for action in sorted(seen & set(ACTIONS)):
+        version, sha = ACTIONS[action]
+        try:
+            latest = action_latest(action)
+        except Exception as problem:
+            failures.append(report(action, False, "release probe failed: %s" % problem))
+            continue
+        if latest != version:
+            newer.append(action)
+            print("    %-6s %-28s %s -> %s available"
+                  % ("newer", action, version, latest))
+
+    return failures, newer
 
 
 def latest_version(spec):
@@ -611,6 +694,9 @@ def main(argv):
         if probe_failed:
             failures.append(False)
 
+    action_failures, actions_newer = check_actions(offline)
+    failures.extend(action_failures)
+
     print()
     print("==> README versions")
     stale = readme_sync(readme_rows(sources, runtime), updating)
@@ -640,6 +726,8 @@ def main(argv):
         trailing.append("%d newer upstream release(s) available" % len(outdated))
     if base_newer:
         trailing.append("a newer qtwebengine base app is available")
+    if actions_newer:
+        trailing.append("%d newer action release(s) available" % len(actions_newer))
     print("all pinned sources verified"
           + (" (%s)" % ", ".join(trailing) if trailing else ""))
     return 0
