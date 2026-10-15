@@ -72,15 +72,8 @@ bool SystemComponent::componentInitialize()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void SystemComponent::crashApp()
-{
-  *(volatile int*)nullptr=0;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
 void SystemComponent::componentPostInitialize()
 {
-  InputComponent::Get().registerHostCommand("crash!", this, "crashApp");
   InputComponent::Get().registerHostCommand("message", this, "hostMessage");
 
   if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "userScripts").toBool()

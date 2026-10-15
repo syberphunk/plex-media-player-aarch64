@@ -5,6 +5,8 @@
 #include <QMap>
 #include <QQmlContext>
 #include <QQmlPropertyMap>
+#include <QSet>
+#include <QString>
 #include <QWebChannel>
 
 #include "utils/Utils.h"
@@ -29,15 +31,15 @@ class ComponentManager : public QObject
 
 public:
   void initialize();
-  inline QQmlPropertyMap &getQmlPropertyMap() { return m_qmlProperyMap; }
-  void setWebChannel(QWebChannel* webChannel);
+  inline QQmlPropertyMap* getQmlPropertyMap() { return m_qmlProperyMap; }
+  void setWebChannel(QWebChannel* webChannel, const QSet<QString>& reserved = {});
 
 private:
   ComponentManager();
   void registerComponent(ComponentBase* comp);
 
   QMap<QString, ComponentBase*> m_components;
-  QQmlPropertyMap m_qmlProperyMap;
+  QQmlPropertyMap* m_qmlProperyMap = nullptr;
 };
 
 #endif

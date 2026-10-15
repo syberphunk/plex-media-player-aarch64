@@ -20,6 +20,7 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ComponentManager::ComponentManager() : QObject(nullptr)
 {
+  m_qmlProperyMap = QQmlPropertyMap::create(this);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -37,7 +38,7 @@ void ComponentManager::registerComponent(ComponentBase* comp)
     m_components[comp->componentName()] = comp;
 
     // define component as property for qml
-    m_qmlProperyMap.insert(comp->componentName(), QVariant::fromValue(comp));
+    m_qmlProperyMap->insert(comp->componentName(), QVariant::fromValue(comp));
   }
   else
   {
@@ -69,14 +70,21 @@ void ComponentManager::initialize()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void ComponentManager::setWebChannel(QWebChannel* webChannel)
+void ComponentManager::setWebChannel(QWebChannel* webChannel, const QSet<QString>& reserved)
 {
   for(ComponentBase* comp : m_components.values())
   {
-    if (comp->componentExport())
+    if (!comp->componentExport())
+      continue;
+
+    const QString name = QString::fromLatin1(comp->componentName());
+    if (reserved.contains(name))
     {
-      QLOG_DEBUG() << "Adding component:" << comp->componentName() << "to webchannel";
-      webChannel->registerObject(comp->componentName(), comp);
+      QLOG_DEBUG() << "Component" << name << "is served by a connector";
+      continue;
     }
+
+    QLOG_DEBUG() << "Adding component:" << name << "to webchannel";
+    webChannel->registerObject(name, comp);
   }
 }

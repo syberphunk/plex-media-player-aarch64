@@ -104,7 +104,7 @@ public:
   // Called by web to actually execute pending actions. This is done in reaction
   // to hostInput(). The actions parameter contains a list of actions which
   // should be actually dispatched.
-  Q_INVOKABLE void executeActions(const QStringList& actions);
+  void executeActions(const QStringList& actions);
   void cancelAutoRepeat();
 
 signals:

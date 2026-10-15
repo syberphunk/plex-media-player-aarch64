@@ -3,6 +3,8 @@
 
 #include <QList>
 #include <QObject>
+#include <QSet>
+#include <QString>
 #include <QWebChannel>
 #include <QWindow>
 
@@ -19,6 +21,8 @@ class ConnectorManager : public QObject
 public:
   void initialize();
   void setWebChannel(QWebChannel* webChannel);
+
+  QSet<QString> connectorNames() const;
 
   void trackWindow(QWindow* window);
 

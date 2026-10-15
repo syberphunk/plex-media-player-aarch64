@@ -40,8 +40,6 @@ public:
 
   Q_INVOKABLE void openExternalUrl(const QString& url);
 
-  Q_INVOKABLE void runUserScript(QString script);
-
   // called by the web-client when everything is properly inited
   Q_INVOKABLE void hello(const QString& version);
 
@@ -77,14 +75,15 @@ public:
   void setAuthenticationToken(const QString& token);
   inline bool cursorVisible() { return m_cursorVisible; }
 
-  Q_INVOKABLE void crashApp();
-
   void updateScale(qreal scale);
 
 signals:
   void hostMessage(const QString& message);
   void settingsMessage(const QString& setting, const QString& value);
   void scaleChanged(qreal scale);
+
+private slots:
+  void runUserScript(QString script);
 
 private:
   explicit SystemComponent(QObject* parent = nullptr);

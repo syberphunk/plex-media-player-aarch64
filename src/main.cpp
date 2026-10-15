@@ -64,9 +64,11 @@ static void preinitQt()
 void ShowLicenseInfo()
 {
   QFile licenses(":/misc/licenses.txt");
-  licenses.open(QIODevice::ReadOnly | QIODevice::Text);
+  if (!licenses.open(QIODevice::ReadOnly | QIODevice::Text))
+    return;
+
   QByteArray contents = licenses.readAll();
-  printf("%.*s\n", contents.size(), contents.data());
+  printf("%.*s\n", int(contents.size()), contents.data());
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -172,7 +174,9 @@ int main(int argc, char *argv[])
     QLOG_INFO() << "Qt platform plugin:" << qPrintable(app.platformName())
                 << "scale-factor:" << qPrintable(scale);
     if (!SessionEnv::graphicsEnvReport().isEmpty())
+    {
       QLOG_INFO() << "Graphics env:" << qPrintable(SessionEnv::graphicsEnvReport());
+    }
 
     detectOpenGLLate();
 
@@ -191,7 +195,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine *engine = Globals::Engine();
 
     KonvergoWindow::RegisterClass();
-    Globals::SetContextProperty("components", &ComponentManager::Get().getQmlPropertyMap());
+    Globals::SetContextProperty("components", ComponentManager::Get().getQmlPropertyMap());
 
     // the only way to detect if QML parsing fails is to hook to this signal and then see
     // if we get a valid object passed to it. Any error messages will be reported on stderr
@@ -208,8 +212,9 @@ int main(int argc, char *argv[])
 
       QObject* webChannel = qvariant_cast<QObject*>(window->property("webChannel"));
       Q_ASSERT(webChannel);
-      ComponentManager::Get().setWebChannel(qobject_cast<QWebChannel*>(webChannel));
-      ConnectorManager::Get().setWebChannel(qobject_cast<QWebChannel*>(webChannel));
+      auto channel = qobject_cast<QWebChannel*>(webChannel);
+      ConnectorManager::Get().setWebChannel(channel);
+      ComponentManager::Get().setWebChannel(channel, ConnectorManager::Get().connectorNames());
       ConnectorManager::Get().trackWindow(window);
 
       QObject::connect(uniqueApp, &UniqueApplication::otherApplicationStarted, window, &KonvergoWindow::otherAppFocus);

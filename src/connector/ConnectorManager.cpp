@@ -38,6 +38,14 @@ void ConnectorManager::setWebChannel(QWebChannel* webChannel)
   }
 }
 
+QSet<QString> ConnectorManager::connectorNames() const
+{
+  QSet<QString> names;
+  for (ConnectorBase* connector : m_connectors)
+    names.insert(connector->connectorName());
+  return names;
+}
+
 void ConnectorManager::trackWindow(QWindow* window)
 {
   if (m_system)

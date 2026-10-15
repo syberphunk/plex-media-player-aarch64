@@ -93,9 +93,6 @@
     // volume
     "=": "increase_volume",
     "(Shift\\+)?\\+": "increase_volume",
-    "\\-": "decrease_volume",
-
-    // debug command to crash the host. for testing
-    "Ctrl\\+Alt\\+Shift\\+F1": "host:crash!"
+    "\\-": "decrease_volume"
   }
 }
