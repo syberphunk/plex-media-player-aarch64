@@ -221,7 +221,9 @@ void PlayerComponent::setVideoPlacement(const QString& placement, int width, int
                                         int edgeGutterX, int edgeGutterY, bool isStackedAbove)
 {
   if (isStackedAbove)
+  {
     QLOG_DEBUG() << "Video asked to stack above the web view; not supported, ignoring";
+  }
 
   if (placement.isEmpty() || placement == "none" || width <= 0 || height <= 0)
   {
@@ -572,6 +574,8 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
           m_playbackCanceled = true;
           break;
         }
+        default:
+          break;
       }
 
       if (!m_streamSwitchImminent)
@@ -1219,6 +1223,7 @@ void PlayerComponent::setAudioConfiguration()
   // here for now. We might need to add support for DTS transcoding
   // if we see user requests for it.
   //
+  const bool hadAc3Filter = m_doAc3Transcoding;
   m_doAc3Transcoding = false;
   if (deviceType == AUDIO_DEVICE_TYPE_SPDIF &&
       SettingsComponent::Get().value(SETTINGS_SECTION_AUDIO, "passthrough.ac3").toBool())
@@ -1227,7 +1232,7 @@ void PlayerComponent::setAudioConfiguration()
     mpv::qt::command(m_mpv, QStringList() << "af" << "add" << ("@ac3:lavcac3enc" + filterArgs));
     m_doAc3Transcoding = true;
   }
-  else
+  else if (hadAc3Filter)
   {
     mpv::qt::command(m_mpv, QStringList() << "af" << "remove" << "@ac3");
   }
