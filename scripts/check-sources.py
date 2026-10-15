@@ -30,6 +30,9 @@ PLEX_DESKTOP_API = "https://plex.tv/api/downloads/6.json"
 PLEX_TARBALL = ("https://downloads.plex.tv/plex-desktop/%s/linux_tarball/"
                 "Plex-%s-linux-x86_64.tar.bz2")
 
+BASE_APP_REPO = "flathub/io.qt.qtwebengine.BaseApp"
+BASE_APP_COMMIT = "ab059370c5faf2f7579cfad6eebedad167024886"
+
 UPSTREAM = {
     "libass": {
         "probe": ("github", "libass/libass"),
@@ -202,6 +205,31 @@ def remote_sha256(url):
 def fetch_json(url):
     with urllib.request.urlopen(request(url), timeout=30) as reply:
         return json.load(reply)
+
+
+def base_app_head(branch):
+    data = fetch_json("https://api.github.com/repos/%s/commits/branch/%s"
+                      % (BASE_APP_REPO, branch))
+    return data["sha"], data["commit"]["message"].split("\n")[0]
+
+
+def check_base_app(branch):
+    print()
+    print("==> qtwebengine base app")
+    try:
+        sha, subject = base_app_head(branch)
+    except Exception as problem:
+        report("base-version %s" % branch, False,
+               "commit probe failed: %s" % problem)
+        return False, True
+    if sha == BASE_APP_COMMIT:
+        report("base-version %s" % branch, True,
+               "%s is current (%s)" % (sha[:12], subject))
+        return False, False
+    print("    %-6s %-28s %s -> %s available: %s"
+          % ("newer", "base-version %s" % branch,
+             BASE_APP_COMMIT[:12], sha[:12], subject))
+    return True, False
 
 
 def latest_version(spec):
@@ -568,11 +596,20 @@ def main(argv):
             raw, sources = parse_manifest(manifest)
 
     runtime = ""
+    base_version = ""
     for line in raw:
         found = re.match(r"runtime-version:\s*'?([^'\s]+)'?\s*$", line)
         if found:
             runtime = found.group(1)
-            break
+        found = re.match(r"base-version:\s*'?([^'\s]+)'?\s*$", line)
+        if found:
+            base_version = found.group(1)
+
+    base_newer = False
+    if not offline and base_version:
+        base_newer, probe_failed = check_base_app(base_version)
+        if probe_failed:
+            failures.append(False)
 
     print()
     print("==> README versions")
@@ -598,9 +635,13 @@ def main(argv):
     if outdated and "--fail-on-outdated" in options:
         print("%d source(s) outdated" % len(outdated))
         return 2
+    trailing = []
+    if outdated:
+        trailing.append("%d newer upstream release(s) available" % len(outdated))
+    if base_newer:
+        trailing.append("a newer qtwebengine base app is available")
     print("all pinned sources verified"
-          + (" (%d newer upstream release(s) available)" % len(outdated)
-             if outdated else ""))
+          + (" (%s)" % ", ".join(trailing) if trailing else ""))
     return 0
 
 
