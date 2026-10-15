@@ -74,11 +74,11 @@ alone.
     --repo syberphunk/plex-media-player-aarch64
   ```
 
-## Updating Chromium
+## Chromium
 
-`io.qt.qtwebengine.BaseApp` is a build-time base, so the QtWebEngine Chromium
-is copied into the application itself rather than loaded from a runtime.
-`flatpak update` refreshes `org.kde.Platform` underneath the application but
-does not change its Chromium. A newer Chromium arrives only by installing a
-release built against a newer `runtime-version`, so an installed build is
-replaced with a current release rather than left to update itself.
+`io.qt.qtwebengine.BaseApp` is a build-time base, so QtWebEngine and its
+Chromium are built into the application rather than loaded from a runtime.
+`flatpak update` refreshes `org.kde.Platform` beneath an installed application
+and does not change the Chromium in it. A release carries the base app as it
+stood when that release was built, and `scripts/check-sources.py` reports when
+the base app has moved on.
