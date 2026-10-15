@@ -27,7 +27,7 @@ private Q_SLOTS:
   void connected();
   void disconnected();
   void socketerror(QLocalSocket::LocalSocketError socketError);
-  void read(int handle);
+  void read(QSocketDescriptor handle, QSocketNotifier::Type type);
 };
 
 #endif // INPUTLIRC_H

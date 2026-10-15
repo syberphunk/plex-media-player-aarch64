@@ -11,10 +11,9 @@ InputLIRC::InputLIRC(QObject* parent) : InputBase(parent)
   socket = new QLocalSocket(this);
   socketNotifier = NULL;
 
-  connect(socket, SIGNAL(error(QLocalSocket::LocalSocketError)), this,
-          SLOT(socketerror(QLocalSocket::LocalSocketError)));
-  connect(socket, SIGNAL(connected()), this, SLOT(connected()));
-  connect(socket, SIGNAL(disconnected()), this, SLOT(disconnected()));
+  connect(socket, &QLocalSocket::errorOccurred, this, &InputLIRC::socketerror);
+  connect(socket, &QLocalSocket::connected, this, &InputLIRC::connected);
+  connect(socket, &QLocalSocket::disconnected, this, &InputLIRC::disconnected);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -39,7 +38,7 @@ bool InputLIRC::connectToLIRC()
   if (isConnected())
   {
     socketNotifier = new QSocketNotifier(socket->socketDescriptor(), QSocketNotifier::Read, this);
-    connect(socketNotifier, SIGNAL(activated(int)), this, SLOT(read(int)));
+    connect(socketNotifier, &QSocketNotifier::activated, this, &InputLIRC::read);
     return true;
   }
   else
@@ -83,8 +82,11 @@ void InputLIRC::socketerror(QLocalSocket::LocalSocketError socketError)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void InputLIRC::read(int handle)
+void InputLIRC::read(QSocketDescriptor handle, QSocketNotifier::Type type)
 {
+  Q_UNUSED(handle);
+  Q_UNUSED(type);
+
   QString input;
 
   while ((input = socket->readLine()) != "")
