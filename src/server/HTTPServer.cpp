@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -118,8 +119,16 @@ void HttpServer::handleWebClientRequest(const QHttpServerRequest& request, HttpR
     {
       // cut the WEB_CLIENT_PATH prefix
       QString relativeUrl = request.url().path();
-      relativeUrl.replace(WEB_CLIENT_PATH, "");
-      QString rUrl = m_baseUrl + relativeUrl;
+      if (relativeUrl.startsWith(WEB_CLIENT_PATH))
+        relativeUrl = relativeUrl.mid(sizeof(WEB_CLIENT_PATH) - 1);
+
+      const QString rUrl = QDir::cleanPath(m_baseUrl + "/" + relativeUrl);
+      if (rUrl != m_baseUrl && !rUrl.startsWith(m_baseUrl + "/"))
+      {
+        writeError(response, HttpResponse::StatusCode::Forbidden);
+        QLOG_WARN() << "Refusing web client path" << relativeUrl;
+        break;
+      }
 
       writeFile(rUrl, response);
       break;
