@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSysInfo>
+#include <QXmlStreamWriter>
 
 #include "QsLog.h"
 #include "utils/Utils.h"
@@ -213,10 +214,12 @@ void HttpServer::writeMediaContainer(const QHttpServerRequest& request, HttpResp
   }
   else
   {
-    body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer";
+    QXmlStreamWriter writer(&body);
+    writer.writeStartDocument(QStringLiteral("1.0"));
+    writer.writeEmptyElement(QStringLiteral("MediaContainer"));
     for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
-      body += " " + it.key().toUtf8() + "=\"" + it.value().toString().toUtf8() + "\"";
-    body += " />\n";
+      writer.writeAttribute(it.key(), it.value().toString());
+    writer.writeEndDocument();
   }
 
   response->setStatusCode(HttpResponse::StatusCode::Ok);
