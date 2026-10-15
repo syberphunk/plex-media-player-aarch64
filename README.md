@@ -153,60 +153,60 @@ the install.
 
 ## Steam shortcut
 
-`packaging/steam/plex-steam-shortcut.py` adds the installed Flatpak to Steam as
-a non-Steam shortcut, calling
-`flatpak run io.github.syberphunk.PlexMediaPlayer`. It needs only python3.
+`packaging/steam/plex-steam-shortcut.py` puts Plex in your Steam library, so you
+can start it from Steam like a game. It needs python3 and nothing else.
 
-Steam reads `shortcuts.vdf` when it starts and writes its own copy back when it
-exits, so restart Steam afterwards, and shut it down beforehand where that is
-possible. `--list` shows what is in the file.
+Run it with no arguments and it asks what to do:
 
 ```
 python3 packaging/steam/plex-steam-shortcut.py
 ```
 
-With no arguments it presents a menu: add the shortcut, remove it, set artwork,
-list what is installed, quit. The same operations are available non
-interactively:
+Pick 1 to add Plex, then restart Steam and it is in your library. Steam only
+reads its shortcut file when it starts, and overwrites it when it exits, so
+changes appear after a restart. Close Steam first if you can; the script works
+either way.
+
+Steam has no artwork for a game it did not install, so the tiles stay blank
+until you supply images. Put them in the same folder as the script, named for
+where you want them to appear:
+
+| File name | Where it appears |
+| --- | --- |
+| `portrait.png` | the tall tile in your library, 600x900 |
+| `capsule.png` | the wide tile in rows and lists, 920x430 |
+| `hero.png` | the banner across the top of the Plex page, 1920x620 |
+| `logo.png` | the name drawn over that banner, transparent background |
+| `icon.png` | the small icon next to the name in list view |
+
+`.jpg` works as well as `.png`. Use whichever of the five you want and leave the
+rest out, and the ones you leave out are not touched. Steam files artwork under
+a number of its own that it gives the shortcut; the script reads that number out
+of Steam's file, so there is nothing for you to look up. Without an `icon` image
+the icon the Flatpak itself installs is used. No images are included in this
+repository.
+
+If Plex is already in your library, pick 3 and it puts the artwork on the
+shortcut that is already there. Removing Plex with 2 deletes its artwork as
+well.
+
+Every menu option has a flag, if you would rather skip the menu:
 
 ```
 python3 packaging/steam/plex-steam-shortcut.py --add
-python3 packaging/steam/plex-steam-shortcut.py --remove
+python3 packaging/steam/plex-steam-shortcut.py --artwork
 python3 packaging/steam/plex-steam-shortcut.py --list
-python3 packaging/steam/plex-steam-shortcut.py -n --add    # dry run
+python3 packaging/steam/plex-steam-shortcut.py --remove
 ```
 
-`--add` leaves an existing entry alone; `-f` replaces it. `--config` names a
-Steam `userdata/<id>/config` directory, repeatable, when the search paths
-(`~/.steam/steam`, `~/.local/share/Steam`, `~/.steam/root`) do not apply.
+Add `-n` to any of them to be told what would happen without anything being
+written. `--help` lists the rest, including how to point at one image file
+somewhere else.
 
-The icon is taken from the Flatpak's own exported icon when one is installed, or
-from `--icon FILE`. That icon is the small one beside the name in a list; the
-library tiles are separate images, which Steam reads from
-`userdata/<id>/config/grid`, named after the shortcut's app id:
-
-| Option | File | Size | Where it appears |
-| --- | --- | --- | --- |
-| `--portrait` | `<appid>p.png` | 600x900 | the tall tile in the library grid |
-| `--capsule` | `<appid>.png` | 920x430 | the wide tile in rows and lists |
-| `--hero` | `<appid>_hero.png` | 1920x620 | the banner across the top of the page |
-| `--logo` | `<appid>_logo.png` | transparent png | over the banner, in place of the name |
-
-Any image file is accepted and copied under the name in the table; the app id is
-derived from the shortcut, so the script works it out. Each option is
-independent, and menu option 3 asks for the same four.
-
-```
-python3 packaging/steam/plex-steam-shortcut.py \
-    --portrait tall.png --capsule wide.png --hero banner.png --logo logo.png
-```
-
-No artwork is shipped in this repository.
-
-`shortcuts.vdf` is Valve's binary VDF format, so the script parses the existing
-file and rewrites it, preserving other entries and their tags. It backs up to
-`shortcuts.vdf.bak` on first write, re-parses what it is about to write before
-writing it, and replaces the file atomically.
+Steam keeps non-Steam games in `shortcuts.vdf`, a binary file, so the script
+rewrites the whole thing. Other games in it come back out as they went in, tags
+and play times included, and it copies the file to `shortcuts.vdf.bak` before
+its first write.
 
 ## License
 

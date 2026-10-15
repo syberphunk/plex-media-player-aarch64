@@ -17,11 +17,13 @@ LAUNCH = "run " + FLATPAK_ID
 MAP, STR, INT, END = 0x00, 0x01, 0x02, 0x08
 FLOAT, PTR, WSTR, UINT64, INT64 = 0x03, 0x04, 0x05, 0x07, 0x0A
 
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
 ARTWORK = [
-    ("capsule", "%s.png", "wide capsule, 920x430"),
-    ("portrait", "%sp.png", "portrait capsule, 600x900"),
-    ("hero", "%s_hero.png", "hero banner, 1920x620"),
-    ("logo", "%s_logo.png", "logo, transparent png"),
+    ("portrait", "%sp", "the tall tile in the library, 600x900"),
+    ("capsule", "%s", "the wide tile in rows and lists, 920x430"),
+    ("hero", "%s_hero", "the banner across the top of the page, 1920x620"),
+    ("logo", "%s_logo", "the name drawn over the banner, a transparent png"),
 ]
 
 ICON_SEARCH = [
@@ -30,12 +32,27 @@ ICON_SEARCH = [
 ]
 
 HELP = """\
-Add the Plex flatpak to Steam as a non-Steam shortcut.
+Add the Plex flatpak to Steam as a non-Steam game.
+
+Run it with no arguments for a menu. For artwork on the library page, save your
+images in this folder named portrait, capsule, hero, logo or icon, as .png or
+.jpg, and they are used when the shortcut is added.
 
 Steam reads shortcuts.vdf when it starts and writes its own copy back when it
 exits, so restart Steam afterwards, and shut it down beforehand where that is
-possible. Check the result with --list.
+possible.
 """
+
+
+class VdfInt(int):
+    def __new__(cls, value, kind):
+        self = super().__new__(cls, value)
+        self.kind = kind
+        return self
+
+
+class VdfFloat(float):
+    pass
 
 
 def read_cstring(buf, pos):
@@ -55,11 +72,14 @@ def parse_map(buf, pos):
             out[key], pos = parse_map(buf, pos)
         elif kind in (STR, WSTR):
             out[key], pos = read_cstring(buf, pos)
-        elif kind in (INT, PTR, FLOAT):
-            out[key] = struct.unpack_from("<i", buf, pos)[0]
+        elif kind == FLOAT:
+            out[key] = VdfFloat(struct.unpack_from("<f", buf, pos)[0])
+            pos += 4
+        elif kind in (INT, PTR):
+            out[key] = VdfInt(struct.unpack_from("<i", buf, pos)[0], kind)
             pos += 4
         elif kind in (UINT64, INT64):
-            out[key] = struct.unpack_from("<q", buf, pos)[0]
+            out[key] = VdfInt(struct.unpack_from("<q", buf, pos)[0], kind)
             pos += 8
         else:
             raise ValueError("unknown vdf type 0x%02x at offset %d" % (kind, pos - 1))
@@ -71,10 +91,15 @@ def write_map(data):
         name = key.encode("utf-8") + b"\x00"
         if isinstance(value, dict):
             out += bytes([MAP]) + name + write_map(value) + bytes([END])
-        elif isinstance(value, bool):
-            out += bytes([INT]) + name + struct.pack("<i", int(value))
+        elif isinstance(value, VdfFloat):
+            out += bytes([FLOAT]) + name + struct.pack("<f", value)
+        elif isinstance(value, VdfInt):
+            if value.kind in (UINT64, INT64):
+                out += bytes([value.kind]) + name + struct.pack("<q", int(value))
+            else:
+                out += bytes([value.kind]) + name + struct.pack("<i", int(value))
         elif isinstance(value, int):
-            out += bytes([INT]) + name + struct.pack("<i", value)
+            out += bytes([INT]) + name + struct.pack("<i", int(value))
         else:
             out += bytes([STR]) + name + str(value).encode("utf-8") + b"\x00"
     return bytes(out)
@@ -103,7 +128,7 @@ def load(path):
 def store(path, shortcuts, dry_run):
     blob = serialise(shortcuts)
     check, _ = parse_map(blob, 1 + len(b"shortcuts\x00"))
-    if len(check) != len(shortcuts):
+    if len(check) != len(shortcuts) or serialise(check) != blob:
         raise ValueError("round-trip check failed")
 
     if dry_run:
@@ -154,6 +179,9 @@ def icon_size(path):
 
 
 def find_icon():
+    here = find_image("icon")
+    if here:
+        return here
     for pattern in ICON_SEARCH:
         raster = [p for p in glob(os.path.expanduser(pattern))
                   if p.lower().endswith((".png", ".jpg", ".ico"))]
@@ -163,6 +191,32 @@ def find_icon():
         for path in sorted(glob(os.path.expanduser(pattern))):
             return path
     return ""
+
+
+def image_folders():
+    here = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+    if os.path.realpath(cwd) == os.path.realpath(here):
+        return [here]
+    return [cwd, here]
+
+
+def find_image(name):
+    for folder in image_folders():
+        for extension in IMAGE_EXTENSIONS:
+            path = os.path.join(folder, name + extension)
+            if os.path.isfile(path):
+                return path
+    return ""
+
+
+def find_artwork():
+    found = {}
+    for name, _, _ in ARTWORK:
+        path = find_image(name)
+        if path:
+            found[name] = path
+    return found
 
 
 def steam_is_running():
@@ -176,14 +230,20 @@ def steam_is_running():
     return False
 
 
+def entry_appid(entry):
+    value = entry.get("appid")
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    return value & 0xFFFFFFFF
+
+
 def ours(entry):
     if not isinstance(entry, dict):
         return False
-    if entry.get("LaunchOptions") == LAUNCH or FLATPAK_ID in str(entry.get("Exe", "")):
+    where = "%s %s" % (entry.get("Exe", ""), entry.get("LaunchOptions", ""))
+    if FLATPAK_ID in where:
         return True
-    exe = quoted_exe()
-    return entry.get("appid") in (signed_appid(exe, APPNAME),
-                                  unsigned_appid(exe, APPNAME))
+    return entry_appid(entry) == unsigned_appid(quoted_exe(), APPNAME)
 
 
 def new_entry(icon):
@@ -209,6 +269,16 @@ def new_entry(icon):
     }
 
 
+def shortcut_appid(config):
+    shortcuts = load(os.path.join(config, "shortcuts.vdf"))
+    for entry in shortcuts.values():
+        if ours(entry):
+            found = entry_appid(entry)
+            if found:
+                return found
+    return None
+
+
 def do_add(config, icon, dry_run, force):
     path = os.path.join(config, "shortcuts.vdf")
     print("%s" % path)
@@ -216,7 +286,8 @@ def do_add(config, icon, dry_run, force):
 
     existing = [index for index, entry in shortcuts.items() if ours(entry)]
     if existing and not force:
-        print("  already present as entry %s, nothing to do" % ", ".join(existing))
+        print("  Plex is already there as entry %s, nothing to do"
+              % ", ".join(existing))
         return False
     for index in existing:
         del shortcuts[index]
@@ -232,6 +303,21 @@ def do_add(config, icon, dry_run, force):
     return not dry_run
 
 
+def do_icon(config, icon, dry_run):
+    path = os.path.join(config, "shortcuts.vdf")
+    shortcuts = load(path)
+    existing = [index for index, entry in shortcuts.items() if ours(entry)]
+    if not existing:
+        return do_add(config, icon, dry_run, False)
+
+    print("%s" % path)
+    for index in existing:
+        shortcuts[index]["icon"] = icon
+    print("  icon: %s" % (icon or "none"))
+    store(path, shortcuts, dry_run)
+    return not dry_run
+
+
 def do_remove(config, dry_run):
     path = os.path.join(config, "shortcuts.vdf")
     print("%s" % path)
@@ -239,15 +325,30 @@ def do_remove(config, dry_run):
 
     existing = [index for index, entry in shortcuts.items() if ours(entry)]
     if not existing:
-        print("  no Plex entry found, nothing to do")
+        print("  no Plex entry here, nothing to do")
         return False
 
+    appid = shortcut_appid(config)
     kept = [entry for index, entry in shortcuts.items() if index not in existing]
     reindexed = {str(position): entry for position, entry in enumerate(kept)}
 
     print("  removing entry %s" % ", ".join(existing))
     store(path, reindexed, dry_run)
+    if appid is not None:
+        drop_artwork(config, appid, dry_run)
     return not dry_run
+
+
+def drop_artwork(config, appid, dry_run):
+    grid = os.path.join(config, "grid")
+    for _, template, _ in ARTWORK:
+        for extension in IMAGE_EXTENSIONS:
+            path = os.path.join(grid, (template % appid) + extension)
+            if not os.path.exists(path):
+                continue
+            print("  removing %s" % path)
+            if not dry_run:
+                os.remove(path)
 
 
 def do_list(config):
@@ -255,7 +356,7 @@ def do_list(config):
     print("%s" % path)
     shortcuts = load(path)
     if not shortcuts:
-        print("  no shortcuts")
+        print("  nothing in it")
         return False
     for index, entry in shortcuts.items():
         if not isinstance(entry, dict):
@@ -267,8 +368,16 @@ def do_list(config):
 
 
 def do_artwork(config, files, dry_run):
+    appid = shortcut_appid(config)
+    if appid is None:
+        if not dry_run:
+            print("%s" % config)
+            print("  no Plex shortcut here yet, so add it first and the artwork")
+            print("  will go with it")
+            return False
+        appid = unsigned_appid(quoted_exe(), APPNAME)
+
     grid = os.path.join(config, "grid")
-    appid = unsigned_appid(quoted_exe(), APPNAME)
     print("%s" % grid)
 
     wrote = False
@@ -280,12 +389,25 @@ def do_artwork(config, files, dry_run):
         if not os.path.isfile(source):
             print("  %s: %s not found" % (name, source))
             continue
-        target = os.path.join(grid, template % appid)
+
+        extension = os.path.splitext(source)[1].lower()
+        if extension == ".jpeg":
+            extension = ".jpg"
+        if extension not in IMAGE_EXTENSIONS:
+            print("  %s: %s is not a png or jpg" % (name, source))
+            continue
+
+        stem = template % appid
+        target = os.path.join(grid, stem + extension)
         print("  %s -> %s" % (source, target))
         if dry_run:
             continue
         os.makedirs(grid, exist_ok=True)
         shutil.copyfile(source, target)
+        for other in IMAGE_EXTENSIONS:
+            stale = os.path.join(grid, stem + other)
+            if stale != target and os.path.exists(stale):
+                os.remove(stale)
         wrote = True
 
     if not wrote and not dry_run:
@@ -293,18 +415,21 @@ def do_artwork(config, files, dry_run):
     return wrote
 
 
-def prompt_artwork():
-    print()
-    print("Supply your own image files. Leave a line blank to skip it.")
-    files = {}
+def report_artwork(files):
     for name, _, description in ARTWORK:
-        answer = input("  %s (%s): " % (name, description)).strip()
-        if answer:
-            files[name] = answer
-    return files
+        if name in files:
+            print("  using %s for %s" % (os.path.basename(files[name]), description))
+    missing = [name for name, _, _ in ARTWORK if name not in files]
+    if missing:
+        print("  nothing named %s, so %s left alone"
+              % (" or ".join(missing), "they are" if len(missing) > 1 else "it is"))
+    if not files:
+        print("  save a png or jpg under one of those names in:")
+        for folder in image_folders():
+            print("    %s" % folder)
 
 
-def menu(configs, dry_run):
+def menu(configs, overrides, dry_run):
     changed = False
     while True:
         print()
@@ -312,10 +437,10 @@ def menu(configs, dry_run):
         if steam_is_running():
             print("Steam is running. Restart it afterwards, then check with 4.")
         print()
-        print("  1) Add the shortcut")
-        print("  2) Remove the shortcut")
-        print("  3) Set artwork from local image files")
-        print("  4) Show the shortcuts that are installed")
+        print("  1) Add Plex to Steam, with any artwork in this folder")
+        print("  2) Remove Plex from Steam")
+        print("  3) Add artwork only, from the images in this folder")
+        print("  4) Show what is in Steam's shortcut file")
         print("  q) Quit")
         print()
 
@@ -324,17 +449,20 @@ def menu(configs, dry_run):
         except EOFError:
             choice = "q"
 
-        if choice == "1":
-            icon = find_icon()
+        if choice in ("1", "3"):
+            files = find_artwork()
+            files.update(overrides)
+            print()
+            report_artwork(files)
+            icon = overrides.get("icon") or find_icon()
             for config in configs:
-                changed |= do_add(config, icon, dry_run, False)
+                if choice == "1":
+                    changed |= do_add(config, icon, dry_run, False)
+                if files:
+                    changed |= do_artwork(config, files, dry_run)
         elif choice == "2":
             for config in configs:
                 changed |= do_remove(config, dry_run)
-        elif choice == "3":
-            files = prompt_artwork()
-            for config in configs:
-                changed |= do_artwork(config, files, dry_run)
         elif choice == "4":
             for config in configs:
                 do_list(config)
@@ -350,17 +478,25 @@ def menu(configs, dry_run):
 def main():
     parser = argparse.ArgumentParser(
         description=HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--add", action="store_true")
-    parser.add_argument("--remove", action="store_true")
-    parser.add_argument("--list", action="store_true")
-    parser.add_argument("--icon", help="an image file for the shortcut icon")
+    parser.add_argument("--add", action="store_true",
+                        help="add the shortcut")
+    parser.add_argument("--remove", action="store_true",
+                        help="remove the shortcut")
+    parser.add_argument("--list", action="store_true",
+                        help="show what is in Steam's shortcut file")
+    parser.add_argument("--artwork", action="store_true",
+                        help="use the portrait, capsule, hero and logo images in this folder")
+    parser.add_argument("--icon", help="an image file for the small icon beside the name")
     for name, _, description in ARTWORK:
         parser.add_argument("--" + name, help=description)
     parser.add_argument("-f", "--force", action="store_true",
-                        help="replace an existing entry instead of leaving it alone")
-    parser.add_argument("-n", "--dry-run", action="store_true")
+                        help="add Plex again even if it is already in Steam")
+    parser.add_argument("-n", "--dry-run", action="store_true",
+                        help="say what would happen and write nothing")
     parser.add_argument("--config", action="append",
-                        help="a Steam userdata config directory, repeatable")
+                        help="the Steam account folder to write to, if the "
+                             "script cannot find it; give it more than once "
+                             "for more than one account")
     args = parser.parse_args()
 
     configs = args.config or find_configs()
@@ -368,12 +504,28 @@ def main():
         print("No Steam userdata config directory found.", file=sys.stderr)
         print("Pass one with --config, or sign in to Steam once first.", file=sys.stderr)
         return 1
+    missing = [config for config in configs if not os.path.isdir(config)]
+    if missing:
+        for config in missing:
+            print("%s: not a directory" % config, file=sys.stderr)
+        return 1
 
-    files = {name: getattr(args, name) for name, _, _ in ARTWORK}
-    batch = args.add or args.remove or args.list or any(files.values())
+    overrides = {name: getattr(args, name) for name, _, _ in ARTWORK}
+    overrides = {name: path for name, path in overrides.items() if path}
+    if args.icon:
+        overrides["icon"] = args.icon
 
+    batch = args.add or args.remove or args.list or args.artwork or bool(overrides)
     if not batch:
-        return menu(configs, args.dry_run)
+        return menu(configs, overrides, args.dry_run)
+
+    files = {name: path for name, path in overrides.items() if name != "icon"}
+    if args.add or args.artwork:
+        found = find_artwork()
+        found.update(files)
+        files = found
+        print()
+        report_artwork(files)
 
     if steam_is_running():
         print("Steam is running. Restart it afterwards, then check with --list.",
@@ -386,9 +538,11 @@ def main():
         if args.remove:
             changed |= do_remove(config, args.dry_run)
         if args.add:
-            icon = args.icon if args.icon is not None else find_icon()
+            icon = overrides.get("icon") or find_icon()
             changed |= do_add(config, icon, args.dry_run, args.force)
-        if any(files.values()):
+        elif args.icon and not args.remove:
+            changed |= do_icon(config, args.icon, args.dry_run)
+        if files:
             changed |= do_artwork(config, files, args.dry_run)
 
     if changed:
