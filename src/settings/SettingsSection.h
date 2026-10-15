@@ -26,6 +26,7 @@ public:
   bool isHidden() const;
 
   QVariant value(const QString& key);
+  bool contains(const QString& key) const { return m_values.contains(key); }
   QVariant defaultValue(const QString& key);
   QString sectionName() const { return m_sectionID; }
 

@@ -78,7 +78,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   }
 #endif
 
-  QRect loadedGeo = loadGeometry();
+  loadGeometry();
 
   connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_MAIN), &SettingsSection::valuesUpdated,
           this, &KonvergoWindow::updateMainSectionSettings);
@@ -215,7 +215,7 @@ QRect KonvergoWindow::loadGeometryRect()
                         WEBUI_SIZE.width(), WEBUI_SIZE.height());
   }
 
-  QVariantMap map = SettingsComponent::Get().value(SETTINGS_SECTION_STATE, "geometry").toMap();
+  QVariantMap map = SettingsComponent::Get().valueIfSet(SETTINGS_SECTION_STATE, "geometry").toMap();
   if (map.isEmpty())
     return defaultRect;
 
@@ -567,7 +567,7 @@ QScreen* KonvergoWindow::loadLastScreen()
 {
   QString screenName = SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "forceFSScreen").toString();
   if (screenName.isEmpty())
-    screenName = SettingsComponent::Get().value(SETTINGS_SECTION_STATE, "lastUsedScreen").toString();
+    screenName = SettingsComponent::Get().valueIfSet(SETTINGS_SECTION_STATE, "lastUsedScreen").toString();
   if (screenName.isEmpty())
     return nullptr;
 

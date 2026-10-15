@@ -165,7 +165,12 @@ QVariant SettingsComponent::allValues(const QString& section)
 static void writeFile(const QString& filename, const QByteArray& data)
 {
   QSaveFile file(filename);
-  file.open(QIODevice::WriteOnly | QIODevice::Text);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+  {
+    QLOG_ERROR() << "Could not open" << filename << "for writing:" << file.errorString();
+    return;
+  }
+
   file.write(data);
   if (!file.commit())
   {
@@ -330,6 +335,15 @@ QVariant SettingsComponent::value(const QString& sectionID, const QString &key)
     QLOG_ERROR() << "Section" << sectionID << "is unknown";
     return QVariant();
   }
+  return section->value(key);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QVariant SettingsComponent::valueIfSet(const QString& sectionID, const QString& key)
+{
+  SettingsSection* section = getSection(sectionID);
+  if (!section || !section->contains(key))
+    return QVariant();
   return section->value(key);
 }
 
@@ -534,9 +548,9 @@ void SettingsComponent::parseSection(const QJsonObject& sectionObject)
   section->setHidden(sectionObject.value("hidden").toBool(false));
   section->setStorage(sectionObject.value("storage").toBool(false));
 
-  auto values = sectionObject.value("values").toArray();
+  const auto values = sectionObject.value("values").toArray();
   int order = 0;
-  for(auto val : values)
+  for(const auto& val : values)
   {
     if (!val.isObject())
       continue;
@@ -733,9 +747,7 @@ QString SettingsComponent::getWebClientUrl(bool desktop)
   if (url == "bundled")
   {
     auto path = Paths::webClientPath(desktop ? "desktop" : "tv");
-    if (path.startsWith("/"))
-      url = "file://" + path;
-    url = "file:///" + path;
+    url = path.startsWith("/") ? "file://" + path : "file:///" + path;
   }
 
   if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "signInPending").toBool())
