@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import re
 import shutil
 import struct
 import sys
@@ -147,11 +148,17 @@ def find_configs():
     return sorted(seen.values())
 
 
+def icon_size(path):
+    found = re.search(r"/(\d+)x(\d+)/", path)
+    return int(found.group(1)) if found else 0
+
+
 def find_icon():
     for pattern in ICON_SEARCH:
-        for path in sorted(glob(os.path.expanduser(pattern))):
-            if path.lower().endswith((".png", ".jpg", ".ico")):
-                return path
+        raster = [p for p in glob(os.path.expanduser(pattern))
+                  if p.lower().endswith((".png", ".jpg", ".ico"))]
+        if raster:
+            return sorted(raster, key=lambda p: (icon_size(p), p))[-1]
     for pattern in ICON_SEARCH:
         for path in sorted(glob(os.path.expanduser(pattern))):
             return path
