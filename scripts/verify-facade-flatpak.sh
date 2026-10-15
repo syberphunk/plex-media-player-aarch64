@@ -173,6 +173,9 @@ for marker in \
   'Could not create QtWebEngine' \
   'JS: ' \
   'not mono-threaded' \
+  'Accepted websocket' \
+  'af-remove: item label' \
+  'is served by a connector' \
   ; do
   n=$(grep -cF "$marker" "$OUT/run.log" || true)
   printf '    %-45s %s\n' "$marker" "$n"
