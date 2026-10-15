@@ -159,7 +159,8 @@ QVariantMap RemoteComponent::QueryToMap(const QUrl& url)
   QUrlQuery query(url);
   QVariantMap queryMap;
 
-  for(auto stringPair : query.queryItems())
+  const auto queryItems = query.queryItems();
+  for(const auto& stringPair : queryItems)
   {
     QString key = stringPair.first;
     QString value = QUrl::fromPercentEncoding(stringPair.second.toLatin1()).toUtf8();
@@ -328,20 +329,14 @@ void RemoteComponent::responseDone()
   {
     QMutexLocker lk(&m_responseLock);
 
-    bool found = false;
-    quint64 foundId = 0;
-    for(auto responseId : m_responseMap.keys())
+    for(auto it = m_responseMap.begin(); it != m_responseMap.end(); ++it)
     {
-      if (m_responseMap[responseId] == response)
+      if (it.value() == response)
       {
-        foundId = responseId;
-        found = true;
+        m_responseMap.erase(it);
         break;
       }
     }
-
-    if (found)
-      m_responseMap.remove(foundId);
   }
 }
 

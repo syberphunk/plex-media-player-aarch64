@@ -7,6 +7,7 @@
 
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QVariant>
 #include <QJsonObject>
 #include <QJsonDocument>
 

@@ -28,6 +28,7 @@
 #include "QsLogDestFile.h"
 #include "QsLogDestFunctor.h"
 #include <QString>
+#include <memory>
 
 namespace QsLogging
 {
@@ -42,11 +43,11 @@ DestinationPtr DestinationFactory::MakeFileDestination(const QString& filePath,
     const MaxOldLogCount &oldLogsToKeep)
 {
     if (EnableLogRotation == rotation || EnableLogRotationOnOpen == rotation) {
-        QScopedPointer<SizeRotationStrategy> logRotation(new SizeRotationStrategy);
+        std::unique_ptr<SizeRotationStrategy> logRotation(new SizeRotationStrategy);
         logRotation->setMaximumSizeInBytes(sizeInBytesToRotateAfter.size);
         logRotation->setBackupCount(oldLogsToKeep.count);
 
-        FileDestination *dest = new FileDestination(filePath, RotationStrategyPtr(logRotation.take()));
+        FileDestination *dest = new FileDestination(filePath, RotationStrategyPtr(logRotation.release()));
         if (EnableLogRotationOnOpen == rotation && dest->rotationStrategy()->currentSizeInBytes() > 0)
           dest->rotate();
         return DestinationPtr(dest);

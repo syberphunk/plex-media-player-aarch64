@@ -540,7 +540,9 @@ bool PlayerConnector::writeKey(const QString& key, const QVariant& value)
     if (profile.isEmpty())
       return false;
     if (profile != m_videoProfile)
+    {
       QLOG_INFO() << "videoProfile set to" << profile << "- PMP always renders through mpv";
+    }
     m_videoProfile = profile;
     return true;
   }
