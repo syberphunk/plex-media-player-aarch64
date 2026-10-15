@@ -79,6 +79,11 @@ jobs:
           fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
 
+      - name: Build
+        env:
+          ARGS: ${{ steps.args.outputs.args }}
+        run: ./scripts/release.sh $ARGS --build-only
+
       - name: Import the signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -91,13 +96,13 @@ jobs:
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --homedir "$d" --batch --import
           echo "FP_GPG_HOMEDIR=$d" >> "$GITHUB_ENV"
 
-      - name: Build and verify
+      - name: Sign, package and verify
         env:
           ARGS: ${{ steps.args.outputs.args }}
           QTWEBENGINE_CHROMIUM_FLAGS: >-
             --no-sandbox
             --enable-logging=stderr --log-level=0
-        run: ./scripts/release.sh $ARGS --no-publish
+        run: ./scripts/release.sh $ARGS --from-build --no-publish
 
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

@@ -15,6 +15,8 @@ usage: release.sh [options]
   --allow-outdated   build even if a newer upstream release exists
   --no-verify        skip the headless verification gate
   --no-publish       build and verify, then stop before publishing
+  --build-only       run steps 1-3 and stop, leaving an unsigned repo dir
+  --from-build       take the repo dir as built, run steps 4-6
   --publish-only     publish an already built artifact, skipping steps 1-5
   --offline          skip the source freshness check entirely
 EOF
@@ -57,6 +59,8 @@ VERIFY=1
 PUBLISH=1
 PUBLISH_ONLY=0
 OFFLINE=0
+BUILD=1
+PACKAGE=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -69,6 +73,8 @@ while [ $# -gt 0 ]; do
     --allow-outdated) ALLOW_OUTDATED=1; shift;;
     --no-verify) VERIFY=0; shift;;
     --no-publish) PUBLISH=0; shift;;
+    --build-only) PACKAGE=0; PUBLISH=0; shift;;
+    --from-build) BUILD=0; shift;;
     --publish-only) PUBLISH_ONLY=1; shift;;
     --offline) OFFLINE=1; shift;;
     -h|--help) usage;;
@@ -93,6 +99,11 @@ for tool in flatpak flatpak-builder python3 ffmpeg; do
 done
 
 GPG_ARGS=()
+if [ -n "${FP_GPG_HOMEDIR:-}" ] && [ "$PACKAGE" -eq 0 ]; then
+  echo "FP_GPG_HOMEDIR is set for --build-only: the signing key belongs to" >&2
+  echo "the --from-build phase, not to the build." >&2
+  exit 1
+fi
 if [ -n "${FP_GPG_HOMEDIR:-}" ]; then
   [ -d "$FP_GPG_HOMEDIR" ] || { echo "FP_GPG_HOMEDIR $FP_GPG_HOMEDIR is not a directory" >&2; exit 1; }
   [ -f "$PUBKEY" ] || { echo "$PUBKEY not found" >&2; exit 1; }
@@ -162,6 +173,7 @@ if [ "$PUBLISH_ONLY" -eq 1 ]; then
   exit 0
 fi
 
+build_phase() {
 echo "==> step 1/6: checking pinned sources"
 check_args=()
 [ "$OFFLINE" -eq 1 ] && check_args+=(--offline)
@@ -197,13 +209,28 @@ fi
 
 echo
 echo "==> step 3/6: building"
-if [ ${#GPG_ARGS[@]} -gt 0 ]; then
-  echo "    signing with $FP_GPG_KEY"
-else
-  echo "    unsigned (FP_GPG_HOMEDIR is not set)"
-fi
 flatpak-builder --arch="$ARCH" --force-clean --disable-rofiles-fuse \
-  "${GPG_ARGS[@]}" --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
+  --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
+}
+
+if [ "$BUILD" -eq 1 ]; then
+  build_phase
+else
+  [ -f "$REPO_DIR/refs/heads/app/$APP_ID/$ARCH/master" ] || {
+    echo "$REPO_DIR holds no app/$APP_ID/$ARCH/master:" >&2
+    echo "run --build-only before --from-build" >&2
+    exit 1
+  }
+  echo "==> steps 1-3/6: skipped, taking $REPO_DIR as built"
+fi
+
+if [ "$PACKAGE" -eq 0 ]; then
+  echo
+  echo "==> steps 4-6/6: skipped"
+  echo
+  echo "Repository: $REPO_DIR"
+  exit 0
+fi
 
 echo
 echo "==> step 4/6: packaging the repository"
@@ -212,6 +239,12 @@ echo "==> step 4/6: packaging the repository"
   exit 1
 }
 rm -f "$REPO_DIR/refs/heads/runtime/$APP_ID.Debug/$ARCH/master"
+if [ ${#GPG_ARGS[@]} -gt 0 ]; then
+  echo "    signing with $FP_GPG_KEY"
+  flatpak build-sign "${GPG_ARGS[@]}" "$REPO_DIR"
+else
+  echo "    unsigned (FP_GPG_HOMEDIR is not set)"
+fi
 flatpak build-update-repo "${GPG_ARGS[@]}" --prune "$REPO_DIR" >/dev/null
 rm -f "$ARTIFACT"
 tar -C "$REPO_DIR" -czf "$ARTIFACT" .
