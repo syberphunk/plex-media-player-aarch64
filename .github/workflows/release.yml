@@ -26,7 +26,6 @@ jobs:
       attestations: write
     env:
       ARCH: aarch64
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v7
@@ -50,19 +49,32 @@ jobs:
           sysctl kernel.unprivileged_userns_clone vm.max_map_count || true
 
       - name: Check pinned sources
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/check-sources.py
 
       - name: Resolve the release arguments
         id: args
+        env:
+          REPOSITORY: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_ALLOW_OUTDATED: ${{ inputs.allow_outdated }}
         run: |
           set -eu
-          args="--arch $ARCH --gh-repo ${{ github.repository }}"
-          if [ -n "${{ inputs.tag }}" ]; then
-            args="$args --tag ${{ inputs.tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            tag=$INPUT_TAG
           else
-            args="$args --tag ${GITHUB_REF_NAME}"
+            tag=$GITHUB_REF_NAME
           fi
-          if [ "${{ inputs.allow_outdated }}" != "false" ]; then
+          case $tag in
+            v[0-9]*-aarch64.[0-9]*) ;;
+            *) echo "refusing tag: $tag" >&2; exit 1 ;;
+          esac
+          case $tag in
+            *[!0-9A-Za-z.-]*) echo "refusing tag: $tag" >&2; exit 1 ;;
+          esac
+          args="--arch $ARCH --gh-repo $REPOSITORY --tag $tag"
+          if [ "$INPUT_ALLOW_OUTDATED" != "false" ]; then
             args="$args --allow-outdated"
           fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
@@ -81,10 +93,11 @@ jobs:
 
       - name: Build and verify
         env:
+          ARGS: ${{ steps.args.outputs.args }}
           QTWEBENGINE_CHROMIUM_FLAGS: >-
             --no-sandbox
             --enable-logging=stderr --log-level=0
-        run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
+        run: ./scripts/release.sh $ARGS --no-publish
 
       - if: failure()
         uses: actions/upload-artifact@v7
@@ -102,13 +115,18 @@ jobs:
           subject-path: plex-media-player-${{ env.ARCH }}-repo.tar.gz
 
       - name: Publish
-        run: ./scripts/release.sh ${{ steps.args.outputs.args }} --publish-only
+        env:
+          ARGS: ${{ steps.args.outputs.args }}
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/release.sh $ARGS --publish-only
 
       - name: Stage the repository for Pages
+        env:
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -eu
           ./scripts/stage-pages.sh "$(dirname "$GITHUB_WORKSPACE")/fp-repo" \
-            "https://${{ github.repository_owner }}.github.io/${GITHUB_REPOSITORY#*/}" \
+            "https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}" \
             pages
 
       - uses: actions/upload-pages-artifact@v5

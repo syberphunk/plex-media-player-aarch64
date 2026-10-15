@@ -24,9 +24,10 @@ jobs:
       - name: Install from the published repository
         env:
           URL: ${{ inputs.url }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -eu
-          url=${URL:-https://${{ github.repository_owner }}.github.io/${GITHUB_REPOSITORY#*/}/}
+          url=${URL:-https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}/}
           ref="${url%/}/io.github.syberphunk.PlexMediaPlayer.flatpakref"
           echo "==> installing from $ref"
           flatpak remote-add --user --if-not-exists \

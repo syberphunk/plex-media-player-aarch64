@@ -35,10 +35,12 @@ jobs:
 
       - name: Resolve the build arguments
         id: args
+        env:
+          INPUT_ALLOW_OUTDATED: ${{ inputs.allow_outdated }}
         run: |
           set -eu
           args="--arch $ARCH"
-          if [ "${{ inputs.allow_outdated }}" != "false" ]; then
+          if [ "$INPUT_ALLOW_OUTDATED" != "false" ]; then
             args="$args --allow-outdated"
           fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
@@ -57,10 +59,11 @@ jobs:
 
       - name: Build and verify
         env:
+          ARGS: ${{ steps.args.outputs.args }}
           QTWEBENGINE_CHROMIUM_FLAGS: >-
             --no-sandbox
             --enable-logging=stderr --log-level=0
-        run: ./scripts/release.sh ${{ steps.args.outputs.args }} --no-publish
+        run: ./scripts/release.sh $ARGS --no-publish
 
       - uses: actions/upload-artifact@v7
         with:
