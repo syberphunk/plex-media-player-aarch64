@@ -22,6 +22,7 @@ raised and the bundle rebuilt.
 | The Plex client, server or account services | [Plex's security reporting policy](https://support.plex.tv/articles/reporting-security-issues/) |
 | Plex Media Player's own code | upstream is archived and unmaintained: https://github.com/plexinc/plex-media-player |
 | mpv (libmpv) | https://github.com/mpv-player/mpv/issues |
+| FFmpeg | https://ffmpeg.org/security.html |
 | libass | https://github.com/libass/libass/issues |
 | libplacebo | https://code.videolan.org/videolan/libplacebo/-/issues |
 | zlib | https://github.com/madler/zlib/issues |

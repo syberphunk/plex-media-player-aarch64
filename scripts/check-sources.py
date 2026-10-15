@@ -70,6 +70,13 @@ UPSTREAM = {
         "vendor": "libdisplay-info-%(v)s.tar.xz",
         "readme": ("libdisplay-info", ""),
     },
+    "ffmpeg": {
+        "probe": ("ffmpeg", None),
+        "strip_v": False,
+        "url": "https://ffmpeg.org/releases/ffmpeg-%(v)s.tar.xz",
+        "vendor": "ffmpeg-%(v)s.tar.xz",
+        "readme": ("FFmpeg", ""),
+    },
     "libmpv": {
         "probe": ("github", "mpv-player/mpv"),
         "strip_v": True,
@@ -220,6 +227,11 @@ def fetch_json(url):
         return json.load(reply)
 
 
+def fetch_text(url):
+    with urllib.request.urlopen(request(url), timeout=30) as reply:
+        return reply.read().decode("utf-8", "replace")
+
+
 def base_app_head(branch):
     data = fetch_json("https://api.github.com/repos/%s/commits/branch/%s"
                       % (BASE_APP_REPO, branch))
@@ -329,6 +341,14 @@ def latest_version(spec):
             if "-rc" not in name and VERSION_RE.search(name):
                 return name
         return None
+    if kind == "ffmpeg":
+        index = fetch_text("https://ffmpeg.org/releases/")
+        best = None
+        for found in re.finditer(r"ffmpeg-([0-9]+(?:\.[0-9]+)+)\.tar\.xz", index):
+            value = tuple(int(part) for part in found.group(1).split("."))
+            if best is None or value > best[0]:
+                best = (value, found.group(1))
+        return best[1] if best else None
     if kind == "plex":
         data = fetch_json(PLEX_DESKTOP_API)
         versions = set()

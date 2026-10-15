@@ -8,6 +8,7 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | --- | --- | --- |
 | Plex Media Player | `d9685b2` | https://github.com/plexinc/plex-media-player |
 | Plex Desktop web client | 1.115.0.426-4e960a1d | https://www.plex.tv/media-server-downloads/#plex-app |
+| FFmpeg | 9.0.2 | https://ffmpeg.org |
 | hwdata | v0.412 | https://github.com/vcrhonek/hwdata |
 | libass | 0.17.5 | https://github.com/libass/libass |
 | libdisplay-info | 0.4.0 | https://gitlab.freedesktop.org/emersion/libdisplay-info |
@@ -17,9 +18,9 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | org.kde.Platform / org.kde.Sdk | 6.11 | https://invent.kde.org/packaging/flatpak-kde-runtime |
 | io.qt.qtwebengine.BaseApp | 6.11 | https://github.com/flathub/io.qt.qtwebengine.BaseApp |
 
-`vendor-deps/` holds copies of the hwdata, libass, libdisplay-info, libplacebo,
-mpv and zlib release archives listed above; the Flatpak manifest builds from
-those copies, so the build downloads nothing. The Plex Desktop client is
+`vendor-deps/` holds copies of the FFmpeg, hwdata, libass, libdisplay-info,
+libplacebo, mpv and zlib release archives listed above; the Flatpak manifest
+builds from those copies, so the build downloads nothing. The Plex Desktop client is
 declared as Flatpak `extra-data` and is fetched from plex.tv by
 `flatpak install`, on the machine the application is installed on.
 
