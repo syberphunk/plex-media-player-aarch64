@@ -838,33 +838,48 @@ static bool extractZip(QString zip, QString dest)
       goto fail;
     }
 
+    if (finfo.size_filename >= sizeof(filename))
+    {
+      QLOG_ERROR() << "zip entry name is too long";
+      goto fail;
+    }
+    filename[finfo.size_filename] = '\0';
+
+    const QString destRoot = QDir::cleanPath(dest);
+    const QString entryName = QString::fromUtf8(filename);
+    const QString entryPath = QDir::cleanPath(destRoot + "/" + entryName);
+
+    if (entryPath != destRoot && !entryPath.startsWith(destRoot + "/"))
+    {
+      QLOG_ERROR() << "refusing zip entry outside the destination:" << entryName;
+      goto fail;
+    }
+
     if ((unzerr = unzOpenCurrentFile(file)) != UNZ_OK)
     {
       QLOG_ERROR() << "unzOpenCurrentFile() failed with" << unzerr;
       goto fail;
     }
 
-    char *pathpart = strrchr(filename, '/');
-    if (pathpart)
-    {
-      //  This part sucks especially: temporarily cut off the string.
-      *pathpart = '\0';
+    // Directory (probably)
+    const bool isDirectory = entryName.endsWith("/");
+    const QString parentPath = isDirectory ? entryPath
+                                           : entryPath.left(qMax(entryPath.lastIndexOf('/'), 0));
 
-      QDir dir(dest + "/" + filename);
+    if (!parentPath.isEmpty() && parentPath != destRoot)
+    {
+      QDir dir(parentPath);
       if (!dir.mkpath("."))
       {
         QLOG_ERROR() << "could not create zip sub directory";
         goto fail;
       }
-
-      *pathpart = '/';
     }
 
-    // Directory (probably)
-    if (QString(filename).endsWith("/"))
+    if (isDirectory)
       continue;
 
-    QString writepath = dest + "/" + filename;
+    QString writepath = entryPath;
 
     QSaveFile out(writepath);
     if (!out.open(QIODevice::WriteOnly))
