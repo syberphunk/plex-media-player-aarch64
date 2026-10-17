@@ -243,8 +243,8 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
 
   const QString path = request.url().path();
 
-  if (path != "/identity" && path != "/media/providers" && path != "/media/subscriptions"
-      && path != "/media/providers/remote/status")
+  if (path != "/" && path != "/identity" && path != "/media/providers"
+      && path != "/media/subscriptions" && path != "/media/providers/remote/status")
     return false;
 
   if (request.method() == QHttpServerRequest::Method::Options)
@@ -255,6 +255,17 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
     response->addHeader("Access-Control-Allow-Headers", "*");
     response->addHeader("Access-Control-Max-Age", "86400");
     response->end();
+    return true;
+  }
+
+  if (path == "/")
+  {
+    writeMediaContainer(request, response,
+                        { { "size", 0 },
+                          { "machineIdentifier", machineIdentifier() },
+                          { "version", QCoreApplication::applicationVersion() },
+                          { "allowSync", 0 },
+                          { "mediaProviders", 1 } });
     return true;
   }
 
