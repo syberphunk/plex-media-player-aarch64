@@ -3,7 +3,7 @@
 # simple script that takes data on stdin and outputs bz2 compressed data
 # just to avoid having to install bzip2.exe on windows platforms
 
-import bz2, os, sys
+import bz2, sys
 
 bufsize=4096
 

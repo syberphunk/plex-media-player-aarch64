@@ -17,7 +17,6 @@
 import sys
 import os
 import stat
-import io
 
 if len(sys.argv) < 2:
   sys.exit(1)
@@ -50,8 +49,8 @@ try:
     if infile.read() == result:
       # They're the same -> prevent cmake from rebuilding resources.
       sys.exit(0)
-except IOError:
+except OSError:
   pass
 
-outfile = open(sys.argv[1], "wb")
-outfile.write(result)
+with open(sys.argv[1], "wb") as outfile:
+  outfile.write(result)
