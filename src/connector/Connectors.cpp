@@ -4,8 +4,10 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QSysInfo>
+#include <QUrl>
 
 #include "Paths.h"
 #include "QsLog.h"
@@ -14,6 +16,7 @@
 #include "input/InputComponent.h"
 #include "player/PlayerComponent.h"
 #include "settings/SettingsComponent.h"
+#include "settings/SettingsSection.h"
 #include "system/SystemComponent.h"
 #include "utils/Utils.h"
 
@@ -38,6 +41,44 @@ namespace
     if (hostName.isEmpty())
       return QStringLiteral("Plex Media Player");
     return hostName;
+  }
+
+  bool settingsWriteAllowed(const QString& section, const QString& leaf, QVariant& value)
+  {
+    SettingsSection* target = SettingsComponent::Get().getSection(section);
+    if (!target)
+      return false;
+
+    if (target->isStorage())
+      return true;
+
+    if (target->isHidden() || !target->contains(leaf) || target->isValueHidden(leaf))
+      return false;
+
+    const QVariant defaultValue = target->defaultValue(leaf);
+    if (defaultValue.isValid() && value.metaType() != defaultValue.metaType()
+        && !value.convert(defaultValue.metaType()))
+      return false;
+
+    const QVariantList allowed = target->possibleValues(leaf);
+    if (allowed.isEmpty())
+      return true;
+
+    for (const QVariant& entry : allowed)
+    {
+      QVariant candidate = entry.typeId() == QMetaType::QVariantMap
+                             ? entry.toMap().value("value")
+                             : entry;
+      if (!candidate.isValid())
+        continue;
+      if (defaultValue.isValid() && candidate.metaType() != defaultValue.metaType()
+          && !candidate.convert(defaultValue.metaType()))
+        continue;
+      if (candidate == value)
+        return true;
+    }
+
+    return false;
   }
 }
 
@@ -255,14 +296,25 @@ bool SettingsConnector::writeKey(const QString& key, const QVariant& value)
 {
   if (key == "webInspectorPort")
   {
-    SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, "remoteInspector", value.toInt() != 0);
+    if (value.toInt() != 0)
+    {
+      QLOG_WARN() << "Refusing to enable the remote inspector from the connector";
+      return false;
+    }
+    SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, "remoteInspector", false);
     return true;
   }
 
   QString section, leaf;
   if (split(key, section, leaf))
   {
-    SettingsComponent::Get().setValue(section, leaf, value);
+    QVariant checked = value;
+    if (!settingsWriteAllowed(section, leaf, checked))
+    {
+      QLOG_WARN() << "Refusing to set" << key << "from the connector";
+      return false;
+    }
+    SettingsComponent::Get().setValue(section, leaf, checked);
     return true;
   }
 
@@ -439,7 +491,10 @@ bool PlayerConnector::writeKey(const QString& key, const QVariant& value)
 
   if (key == "volume")
   {
-    player.setVolume(qBound(0, qRound(value.toDouble() * 100.0), 100));
+    const double requested = value.toDouble() * 100.0;
+    if (qIsNaN(requested))
+      return false;
+    player.setVolume(qRound(qBound(0.0, requested, 100.0)));
     return true;
   }
   if (key == "muted")       { player.setMuted(value.toBool()); return true; }
@@ -528,7 +583,7 @@ bool PlayerConnector::writeKey(const QString& key, const QVariant& value)
         break;
     }
 
-    const int pct = display.value("size", 0).toInt();
+    const int pct = qBound(0, display.value("size", 0).toInt(), 1000);
     if (pct > 0)
       SettingsComponent::Get().setValue(SETTINGS_SECTION_SUBTITLES, "size", 32 * pct / 100);
 
@@ -591,7 +646,15 @@ QString PlayerConnector::streamSelector(const QVariant& stream)
 
   const QString url = map.value("url").toString();
   if (!url.isEmpty())
-    return QString("#%1,%2").arg(index).arg(url);
+  {
+    const QUrl parsed(url);
+    if (!parsed.isValid() || (parsed.scheme() != "https" && parsed.scheme() != "http"))
+    {
+      QLOG_WARN() << "Refusing a stream URL that is not http or https";
+      return QString();
+    }
+    return QString("#%1,%2").arg(index).arg(parsed.toString());
+  }
 
   if (map.contains("ffIndex"))
   {
@@ -636,7 +699,7 @@ QVariantMap PlayerConnector::queue(const QVariantMap& item)
 
   QVariantMap options;
   const double startSeconds = item.value("startPositionSeconds", 0).toDouble();
-  if (startSeconds > 0)
+  if (startSeconds > 0 && startSeconds < 365 * 24 * 60 * 60)
     options["startMilliseconds"] = static_cast<qint64>(startSeconds * 1000);
 
   QVariantMap metadata;
@@ -779,13 +842,13 @@ StorageConnector::StorageConnector(QObject* parent) : ConnectorBase("storage", p
 
 static void persist(const QVariantMap& data)
 {
-  QFile file(storagePath());
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+  const QByteArray json =
+    QJsonDocument(QJsonObject::fromVariantMap(data)).toJson(QJsonDocument::Compact);
+
+  if (!Utils::safelyWriteFile(storagePath(), json))
   {
     QLOG_ERROR() << "Could not write" << storagePath();
-    return;
   }
-  file.write(QJsonDocument(QJsonObject::fromVariantMap(data)).toJson(QJsonDocument::Compact));
 }
 
 QVariantMap StorageConnector::itemKeys()
@@ -833,9 +896,22 @@ InputConnector::InputConnector(QObject* parent) : ConnectorBase("input", parent)
 QVariantMap InputConnector::executeActions(const QVariantList& actions)
 {
   trace("executeActions", actions);
+  static const QStringList refusedHostCommands = { "poweroff", "reboot",      "suspend",
+                                                   "script",   "set_setting", "cycle_setting" };
+
   QStringList list;
   for (const QVariant& action : actions)
-    list << action.toString();
+  {
+    const QString name = action.toString();
+    if (name.startsWith("host:")
+        && refusedHostCommands.contains(name.mid(5).section(' ', 0, 0)))
+    {
+      QLOG_WARN() << "Refusing host command" << name << "from the connector";
+      return Envelope::failed();
+    }
+
+    list << name;
+  }
 
   InputComponent::Get().executeActions(list);
   return Envelope::ok();
@@ -967,8 +1043,12 @@ bool UserConnector::writeKey(const QString& key, const QVariant& value)
   if (key == "clientID")
   {
     const QString id = value.toString();
-    if (id.isEmpty())
+    static const QRegularExpression allowed("\\A[A-Za-z0-9._:-]{1,128}\\z");
+    if (!allowed.match(id).hasMatch())
+    {
+      QLOG_WARN() << "Refusing a client identifier that is not an identifier";
       return false;
+    }
 
     SettingsComponent::Get().setValue(SETTINGS_SECTION_WEBCLIENT, "clientID", id);
     return true;
