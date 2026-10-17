@@ -2,10 +2,34 @@
 
 #include <QUdpSocket>
 #include <QHostInfo>
+#include <QNetworkInterface>
 
 #include "settings/SettingsComponent.h"
 #include "QsLog.h"
 #include "RemoteComponent.h"
+
+static bool senderIsLocal(const QHostAddress& sender)
+{
+  if (sender.isLoopback())
+    return true;
+
+  for(const QNetworkInterface& iface : QNetworkInterface::allInterfaces())
+  {
+    if (!(iface.flags() & QNetworkInterface::IsUp))
+      continue;
+
+    for(const QNetworkAddressEntry& entry : iface.addressEntries())
+    {
+      if (entry.prefixLength() < 0 || entry.ip().protocol() != sender.protocol())
+        continue;
+
+      if (sender.isInSubnet(entry.ip(), entry.prefixLength()))
+        return true;
+    }
+  }
+
+  return false;
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 GDMManager::GDMManager(QObject *parent) : QObject(parent), m_port(-1)
@@ -60,8 +84,16 @@ void GDMManager::readData()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void GDMManager::parseData(const QByteArray& data, const QHostAddress& sender, quint16 port)
 {
-  if (data.startsWith("M-SEARCH *"))
-    m_socket.writeDatagram(getPacket(), sender, port);
+  if (!data.startsWith("M-SEARCH *"))
+    return;
+
+  if (!senderIsLocal(sender))
+  {
+    QLOG_WARN() << "Ignoring a GDM search from" << sender.toString();
+    return;
+  }
+
+  m_socket.writeDatagram(getPacket(), sender, port);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
