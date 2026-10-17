@@ -50,11 +50,13 @@ static void elidePattern(QString& msg, const QString& substring, int chars)
   while (true)
   {
     start = msg.indexOf(substring, start);
-    if (start < 0 || start + substring.length() + chars > msg.length())
+    if (start < 0)
       break;
     start += substring.length();
-    for (int n = 0; n < chars; n++)
+    const int count = qMin(chars, msg.length() - start);
+    for (int n = 0; n < count; n++)
       msg[start + n] = QChar('x');
+    start += count;
   }
 }
 
