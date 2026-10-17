@@ -30,11 +30,11 @@ public:
   DisplayManagerX11(QObject* parent) : DisplayManager(parent), xdisplay(0), resources(0) {};
   virtual ~DisplayManagerX11();
 
-  virtual bool initialize();
-  virtual bool setDisplayMode(int display, int mode);
-  virtual int getCurrentDisplayMode(int display);
-  virtual int getMainDisplay();
-  virtual int getDisplayFromPoint(int x, int y);
+  bool initialize() override;
+  bool setDisplayMode(int display, int mode) override;
+  int getCurrentDisplayMode(int display) override;
+  int getMainDisplay() override;
+  int getDisplayFromPoint(int x, int y) override;
 };
 
 #endif /* DISPLAYMANAGERX11_H_ */

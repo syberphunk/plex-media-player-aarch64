@@ -20,8 +20,8 @@ public:
   InputLIRC(QObject* parent);
   ~InputLIRC();
 
-  virtual const char* inputName() { return "LIRC"; }
-  virtual bool initInput();
+  const char* inputName() override { return "LIRC"; }
+  bool initInput() override;
 
 private Q_SLOTS:
   void connected();

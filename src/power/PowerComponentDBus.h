@@ -23,9 +23,9 @@ class PowerComponentDBus : public PowerComponent
     return flags;
   }
 
-    virtual bool PowerOff();
-    virtual bool Reboot();
-    virtual bool Suspend() { return callPowerMethod("Suspend"); }
+    bool PowerOff() override;
+    bool Reboot() override;
+    bool Suspend() override { return callPowerMethod("Suspend"); }
 
   private:
     bool callPowerMethod(QString method);
@@ -34,8 +34,8 @@ class PowerComponentDBus : public PowerComponent
     unsigned int screensaver_inhibit_cookie = 0;
   
   protected:
-    virtual void doDisableScreensaver();
-    virtual void doEnableScreensaver();
+    void doDisableScreensaver() override;
+    void doEnableScreensaver() override;
 };
 
 #endif // POWERCOMPONENTDBUS_H
