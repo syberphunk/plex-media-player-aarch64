@@ -14,7 +14,8 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////
 RemoteSubscriber::RemoteSubscriber(const QString& clientIdentifier, const QString& deviceName, const QUrl& address, QObject* parent)
-  : QObject(parent), m_address(address), m_clientIdentifier(clientIdentifier), m_deviceName(deviceName)
+  : QObject(parent), m_netAccess(nullptr), m_address(address),
+    m_clientIdentifier(clientIdentifier), m_deviceName(deviceName)
 {
   m_subscribeTime.start();
 
@@ -54,6 +55,9 @@ QString RemoteSubscriber::clientIdentifier()
 /////////////////////////////////////////////////////////////////////////////////////////
 void RemoteSubscriber::sendUpdate()
 {
+  if (!m_netAccess)
+    return;
+
   QUrl url(m_address);
   url.setPath("/:/timeline");
 
@@ -177,13 +181,19 @@ RemotePollSubscriber::RemotePollSubscriber(const QString &clientIdentifier, cons
 void RemotePollSubscriber::setHTTPResponse(HttpResponse *response)
 {
   if (m_response && m_response != response)
+  {
     disconnect(m_response, &HttpResponse::done, this, &RemotePollSubscriber::responseDone);
+    m_response->setStatusCode(HttpResponse::StatusCode::Ok);
+    m_response->write(getTimeline());
+    m_response->end();
+  }
 
   m_response = response;
   m_response->addHeader("Content-Type", "application/xml");
   m_response->addHeader("Access-Control-Expose-Headers", "X-Plex-Client-Identifier");
 
-  connect(m_response, &HttpResponse::done, this, &RemotePollSubscriber::responseDone);
+  connect(m_response, &HttpResponse::done, this, &RemotePollSubscriber::responseDone,
+          Qt::UniqueConnection);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

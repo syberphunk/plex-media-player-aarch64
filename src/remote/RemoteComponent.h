@@ -49,6 +49,7 @@ Q_SIGNALS:
 
 private Q_SLOTS:
   void checkSubscribers();
+  void checkResponses();
   void timelineFinished(QNetworkReply* reply);
   void responseDone();
 
@@ -61,6 +62,7 @@ private:
 
   quint64 m_commandId;
   QMap<quint64, HttpResponse*> m_responseMap;
+  QMap<quint64, qint64> m_responseTime;
   QMutex m_responseLock;
 
   QMutex m_subscriberLock;

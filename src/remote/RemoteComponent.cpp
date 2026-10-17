@@ -4,6 +4,7 @@
 
 #include "RemoteComponent.h"
 
+#include <QDateTime>
 #include <QXmlStreamWriter>
 #include <QUrlQuery>
 
@@ -11,6 +12,8 @@
 #include "settings/SettingsComponent.h"
 #include "utils/Utils.h"
 #include "Version.h"
+
+#define COMMAND_RESPONSE_TIMEOUT 30000
 
 static QMap<QString, QString> g_resourceKeyMap = {
   { "Name", "title" },
@@ -21,6 +24,20 @@ static QMap<QString, QString> g_resourceKeyMap = {
   { "Protocol-Capabilities", "protocolCapabilities" },
   { "Device-Class", "deviceClass" }
 };
+
+static bool usableIdentifier(const QString& identifier)
+{
+  if (identifier.isEmpty() || identifier.size() > 256)
+    return false;
+
+  for (const QChar& c : identifier)
+  {
+    if (c.unicode() < 32 || c.unicode() == 127 || c.isSpace())
+      return false;
+  }
+
+  return true;
+}
 
 static QMap<QString, QString> g_headerKeyMap = {
   { "Name", "X-Plex-Device-Name" },
@@ -44,6 +61,7 @@ bool RemoteComponent::componentInitialize()
   // check for timed out subscribers
   m_subscriberTimer.setInterval(5000);
   connect(&m_subscriberTimer, &QTimer::timeout, this, &RemoteComponent::checkSubscribers);
+  connect(&m_subscriberTimer, &QTimer::timeout, this, &RemoteComponent::checkResponses);
   m_subscriberTimer.start();
 
   // connect the network access stuff
@@ -116,7 +134,8 @@ QVariantMap RemoteComponent::GDMInformation()
     {"Protocol-Version", "1"},
     {"Protocol-Capabilities", "navigation,playback,timeline,mirror,playqueues"},
     {"Device-Class", "pc"},
-    {"Resource-Identifier", SettingsComponent::Get().value(SETTINGS_SECTION_WEBCLIENT, "clientID")}
+    {"Resource-Identifier", Utils::sanitizeForHttpSeparators(
+                              SettingsComponent::Get().value(SETTINGS_SECTION_WEBCLIENT, "clientID").toString())}
   };
 
   return headers;
@@ -159,11 +178,11 @@ QVariantMap RemoteComponent::QueryToMap(const QUrl& url)
   QUrlQuery query(url);
   QVariantMap queryMap;
 
-  const auto queryItems = query.queryItems();
+  const auto queryItems = query.queryItems(QUrl::FullyDecoded);
   for(const auto& stringPair : queryItems)
   {
     QString key = stringPair.first;
-    QString value = QUrl::fromPercentEncoding(stringPair.second.toLatin1()).toUtf8();
+    QString value = stringPair.second;
 
     QVariantList l;
     if (queryMap.contains(key))
@@ -196,7 +215,7 @@ QVariantMap RemoteComponent::HeaderToMap(const QHttpHeaders& headers, const QUrl
     {
       QString paramKey = key.toLower();
       if ((paramKey.startsWith("x-plex-")) && (!variantMap.contains(paramKey)))
-        variantMap.insert(paramKey, paramsMap[key].toString());
+        variantMap.insert(paramKey, paramsMap[key].toList().value(0).toString());
     }
   }
 
@@ -207,8 +226,9 @@ QVariantMap RemoteComponent::HeaderToMap(const QHttpHeaders& headers, const QUrl
 void RemoteComponent::handleCommand(const QHttpServerRequest& request, HttpResponse* response)
 {
 
-  QVariantMap queryMap = QueryToMap(request.url());
-  QVariantMap headerMap = HeaderToMap(request.headers());
+  const QUrl url = request.url();
+  QVariantMap queryMap = QueryToMap(url);
+  QVariantMap headerMap = HeaderToMap(request.headers(), &url);
   QString identifier = headerMap["x-plex-client-identifier"].toString();
 
   response->addHeader("Access-Control-Allow-Origin", "*");
@@ -242,13 +262,44 @@ void RemoteComponent::handleCommand(const QHttpServerRequest& request, HttpRespo
   }
   else if (request.url().path() == "/player/timeline/unsubscribe")
   {
-    subscriberRemove(request.value("x-plex-client-identifier"));
+    if (!usableIdentifier(identifier))
+    {
+      QLOG_WARN() << "Unusable client identifier in /player/timeline/unsubscribe";
+      response->setStatusCode(HttpResponse::StatusCode::BadRequest);
+      response->end();
+      return;
+    }
+
+    bool allowed = false;
+    {
+      QMutexLocker lk(&m_subscriberLock);
+      RemoteSubscriber* subscriber = m_subscriberMap.value(identifier, nullptr);
+      allowed = subscriber && subscriber->remoteAddress() == request.remoteAddress();
+    }
+
+    if (!allowed)
+    {
+      QLOG_WARN() << "Refusing to unsubscribe" << identifier << "on behalf of another address";
+      response->setStatusCode(HttpResponse::StatusCode::Forbidden);
+      response->end();
+      return;
+    }
+
+    subscriberRemove(identifier);
     response->setStatusCode(HttpResponse::StatusCode::Ok);
     response->end();
     return;
   }
   else if ((request.url().path() == "/player/timeline/poll"))
   {
+    if (!usableIdentifier(identifier))
+    {
+      QLOG_WARN() << "Unusable client identifier in /player/timeline/poll";
+      response->setStatusCode(HttpResponse::StatusCode::BadRequest);
+      response->end();
+      return;
+    }
+
     QMutexLocker lk(&m_subscriberLock);
     if (!m_subscriberMap.contains(identifier))
     {
@@ -279,7 +330,7 @@ void RemoteComponent::handleCommand(const QHttpServerRequest& request, HttpRespo
 
 
   // handle commandID
-  if (!headerMap.contains("x-plex-client-identifier") || !queryMap.contains("commandID"))
+  if (!usableIdentifier(identifier) || !queryMap.contains("commandID"))
   {
     QLOG_WARN() << "Can't find a X-Plex-Client-Identifier header";
     response->setStatusCode(HttpResponse::StatusCode::NotAcceptable);
@@ -292,6 +343,7 @@ void RemoteComponent::handleCommand(const QHttpServerRequest& request, HttpRespo
     QMutexLocker lk(&m_responseLock);
     commandId = ++m_commandId;
     m_responseMap[commandId] = response;
+    m_responseTime[commandId] = QDateTime::currentMSecsSinceEpoch();
 
     connect(response, &HttpResponse::done, this, &RemoteComponent::responseDone);
   }
@@ -333,6 +385,7 @@ void RemoteComponent::responseDone()
     {
       if (it.value() == response)
       {
+        m_responseTime.remove(it.key());
         m_responseMap.erase(it);
         break;
       }
@@ -355,16 +408,19 @@ void RemoteComponent::commandResponse(const QVariantMap& responseArguments)
   uint responseCode = responseArguments["responseCode"].toUInt();
 
   QMutexLocker lk(&m_responseLock);
-  if (!m_responseMap.contains(commandId))
+  HttpResponse* response = m_responseMap.take(commandId);
+  m_responseTime.remove(commandId);
+
+  if (!response)
   {
     QLOG_WARN() << "Could not find responseId:" << commandId << " - maybe it was removed because of a timeout?";
     return;
   }
 
-  HttpResponse* response = m_responseMap[commandId];
-
   // no need to hold the lock when we have changed m_responseMap
   lk.unlock();
+
+  disconnect(response, &HttpResponse::done, this, &RemoteComponent::responseDone);
 
   // add headers if we have them
   if (responseArguments.contains("headers") && responseArguments["headers"].typeId() == QMetaType::QVariantMap)
@@ -400,6 +456,17 @@ void RemoteComponent::handleSubscription(const QHttpServerRequest& request, Http
     return;
   }
 
+  const QString clientIdentifier = headers.value("x-plex-client-identifier").toString();
+  const QString deviceName = Utils::sanitizeForHttpSeparators(headers.value("x-plex-device-name").toString());
+
+  if (!usableIdentifier(clientIdentifier))
+  {
+    QLOG_ERROR() << "Unusable X-Plex-Client-Identifier in /timeline/subscribe request";
+    response->setStatusCode(HttpResponse::StatusCode::BadRequest);
+    response->end();
+    return;
+  }
+
   // check for required arguments
   QVariantMap query = QueryToMap(url);
 
@@ -411,38 +478,55 @@ void RemoteComponent::handleSubscription(const QHttpServerRequest& request, Http
     return;
   }
 
-  QString clientIdentifier(request.value("x-plex-client-identifier"));
-
   QMutexLocker lk(&m_subscriberLock);
   RemoteSubscriber* subscriber = nullptr;
 
   if (m_subscriberMap.contains(clientIdentifier))
   {
-    QLOG_DEBUG() << "Refreshed subscriber:" << clientIdentifier;
     subscriber = m_subscriberMap[clientIdentifier];
+
+    if (subscriber->remoteAddress() != request.remoteAddress())
+    {
+      QLOG_WARN() << "Refusing to refresh" << clientIdentifier << "from another address";
+      lk.unlock();
+      response->setStatusCode(HttpResponse::StatusCode::Forbidden);
+      response->end();
+      return;
+    }
+
+    QLOG_DEBUG() << "Refreshed subscriber:" << clientIdentifier;
     subscriber->reSubscribe();
   }
   else
   {
     if (poll)
     {
-      QLOG_DEBUG() << "New poll subscriber:" << clientIdentifier << request.value("x-plex-device-name");
-      subscriber = new RemotePollSubscriber(clientIdentifier, request.value("x-plex-device-name"), response, this);
+      QLOG_DEBUG() << "New poll subscriber:" << clientIdentifier << deviceName;
+      subscriber = new RemotePollSubscriber(clientIdentifier, deviceName, response, this);
     }
     else
     {
       QUrl address;
-      QString protocol = query.contains("protocol") ? query["protocol"].toList()[0].toString() : "http";
-      int port = query.contains("port") ? query["port"].toList()[0].toInt() : 32400;
+      const QString protocol = query.contains("protocol") ? query["protocol"].toList().value(0).toString() : "http";
+      const int port = query.contains("port") ? query["port"].toList().value(0).toInt() : 32400;
+
+      if ((protocol != "http" && protocol != "https") || port < 1 || port > 65535)
+      {
+        QLOG_ERROR() << "Refusing a subscription to" << protocol << port;
+        response->setStatusCode(HttpResponse::StatusCode::BadRequest);
+        response->end();
+        return;
+      }
 
       address.setScheme(protocol);
       address.setHost(request.remoteAddress().toString());
       address.setPort(port);
 
-      QLOG_DEBUG() << "New subscriber:" << clientIdentifier << request.value("x-plex-device-name") << address.toString();
-      subscriber = new RemoteSubscriber(clientIdentifier, request.value("x-plex-device-name"), address, this);
+      QLOG_DEBUG() << "New subscriber:" << clientIdentifier << deviceName << address.toString();
+      subscriber = new RemoteSubscriber(clientIdentifier, deviceName, address, this);
     }
 
+    subscriber->setRemoteAddress(request.remoteAddress());
     m_subscriberMap[clientIdentifier] = subscriber;
 
     // if it's our first controller, we notify web for subscription
@@ -495,6 +579,43 @@ void RemoteComponent::checkSubscribers()
 
   for(RemoteSubscriber* sub : subsToRemove)
     subscriberRemove(sub->clientIdentifier());
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+void RemoteComponent::checkResponses()
+{
+  QList<HttpResponse*> responsesToEnd;
+
+  {
+    QMutexLocker lk(&m_responseLock);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    for(auto it = m_responseTime.begin(); it != m_responseTime.end();)
+    {
+      if (now - it.value() < COMMAND_RESPONSE_TIMEOUT)
+      {
+        ++it;
+        continue;
+      }
+
+      HttpResponse* response = m_responseMap.value(it.key(), nullptr);
+      if (response)
+      {
+        QLOG_WARN() << "No response to command" << it.key() << "- timing it out";
+        disconnect(response, &HttpResponse::done, this, &RemoteComponent::responseDone);
+        responsesToEnd << response;
+      }
+
+      m_responseMap.remove(it.key());
+      it = m_responseTime.erase(it);
+    }
+  }
+
+  for(HttpResponse* response : responsesToEnd)
+  {
+    response->setStatusCode(HttpResponse::StatusCode::GatewayTimeout);
+    response->end();
+  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

@@ -5,6 +5,7 @@
 #ifndef KONVERGO_REMOTESUBSCRIBER_H
 #define KONVERGO_REMOTESUBSCRIBER_H
 
+#include <QHostAddress>
 #include <QObject>
 #include <QPointer>
 #include <QUrl>
@@ -26,6 +27,8 @@ public:
 
   QString deviceName();
   QString clientIdentifier();
+  void setRemoteAddress(const QHostAddress& address) { m_remoteAddress = address; }
+  QHostAddress remoteAddress() const { return m_remoteAddress; }
   virtual void sendUpdate();
   void timelineFinished(QNetworkReply* reply);
   void queueTimeline(quint64 playerCommandID, const QByteArray& timelineData);
@@ -57,6 +60,7 @@ private:
 
   QNetworkAccessManager* m_netAccess;
   QUrl m_address;
+  QHostAddress m_remoteAddress;
   QElapsedTimer m_subscribeTime;
 
   QMutex m_timelineLock;
