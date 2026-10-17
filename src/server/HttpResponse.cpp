@@ -1,6 +1,7 @@
 #include "HttpResponse.h"
 
 #include <QHttpHeaders>
+#include <QsLog.h>
 
 #define CANCEL_POLL_INTERVAL 1000
 
@@ -53,7 +54,8 @@ void HttpResponse::end(const QByteArray& data)
         header.first == "keep-alive" || header.first == "transfer-encoding")
       continue;
 
-    headers.append(header.first, header.second);
+    if (!headers.append(header.first, header.second))
+      QLOG_WARN() << "Dropping response header rejected by the HTTP layer:" << header.first;
   }
 
   m_responder->write(m_body, headers, (StatusCode)m_statusCode);
