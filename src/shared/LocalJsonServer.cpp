@@ -6,6 +6,9 @@
 #include "Paths.h"
 #include "QsLog.h"
 
+#define MAX_LISTEN_ATTEMPTS 5
+#define MAX_MESSAGE_SIZE (64 * 1024)
+
 /////////////////////////////////////////////////////////////////////////////////////////
 LocalJsonServer::LocalJsonServer(const QString& serverName, QObject* parent) : QObject(parent)
 {
@@ -18,20 +21,26 @@ LocalJsonServer::LocalJsonServer(const QString& serverName, QObject* parent) : Q
 /////////////////////////////////////////////////////////////////////////////////////////
 bool LocalJsonServer::listen()
 {
-  while (!m_server->listen(m_serverName))
+  for (int attempt = 0; attempt < MAX_LISTEN_ATTEMPTS; attempt++)
   {
-    if (m_server->serverError() == QAbstractSocket::AddressInUseError)
+    if (m_server->listen(m_serverName))
     {
-      QFile(m_serverName).remove();
-      continue;
+      QLOG_INFO() << "Listening to socket:" << m_serverName;
+      return true;
     }
 
-    QLOG_WARN() << "Failed to listen to local socket:" << m_server->errorString();
-    return false;
+    if (m_server->serverError() != QAbstractSocket::AddressInUseError)
+      break;
+
+    if (!QFile(m_serverName).remove())
+    {
+      QLOG_WARN() << "Can't remove the socket in the way:" << m_serverName;
+      return false;
+    }
   }
 
-  QLOG_INFO() << "Listening to socket:" << m_serverName;
-  return true;
+  QLOG_WARN() << "Failed to listen to local socket:" << m_server->errorString();
+  return false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -40,6 +49,7 @@ void LocalJsonServer::serverClientConnected()
   QLocalSocket* socket = m_server->nextPendingConnection();
   if (socket)
   {
+    socket->setReadBufferSize(MAX_MESSAGE_SIZE);
     m_clientSockets << socket;
     connect(socket, &QLocalSocket::readyRead, this, &LocalJsonServer::clientReadyRead);
     emit clientConnected(socket);
@@ -83,7 +93,7 @@ QVariantList LocalJsonServer::readFromSocket(QLocalSocket* socket)
 
   while (socket->canReadLine())
   {
-    QByteArray data = socket->readLine();
+    QByteArray data = socket->readLine(MAX_MESSAGE_SIZE);
     if (!data.isNull())
     {
       QJsonParseError err;
