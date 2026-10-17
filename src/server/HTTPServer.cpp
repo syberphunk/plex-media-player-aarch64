@@ -19,6 +19,14 @@
 #define WEB_CLIENT_PATH "/web/tv"
 #define NOTIFICATIONS_PATH "/:/websockets/notifications"
 
+static bool pathHasPrefix(const QString& path, const QString& prefix)
+{
+  if (!path.startsWith(prefix))
+    return false;
+
+  return path.size() == prefix.size() || path.at(prefix.size()) == '/';
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 HttpServer::HttpServer(QObject* parent) : QObject(parent)
 {
@@ -120,7 +128,7 @@ void HttpServer::handleWebClientRequest(const QHttpServerRequest& request, HttpR
     {
       // cut the WEB_CLIENT_PATH prefix
       QString relativeUrl = request.url().path();
-      if (relativeUrl.startsWith(WEB_CLIENT_PATH))
+      if (pathHasPrefix(relativeUrl, WEB_CLIENT_PATH))
         relativeUrl = relativeUrl.mid(sizeof(WEB_CLIENT_PATH) - 1);
 
       const QString rUrl = QDir::cleanPath(m_baseUrl + "/" + relativeUrl);
@@ -298,23 +306,23 @@ void HttpServer::handleRequest(const QHttpServerRequest& request, HttpResponse* 
   if (handleEmbeddedServerRequest(request, response))
   {
   }
-  else if (path.startsWith(WEB_CLIENT_PATH))
+  else if (pathHasPrefix(path, WEB_CLIENT_PATH))
   {
     handleWebClientRequest(request, response);
   }
-  else if (path.startsWith("/resources"))
+  else if (pathHasPrefix(path, "/resources"))
   {
     handleResource(request, response);
   }
-  else if (path.startsWith("/player"))
+  else if (pathHasPrefix(path, "/player"))
   {
     handleRemoteController(request, response);
   }
-  else if (path.startsWith("/files"))
+  else if (pathHasPrefix(path, "/files"))
   {
     handleFilesRequest(request, response);
   }
-  else if (path.startsWith("/sounds"))
+  else if (pathHasPrefix(path, "/sounds"))
   {
     handleSoundsRequest(request, response);
   }
