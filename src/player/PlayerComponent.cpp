@@ -217,6 +217,12 @@ void PlayerComponent::setVideoRectangle(int x, int y, int w, int h)
   }
 }
 
+static int scaledExtent(int value, qreal scale)
+{
+  const qreal scaled = value * scale;
+  return qRound(qBound<qreal>(0.0, scaled, 65535.0));
+}
+
 void PlayerComponent::setVideoPlacement(const QString& placement, int width, int height,
                                         int edgeGutterX, int edgeGutterY, bool isStackedAbove)
 {
@@ -234,10 +240,10 @@ void PlayerComponent::setVideoPlacement(const QString& placement, int width, int
   const qreal dpr = m_window ? m_window->devicePixelRatio() : 1.0;
   const QSize windowSize = m_window ? m_window->size() * dpr : QSize();
 
-  const int w = qRound(width * dpr);
-  const int h = qRound(height * dpr);
-  const int gx = qRound(edgeGutterX * dpr);
-  const int gy = qRound(edgeGutterY * dpr);
+  const int w = scaledExtent(width, dpr);
+  const int h = scaledExtent(height, dpr);
+  const int gx = scaledExtent(edgeGutterX, dpr);
+  const int gy = scaledExtent(edgeGutterY, dpr);
 
   int x = gx;
   int y = gy;
