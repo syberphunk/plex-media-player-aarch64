@@ -112,6 +112,8 @@ UPSTREAM = {
 README = os.path.join(REPO, "README.md")
 
 VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+)+")
+TAG_RE = re.compile(r"v?[0-9]+(?:\.[0-9]+)+(?:-[0-9A-Za-z.]+)?")
+ACTION_TAG_RE = re.compile(r"v?[0-9]+(?:\.[0-9]+)*")
 
 
 class Source(object):
@@ -275,7 +277,10 @@ def workflow_uses():
 
 def action_latest(action):
     data = fetch_json("https://api.github.com/repos/%s/releases/latest" % action)
-    return data["tag_name"]
+    tag = data["tag_name"]
+    if not isinstance(tag, str) or not ACTION_TAG_RE.fullmatch(tag):
+        raise RuntimeError("release probe returned an implausible tag %r" % (tag,))
+    return tag
 
 
 def check_actions(offline):
@@ -328,6 +333,16 @@ def check_actions(offline):
 
 
 def latest_version(spec):
+    found = probe_version(spec)
+    if found is None:
+        return None
+    if not isinstance(found, str) or not TAG_RE.fullmatch(found):
+        raise RuntimeError("%s probe returned an implausible version %r"
+                           % (spec[0], found))
+    return found
+
+
+def probe_version(spec):
     kind = spec[0]
     if kind == "github":
         data = fetch_json("https://api.github.com/repos/%s/releases/latest"
@@ -338,7 +353,7 @@ def latest_version(spec):
                           % (spec[1], spec[2]))
         for tag in tags:
             name = tag["name"]
-            if "-rc" not in name and VERSION_RE.search(name):
+            if "-rc" not in name and TAG_RE.fullmatch(name):
                 return name
         return None
     if kind == "ffmpeg":
@@ -501,8 +516,8 @@ def check(sources, deep, offline):
         try:
             latest = normalise(latest_version(spec["probe"]), spec["strip_v"])
         except Exception as problem:
-            report(source.module, False, "version probe failed: %s" % problem)
-            failures.append(False)
+            failures.append(report(source.module, False,
+                                   "version probe failed: %s" % problem))
             continue
         if latest is None:
             continue
