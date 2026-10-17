@@ -7,6 +7,8 @@
 
 #include "QsLog.h"
 
+#define MAX_WEBSOCKETS 16
+
 /////////////////////////////////////////////////////////////////////////////////////////
 QString httpMethodName(QHttpServerRequest::Method method)
 {
@@ -33,9 +35,16 @@ HttpListener::HttpListener(QObject* parent) : QAbstractHttpServer(parent)
 
   addWebSocketUpgradeVerifier(this, [this](const QHttpServerRequest& request)
   {
-    if (m_webSocketPaths.contains(request.url().path()))
-      return QHttpServerWebSocketUpgradeResponse::accept();
-    return QHttpServerWebSocketUpgradeResponse::passToNext();
+    if (!m_webSocketPaths.contains(request.url().path()))
+      return QHttpServerWebSocketUpgradeResponse::passToNext();
+
+    if (m_webSockets.size() >= MAX_WEBSOCKETS)
+    {
+      QLOG_WARN() << "Refusing a websocket upgrade, already holding" << m_webSockets.size();
+      return QHttpServerWebSocketUpgradeResponse::deny();
+    }
+
+    return QHttpServerWebSocketUpgradeResponse::accept();
   });
 }
 
