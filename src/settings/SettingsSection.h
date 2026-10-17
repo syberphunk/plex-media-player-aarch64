@@ -33,7 +33,11 @@ public:
   const QVariantMap allValues() const;
   const QVariantMap descriptions() const;
 
-  bool isValueHidden(const QString& key) const { return m_values[key]->isHidden(); }
+  bool isValueHidden(const QString& key) const
+  {
+    SettingsValue* value = m_values.value(key, nullptr);
+    return value ? value->isHidden() : true;
+  }
   int orderIndex() const { return m_orderIndex; }
 
   void setHidden(bool hidden=true)
@@ -43,8 +47,9 @@ public:
 
   void setValueHidden(const QString& value, bool hidden)
   {
-    if (m_values.contains(value))
-      m_values.value(value)->setHidden(hidden);
+    SettingsValue* setting = m_values.value(value, nullptr);
+    if (setting)
+      setting->setHidden(hidden);
   }
 
   void setStorage(bool storage) { m_storage = storage; }

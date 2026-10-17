@@ -66,7 +66,7 @@ public:
     m_possibleValues = possibleValues;
   }
 
-  const quint8 platform() const
+  quint8 platform() const
   {
     return m_platform;
   }
