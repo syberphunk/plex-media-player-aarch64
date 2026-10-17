@@ -29,6 +29,7 @@ void InputMapping::dirChange()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 bool InputMapping::loadMappings()
 {
+  qDeleteAll(m_inputMatcher);
   m_inputMatcher.clear();
   m_sourceMatcher.clear();
 
@@ -62,7 +63,11 @@ QVariantList InputMapping::mapToAction(const QString& source, const QString& key
 
   // first we need to match the source
   for (auto src : m_sourceMatcher.match(source))
-    strActions << m_inputMatcher.value(src.toString())->match(keycode);
+  {
+    CachedRegexMatcher* matcher = m_inputMatcher.value(src.toString(), nullptr);
+    if (matcher)
+      strActions << matcher->match(keycode);
+  }
 
   return strActions;
 }
