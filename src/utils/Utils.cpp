@@ -33,7 +33,8 @@ QString Utils::sanitizeForHttpSeparators(const QString& input)
 
   for (int i = 0; i < output.size(); i ++)
   {
-    if (output.at(i).unicode() > 127)
+    const ushort c = output.at(i).unicode();
+    if (c > 126 || c < 32)
       output[i] = '_';
   }
   return output;
