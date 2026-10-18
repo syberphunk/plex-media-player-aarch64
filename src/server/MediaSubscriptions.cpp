@@ -307,7 +307,7 @@ QString MediaSubscriptions::secureUrl(const QString& source) const
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-QVariantList MediaSubscriptions::providerNodes() const
+QVariantList MediaSubscriptions::providerNodes(bool includeStorage) const
 {
   QVariantList nodes;
   nodes.append(node(QStringLiteral("MediaProvider"),
@@ -322,13 +322,29 @@ QVariantList MediaSubscriptions::providerNodes() const
     if (!entry)
       continue;
 
-    nodes.append(node(QStringLiteral("MediaProvider"),
-                      { { "id", entry->id },
-                        { "identifier", entry->identifier },
-                        { "providerIdentifier", entry->providerIdentifier },
-                        { "title", entry->title },
-                        { "source", entry->source },
-                        { "subscriptions", 1 } }));
+    QVariantMap attributes = { { "id", entry->id },
+                               { "identifier", entry->identifier },
+                               { "providerIdentifier", entry->providerIdentifier },
+                               { "title", entry->title },
+                               { "source", entry->source },
+                               { "subscriptions", 1 } };
+
+    QVariantList children;
+
+    if (includeStorage)
+    {
+      qint64 stored = 0;
+      for (auto it = m_subscriptions.constBegin(); it != m_subscriptions.constEnd(); ++it)
+      {
+        if (it.value().source == entry->source && it.value().complete)
+          stored += it.value().storageTotal;
+      }
+
+      children.append(node(QStringLiteral("Feature"),
+                           { { "type", "content" }, { "storageTotal", stored } }));
+    }
+
+    nodes.append(node(QStringLiteral("MediaProvider"), attributes, children));
   }
 
   return nodes;
@@ -368,7 +384,8 @@ bool MediaSubscriptions::handleProviders(const QHttpServerRequest& request, Http
     return true;
   }
 
-  const QVariantList nodes = providerNodes();
+  const QUrlQuery providerQuery(request.url().query());
+  const QVariantList nodes = providerNodes(providerQuery.hasQueryItem("includeStorage"));
   writeContainer(request, response,
                  { { "size", nodes.size() },
                    { "machineIdentifier", m_machineIdentifier },
@@ -510,6 +527,10 @@ QVariantMap MediaSubscriptions::hintNode(const Subscription& subscription) const
     hint.insert(QStringLiteral("guid"), subscription.guid);
   if (!subscription.thumb.isEmpty())
     hint.insert(QStringLiteral("thumb"), subscription.thumb);
+  if (!subscription.parentThumb.isEmpty())
+    hint.insert(QStringLiteral("parentThumb"), subscription.parentThumb);
+  if (!subscription.grandparentThumb.isEmpty())
+    hint.insert(QStringLiteral("grandparentThumb"), subscription.grandparentThumb);
   if (!subscription.parentTitle.isEmpty())
     hint.insert(QStringLiteral("parentTitle"), subscription.parentTitle);
   if (!subscription.grandparentTitle.isEmpty())
@@ -527,8 +548,44 @@ QVariantMap MediaSubscriptions::hintNode(const Subscription& subscription) const
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
+QVariantMap MediaSubscriptions::targetNode(const Subscription& subscription) const
+{
+  QVariantMap item = { { "key", QStringLiteral("/library/metadata/%1").arg(subscription.ratingKey) },
+                       { "ratingKey", subscription.ratingKey },
+                       { "source", subscription.source },
+                       { "type", subscription.typeString },
+                       { "title", subscription.title } };
+
+  if (!subscription.thumb.isEmpty())
+    item.insert(QStringLiteral("thumb"), subscription.thumb);
+  if (!subscription.parentThumb.isEmpty())
+    item.insert(QStringLiteral("parentThumb"), subscription.parentThumb);
+  if (!subscription.grandparentThumb.isEmpty())
+    item.insert(QStringLiteral("grandparentThumb"), subscription.grandparentThumb);
+  if (!subscription.art.isEmpty())
+    item.insert(QStringLiteral("art"), subscription.art);
+  if (!subscription.parentTitle.isEmpty())
+    item.insert(QStringLiteral("parentTitle"), subscription.parentTitle);
+  if (!subscription.grandparentTitle.isEmpty())
+    item.insert(QStringLiteral("grandparentTitle"), subscription.grandparentTitle);
+  if (!subscription.year.isEmpty())
+    item.insert(QStringLiteral("year"), subscription.year);
+  if (subscription.index)
+    item.insert(QStringLiteral("index"), subscription.index);
+  if (subscription.parentIndex)
+    item.insert(QStringLiteral("parentIndex"), subscription.parentIndex);
+
+  QVariantMap itemChild = node(QStringLiteral("Metadata"), item);
+  itemChild.insert(SINGLE, 1);
+
+  QVariantMap target = node(QStringLiteral("Target"), {}, { itemChild });
+  target.insert(SINGLE, 1);
+  return target;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
 QVariantMap MediaSubscriptions::subscriptionNode(const Subscription& subscription,
-                                                 bool includeGrabs) const
+                                                 bool includeGrabs, bool includeTarget) const
 {
   QVariantMap attributes = { { "key", subscription.key },
                              { "type", subscription.type },
@@ -541,6 +598,9 @@ QVariantMap MediaSubscriptions::subscriptionNode(const Subscription& subscriptio
     attributes.insert(QStringLiteral("provider"), entry->identifier);
 
   QVariantList children = { hintNode(subscription) };
+
+  if (includeTarget)
+    children.append(targetNode(subscription));
 
   if (includeGrabs && !subscription.error.isEmpty())
   {
@@ -577,13 +637,14 @@ bool MediaSubscriptions::handleSubscriptions(const QHttpServerRequest& request,
 
   const QUrlQuery query(request.url().query());
   const bool includeGrabs = query.hasQueryItem("includeGrabs");
+  const bool includeTarget = query.hasQueryItem("includeTarget");
 
   QVariantList nodes;
   for (const QString& key : m_order)
   {
     auto it = m_subscriptions.constFind(key);
     if (it != m_subscriptions.constEnd())
-      nodes.append(subscriptionNode(it.value(), includeGrabs));
+      nodes.append(subscriptionNode(it.value(), includeGrabs, includeTarget));
   }
 
   writeContainer(request, response, { { "size", nodes.size() } }, nodes);
@@ -675,7 +736,7 @@ void MediaSubscriptions::fetchHint(const QString& key, QPointer<HttpResponse> re
 
     if (response)
       writeContainer(wantsJson, response.data(), { { "size", 1 } },
-                     { subscriptionNode(subscription, true) });
+                     { subscriptionNode(subscription, true, true) });
 
     if (subscription.error.isEmpty())
       enqueue(key);
@@ -701,6 +762,9 @@ void MediaSubscriptions::applyHint(Subscription& subscription, const QByteArray&
   subscription.parentTitle = item.value("parentTitle").toString();
   subscription.grandparentTitle = item.value("grandparentTitle").toString();
   subscription.thumb = item.value("thumb").toString();
+  subscription.parentThumb = item.value("parentThumb").toString();
+  subscription.grandparentThumb = item.value("grandparentThumb").toString();
+  subscription.art = item.value("art").toString();
   subscription.year = item.value("year").isUndefined()
                         ? QString()
                         : QString::number(item.value("year").toInt());
@@ -794,7 +858,7 @@ bool MediaSubscriptions::handleSubscription(const QHttpServerRequest& request,
   enqueue(key);
 
   writeContainer(request, response, { { "size", 1 } },
-                 { subscriptionNode(subscription, true) });
+                 { subscriptionNode(subscription, true, true) });
   return true;
 }
 
@@ -813,6 +877,7 @@ QVariantMap MediaSubscriptions::activityNode(const Subscription& subscription,
   QVariantMap context = { { "subscriptionID", subscription.key },
                           { "itemKey", QStringLiteral("/library/metadata/%1").arg(subscription.ratingKey) },
                           { "ratingKey", subscription.ratingKey },
+                          { "itemRatingKey", subscription.ratingKey },
                           { "source", subscription.source } };
 
   if (running)
@@ -822,8 +887,9 @@ QVariantMap MediaSubscriptions::activityNode(const Subscription& subscription,
       progress = int((subscription.received * 100) / subscription.total);
 
     attributes.insert(QStringLiteral("progress"), qBound(0, progress, 100));
-    context.insert(QStringLiteral("total"), 1);
-    context.insert(QStringLiteral("completed"), 0);
+    context.insert(QStringLiteral("total"), subscription.total);
+    context.insert(QStringLiteral("completed"), subscription.received);
+    context.insert(QStringLiteral("currentSize"), subscription.received);
   }
 
   QVariantMap contextNode = node(QStringLiteral("Context"), context);
@@ -1211,6 +1277,9 @@ void MediaSubscriptions::load()
     subscription.parentTitle = object.value("parentTitle").toString();
     subscription.grandparentTitle = object.value("grandparentTitle").toString();
     subscription.thumb = object.value("thumb").toString();
+    subscription.parentThumb = object.value("parentThumb").toString();
+    subscription.grandparentThumb = object.value("grandparentThumb").toString();
+    subscription.art = object.value("art").toString();
     subscription.year = object.value("year").toString();
     subscription.index = object.value("index").toInt();
     subscription.parentIndex = object.value("parentIndex").toInt();
@@ -1264,6 +1333,9 @@ void MediaSubscriptions::save() const
     object.insert("parentTitle", subscription.parentTitle);
     object.insert("grandparentTitle", subscription.grandparentTitle);
     object.insert("thumb", subscription.thumb);
+    object.insert("parentThumb", subscription.parentThumb);
+    object.insert("grandparentThumb", subscription.grandparentThumb);
+    object.insert("art", subscription.art);
     object.insert("year", subscription.year);
     object.insert("index", subscription.index);
     object.insert("parentIndex", subscription.parentIndex);

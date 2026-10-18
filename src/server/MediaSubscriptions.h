@@ -27,7 +27,7 @@ public:
   bool claims(const QString& path) const;
   bool handle(const QHttpServerRequest& request, HttpResponse* response);
 
-  QVariantList providerNodes() const;
+  QVariantList providerNodes(bool includeStorage) const;
 
   static QVariantMap node(const QString& name, const QVariantMap& attributes,
                           const QVariantList& children = QVariantList());
@@ -65,6 +65,9 @@ private:
     QString parentTitle;
     QString grandparentTitle;
     QString thumb;
+    QString parentThumb;
+    QString grandparentThumb;
+    QString art;
     QString year;
     int index = 0;
     int parentIndex = 0;
@@ -98,8 +101,10 @@ private:
   void beginGrab(const QString& key);
   void finishGrab(const QString& key, const QString& error);
 
-  QVariantMap subscriptionNode(const Subscription& subscription, bool includeGrabs) const;
+  QVariantMap subscriptionNode(const Subscription& subscription, bool includeGrabs,
+                               bool includeTarget) const;
   QVariantMap hintNode(const Subscription& subscription) const;
+  QVariantMap targetNode(const Subscription& subscription) const;
   QVariantMap activityNode(const Subscription& subscription, const QString& type) const;
   void publish(const Subscription& subscription, const QString& type, const QString& event);
 
