@@ -127,6 +127,11 @@ namespace
     return object;
   }
 
+  bool wantsJson(const QHttpServerRequest& request)
+  {
+    return !request.value("accept").contains("xml");
+  }
+
   void nodeToXml(QXmlStreamWriter& writer, const QVariantMap& node)
   {
     const QVariantList children = node.value(KIDS).toList();
@@ -179,7 +184,7 @@ QVariantMap MediaSubscriptions::node(const QString& name, const QVariantMap& att
 void MediaSubscriptions::writeContainer(const QHttpServerRequest& request, HttpResponse* response,
                                         const QVariantMap& attributes, const QVariantList& children)
 {
-  writeContainer(request.value("accept").contains("json"), response, attributes, children);
+  writeContainer(wantsJson(request), response, attributes, children);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -439,28 +444,55 @@ bool MediaSubscriptions::handleTemplate(const QHttpServerRequest& request, HttpR
   if (!guid.isEmpty())
     parameters += QStringLiteral("&guid=%1").arg(QString::fromUtf8(QUrl::toPercentEncoding(guid)));
 
-  QVariantList nodes;
-  for (const TypeEntry& type : g_types)
+  int guidType = 0;
+  const int scheme = guid.indexOf(QLatin1String("://"));
+  if (scheme >= 0)
   {
-    QVariantMap attributes = { { "type", type.id },
-                               { "targetLibrarySectionID", "1" },
-                               { "targetSectionLocationID", "1" },
-                               { "parameters", parameters } };
-
-    if (type.id == 2)
-      attributes.insert(QStringLiteral("selected"), 1);
-
-    QVariantMap hint = { { "ratingKey", ratingKey },
-                         { "source", source },
-                         { "type", QString::fromLatin1(type.name) } };
-    if (!guid.isEmpty())
-      hint.insert(QStringLiteral("guid"), guid);
-
-    QVariantMap hintChild = node(QStringLiteral("Metadata"), hint);
-    hintChild.insert(SINGLE, 1);
-
-    nodes.append(node(QStringLiteral("SubscriptionTemplate"), attributes, { hintChild }));
+    const QString rest = guid.mid(scheme + 3);
+    guidType = typeId(rest.left(rest.indexOf('/')));
   }
+  if (!guidType)
+    guidType = g_types[0].id;
+
+  QVariantList entries;
+  QVariantList nodes;
+  for (int pass = 0; pass < 2; pass++)
+  {
+    for (const TypeEntry& type : g_types)
+    {
+      if ((type.id == guidType) != (pass == 0))
+        continue;
+
+      QVariantMap attributes = { { "type", type.id },
+                                 { "targetLibrarySectionID", "1" },
+                                 { "targetSectionLocationID", "1" },
+                                 { "parameters", parameters } };
+
+      if (type.id == guidType)
+        attributes.insert(QStringLiteral("selected"), 1);
+
+      QVariantMap hint = { { "ratingKey", ratingKey },
+                           { "source", source },
+                           { "type", QString::fromLatin1(type.name) } };
+      if (!guid.isEmpty())
+        hint.insert(QStringLiteral("guid"), guid);
+
+      QVariantMap hintChild = node(QStringLiteral("Metadata"), hint);
+      hintChild.insert(SINGLE, 1);
+
+      QVariantMap setting = node(QStringLiteral("Setting"),
+                                 { { "id", "oneShot" }, { "value", "false" }, { "hidden", 1 } });
+
+      entries.append(node(QStringLiteral("MediaSubscription"), attributes, { setting }));
+      nodes.append(node(QStringLiteral("SubscriptionTemplate"), attributes, { hintChild }));
+    }
+  }
+
+  QVariantMap first = nodes.takeFirst().toMap();
+  QVariantList children = first.value(KIDS).toList();
+  children.append(entries);
+  first.insert(KIDS, children);
+  nodes.prepend(first);
 
   writeContainer(request, response, { { "size", nodes.size() } }, nodes);
   return true;
@@ -604,8 +636,7 @@ void MediaSubscriptions::createSubscription(const QHttpServerRequest& request,
   QLOG_INFO() << "Created download subscription" << qPrintable(subscription.key) << "for"
               << qPrintable(ratingKey);
 
-  fetchHint(subscription.key, QPointer<HttpResponse>(response),
-            request.value("accept").contains("json"));
+  fetchHint(subscription.key, QPointer<HttpResponse>(response), wantsJson(request));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -781,6 +812,7 @@ QVariantMap MediaSubscriptions::activityNode(const Subscription& subscription,
 
   QVariantMap context = { { "subscriptionID", subscription.key },
                           { "itemKey", QStringLiteral("/library/metadata/%1").arg(subscription.ratingKey) },
+                          { "ratingKey", subscription.ratingKey },
                           { "source", subscription.source } };
 
   if (running)
