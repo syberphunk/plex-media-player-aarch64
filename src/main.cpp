@@ -58,6 +58,8 @@ static void preinitQt()
 
   QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
   QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+
+  qputenv("QML_DISABLE_DISK_CACHE", "1");
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

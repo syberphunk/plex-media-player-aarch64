@@ -204,9 +204,11 @@ QString HttpServer::machineIdentifier() const
 }
 
 void HttpServer::writeMediaContainer(const QHttpServerRequest& request, HttpResponse* response,
-                                     const QVariantMap& attributes)
+                                     const QVariantMap& attributes, const QString& childName,
+                                     const QVariantList& children)
 {
   const bool wantsJson = request.value("accept").contains("json");
+  const bool hasChildren = !childName.isEmpty() && !children.isEmpty();
 
   QByteArray body;
   if (wantsJson)
@@ -214,6 +216,22 @@ void HttpServer::writeMediaContainer(const QHttpServerRequest& request, HttpResp
     QJsonObject container;
     for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
       container.insert(it.key(), QJsonValue::fromVariant(it.value()));
+
+    if (hasChildren)
+    {
+      QJsonArray items;
+      for (const QVariant& child : children)
+      {
+        const QVariantMap map = child.toMap();
+
+        QJsonObject item;
+        for (auto it = map.constBegin(); it != map.constEnd(); ++it)
+          item.insert(it.key(), QJsonValue::fromVariant(it.value()));
+
+        items.append(item);
+      }
+      container.insert(childName, items);
+    }
 
     QJsonObject root;
     root.insert("MediaContainer", container);
@@ -223,9 +241,31 @@ void HttpServer::writeMediaContainer(const QHttpServerRequest& request, HttpResp
   {
     QXmlStreamWriter writer(&body);
     writer.writeStartDocument(QStringLiteral("1.0"));
-    writer.writeEmptyElement(QStringLiteral("MediaContainer"));
-    for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
-      writer.writeAttribute(it.key(), it.value().toString());
+
+    if (hasChildren)
+    {
+      writer.writeStartElement(QStringLiteral("MediaContainer"));
+      for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
+        writer.writeAttribute(it.key(), it.value().toString());
+
+      for (const QVariant& child : children)
+      {
+        const QVariantMap map = child.toMap();
+
+        writer.writeEmptyElement(childName);
+        for (auto it = map.constBegin(); it != map.constEnd(); ++it)
+          writer.writeAttribute(it.key(), it.value().toString());
+      }
+
+      writer.writeEndElement();
+    }
+    else
+    {
+      writer.writeEmptyElement(QStringLiteral("MediaContainer"));
+      for (auto it = attributes.constBegin(); it != attributes.constEnd(); ++it)
+        writer.writeAttribute(it.key(), it.value().toString());
+    }
+
     writer.writeEndDocument();
   }
 
@@ -242,37 +282,55 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
 
   const QString path = request.url().path();
 
-  if (path != "/identity" && path != "/media/providers" && path != "/media/subscriptions"
-      && path != "/media/providers/remote/status")
+  const bool isConnection = path.startsWith("/media/providers/") && path.endsWith("/connection");
+
+  if (path != "/" && path != "/identity" && path != "/media/providers"
+      && path != "/media/subscriptions" && path != "/media/providers/remote/status"
+      && path != "/:/prefs" && path != "/activities" && path != "/status/sessions"
+      && path != "/updater/status" && !isConnection)
     return false;
 
   if (request.method() == QHttpServerRequest::Method::Options)
   {
     response->setStatusCode(HttpResponse::StatusCode::Ok);
     response->addHeader("Access-Control-Allow-Origin", "*");
-    response->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    response->addHeader("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS");
     response->addHeader("Access-Control-Allow-Headers", "*");
     response->addHeader("Access-Control-Max-Age", "86400");
     response->end();
     return true;
   }
 
-  if (path == "/media/providers")
+  if (path == "/")
   {
     writeMediaContainer(request, response,
                         { { "size", 0 },
                           { "machineIdentifier", machineIdentifier() },
-                          { "allowSync", 0 } });
+                          { "version", QCoreApplication::applicationVersion() },
+                          { "allowSync", 0 },
+                          { "mediaProviders", 1 } });
     return true;
   }
 
-  if (path == "/media/subscriptions")
+  if (path == "/media/providers")
   {
-    writeMediaContainer(request, response, { { "size", 0 } });
+    const QVariantMap provider = { { "identifier", "com.plexapp.plugins.library" },
+                                   { "title", "Library" },
+                                   { "types", "video,audio,photo" },
+                                   { "protocols", "stream" } };
+
+    writeMediaContainer(request, response,
+                        { { "size", 1 },
+                          { "machineIdentifier", machineIdentifier() },
+                          { "version", QCoreApplication::applicationVersion() },
+                          { "allowSync", 0 } },
+                        QStringLiteral("MediaProvider"), { provider });
     return true;
   }
 
-  if (path == "/media/providers/remote/status")
+  if (path == "/media/subscriptions" || path == "/media/providers/remote/status"
+      || path == "/:/prefs" || path == "/activities" || path == "/status/sessions"
+      || path == "/updater/status" || isConnection)
   {
     writeMediaContainer(request, response, { { "size", 0 } });
     return true;

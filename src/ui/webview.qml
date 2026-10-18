@@ -143,8 +143,15 @@ KonvergoWindow
 
       var clientConfig = WebEngine.script()
       clientConfig.name = "plexweb"
-      clientConfig.sourceCode = "window.PLEXWEB = Object.assign({}, window.PLEXWEB, " +
-                                "{ allowLoopbackDiscovery: false });"
+      clientConfig.sourceCode = "(function() {" +
+                                "  var override = { allowLoopbackDiscovery: false };" +
+                                "  var merged = Object.assign({}, window.PLEXWEB, override);" +
+                                "  Object.defineProperty(window, 'PLEXWEB', {" +
+                                "    configurable: true, enumerable: true," +
+                                "    get: function() { return merged; }," +
+                                "    set: function(value) { merged = Object.assign({}, value, override); }" +
+                                "  });" +
+                                "})();"
       clientConfig.injectionPoint = WebEngineScript.DocumentCreation
       clientConfig.worldId = WebEngineScript.MainWorld
       web.userScripts.insert(clientConfig)

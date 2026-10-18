@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QMimeDatabase>
+#include <QVariant>
 
 #include "HttpListener.h"
 
@@ -28,7 +29,9 @@ private:
 
   bool handleEmbeddedServerRequest(const QHttpServerRequest& request, HttpResponse* response);
   void writeMediaContainer(const QHttpServerRequest& request, HttpResponse* response,
-                           const QVariantMap& attributes);
+                           const QVariantMap& attributes,
+                           const QString& childName = QString(),
+                           const QVariantList& children = QVariantList());
   QString machineIdentifier() const;
 
   HttpListener* m_server;
