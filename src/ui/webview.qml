@@ -141,6 +141,14 @@ KonvergoWindow
       bridge.worldId = WebEngineScript.MainWorld
       web.userScripts.insert(bridge)
 
+      var clientConfig = WebEngine.script()
+      clientConfig.name = "plexweb"
+      clientConfig.sourceCode = "window.PLEXWEB = Object.assign({}, window.PLEXWEB, " +
+                                "{ allowLoopbackDiscovery: false });"
+      clientConfig.injectionPoint = WebEngineScript.DocumentCreation
+      clientConfig.worldId = WebEngineScript.MainWorld
+      web.userScripts.insert(clientConfig)
+
       web.url = Qt.binding(function() { return mainWindow.webUrl })
 
       forceActiveFocus()
