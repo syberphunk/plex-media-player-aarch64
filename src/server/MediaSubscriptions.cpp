@@ -487,7 +487,9 @@ QVariantMap MediaSubscriptions::hintNode(const Subscription& subscription) const
   if (subscription.parentIndex)
     hint.insert(QStringLiteral("parentIndex"), subscription.parentIndex);
 
-  return node(QStringLiteral("Metadata"), hint);
+  QVariantMap hintNodeValue = node(QStringLiteral("Metadata"), hint);
+  hintNodeValue.insert(SINGLE, 1);
+  return hintNodeValue;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -509,6 +511,13 @@ QVariantMap MediaSubscriptions::subscriptionNode(const Subscription& subscriptio
   if (includeGrabs && !subscription.error.isEmpty())
   {
     const QString itemKey = QStringLiteral("/library/metadata/%1").arg(subscription.ratingKey);
+
+    QVariantMap item = node(QStringLiteral("Metadata"), { { "key", itemKey },
+                                                          { "ratingKey", subscription.ratingKey },
+                                                          { "type", subscription.typeString },
+                                                          { "title", subscription.title } });
+    item.insert(SINGLE, 1);
+
     children.append(node(
       QStringLiteral("MediaGrabOperation"),
       { { "key", QStringLiteral("/media/grabbers/operations/%1").arg(subscription.key) },
@@ -516,10 +525,7 @@ QVariantMap MediaSubscriptions::subscriptionNode(const Subscription& subscriptio
         { "mediaIndex", 0 },
         { "status", "error" },
         { "error", subscription.error } },
-      { node(QStringLiteral("Metadata"), { { "key", itemKey },
-                                           { "ratingKey", subscription.ratingKey },
-                                           { "type", subscription.typeString },
-                                           { "title", subscription.title } }) }));
+      { item }));
   }
 
   return node(QStringLiteral("MediaSubscription"), attributes, children);
