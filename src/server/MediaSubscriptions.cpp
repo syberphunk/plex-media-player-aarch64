@@ -456,8 +456,10 @@ bool MediaSubscriptions::handleTemplate(const QHttpServerRequest& request, HttpR
     if (!guid.isEmpty())
       hint.insert(QStringLiteral("guid"), guid);
 
-    nodes.append(node(QStringLiteral("SubscriptionTemplate"), attributes,
-                      { node(QStringLiteral("Metadata"), hint) }));
+    QVariantMap hintChild = node(QStringLiteral("Metadata"), hint);
+    hintChild.insert(SINGLE, 1);
+
+    nodes.append(node(QStringLiteral("SubscriptionTemplate"), attributes, { hintChild }));
   }
 
   writeContainer(request, response, { { "size", nodes.size() } }, nodes);
