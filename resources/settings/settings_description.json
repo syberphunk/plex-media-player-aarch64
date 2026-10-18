@@ -60,11 +60,6 @@
         "hidden": true
       },
       {
-        "value": "embeddedServerPort",
-        "default": 32400,
-        "hidden": true
-      },
-      {
         "value": "remoteControl",
         "default": false,
         "hidden": true

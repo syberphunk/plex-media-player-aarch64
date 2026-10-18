@@ -16,7 +16,6 @@ public:
 
 private slots:
   void handleRequest(const QHttpServerRequest& request, HttpResponse* response);
-  void handleLoopbackRequest(const QHttpServerRequest& request, HttpResponse* response);
   void handleWebClientRequest(const QHttpServerRequest& request, HttpResponse* response);
   void handleResource(const QHttpServerRequest& request, HttpResponse* response);
   void handleRemoteController(const QHttpServerRequest& request, HttpResponse* response);
@@ -33,10 +32,8 @@ private:
   QString machineIdentifier() const;
 
   HttpListener* m_server;
-  HttpListener* m_loopbackServer;
   QString m_baseUrl;
   quint16 m_port;
-  quint16 m_loopbackPort;
   QMimeDatabase m_mime;
 };
 

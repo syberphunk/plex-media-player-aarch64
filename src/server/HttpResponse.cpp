@@ -49,7 +49,6 @@ void HttpResponse::end(const QByteArray& data)
   QHttpHeaders headers;
   for (const auto& header : m_headers)
   {
-    // the protocol handler writes these itself
     if (header.first == "content-length" || header.first == "connection" ||
         header.first == "keep-alive" || header.first == "transfer-encoding")
       continue;

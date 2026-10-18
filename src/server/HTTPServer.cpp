@@ -31,11 +31,8 @@ static bool pathHasPrefix(const QString& path, const QString& prefix)
 HttpServer::HttpServer(QObject* parent) : QObject(parent)
 {
   m_server = new HttpListener(this);
-  m_loopbackServer = nullptr;
   m_baseUrl = ":/konvergo";
   m_port = (quint16)SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "webserverport").toUInt();
-  m_loopbackPort =
-    (quint16)SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "embeddedServerPort").toUInt();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -57,20 +54,6 @@ bool HttpServer::start()
   }
 
   QLOG_DEBUG() << "Listening on" << qPrintable(address.toString()) << "port:" << m_port;
-
-  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "embeddedServer").toBool()
-      && m_loopbackPort && m_loopbackPort != m_port)
-  {
-    m_loopbackServer = new HttpListener(this);
-    m_loopbackServer->acceptWebSocketPath(NOTIFICATIONS_PATH);
-    connect(m_loopbackServer, &HttpListener::newRequest, this, &HttpServer::handleLoopbackRequest);
-
-    if (m_loopbackServer->listen(QHostAddress(QHostAddress::LocalHost), m_loopbackPort))
-      QLOG_DEBUG() << "Listening on 127.0.0.1 port:" << m_loopbackPort;
-    else
-      QLOG_WARN() << "Failed to listen on 127.0.0.1 port:" << m_loopbackPort;
-  }
-
   return true;
 }
 
@@ -143,7 +126,6 @@ void HttpServer::handleWebClientRequest(const QHttpServerRequest& request, HttpR
   {
     case QHttpServerRequest::Method::Get:
     {
-      // cut the WEB_CLIENT_PATH prefix
       QString relativeUrl = request.url().path();
       if (pathHasPrefix(relativeUrl, WEB_CLIENT_PATH))
         relativeUrl = relativeUrl.mid(sizeof(WEB_CLIENT_PATH) - 1);
@@ -260,8 +242,8 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
 
   const QString path = request.url().path();
 
-  if (path != "/" && path != "/identity" && path != "/media/providers"
-      && path != "/media/subscriptions" && path != "/media/providers/remote/status")
+  if (path != "/identity" && path != "/media/providers" && path != "/media/subscriptions"
+      && path != "/media/providers/remote/status")
     return false;
 
   if (request.method() == QHttpServerRequest::Method::Options)
@@ -272,17 +254,6 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
     response->addHeader("Access-Control-Allow-Headers", "*");
     response->addHeader("Access-Control-Max-Age", "86400");
     response->end();
-    return true;
-  }
-
-  if (path == "/")
-  {
-    writeMediaContainer(request, response,
-                        { { "size", 0 },
-                          { "machineIdentifier", machineIdentifier() },
-                          { "version", QCoreApplication::applicationVersion() },
-                          { "allowSync", 0 },
-                          { "mediaProviders", 1 } });
     return true;
   }
 
@@ -323,18 +294,6 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
   }
 
   return false;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-void HttpServer::handleLoopbackRequest(const QHttpServerRequest& request, HttpResponse* response)
-{
-  QLOG_DEBUG() << "Incoming request to:" << request.url().toString() << "from" << request.remoteAddress().toString();
-
-  if (handleEmbeddedServerRequest(request, response))
-    return;
-
-  writeError(response, HttpResponse::StatusCode::NotFound);
-  response->end();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
