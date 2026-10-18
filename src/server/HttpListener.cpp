@@ -56,6 +56,18 @@ void HttpListener::acceptWebSocketPath(const QString& path)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
+void HttpListener::broadcast(const QByteArray& payload)
+{
+  const QString message = QString::fromUtf8(payload);
+
+  for (QWebSocket* socket : m_webSockets)
+  {
+    if (socket->state() == QAbstractSocket::ConnectedState)
+      socket->sendTextMessage(message);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
 void HttpListener::adoptWebSocket()
 {
   while (hasPendingWebSocketConnections())

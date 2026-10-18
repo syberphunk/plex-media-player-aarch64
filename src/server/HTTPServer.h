@@ -8,6 +8,8 @@
 
 #include "HttpListener.h"
 
+class MediaSubscriptions;
+
 class HttpServer : public QObject
 {
 Q_OBJECT
@@ -35,6 +37,7 @@ private:
   QString machineIdentifier() const;
 
   HttpListener* m_server;
+  MediaSubscriptions* m_subscriptions;
   QString m_baseUrl;
   quint16 m_port;
   QMimeDatabase m_mime;

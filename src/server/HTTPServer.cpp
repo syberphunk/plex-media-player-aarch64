@@ -15,6 +15,7 @@
 #include "settings/SettingsComponent.h"
 #include "remote/RemoteComponent.h"
 #include "Paths.h"
+#include "MediaSubscriptions.h"
 
 #define WEB_CLIENT_PATH "/web/tv"
 #define NOTIFICATIONS_PATH "/:/websockets/notifications"
@@ -31,6 +32,7 @@ static bool pathHasPrefix(const QString& path, const QString& prefix)
 HttpServer::HttpServer(QObject* parent) : QObject(parent)
 {
   m_server = new HttpListener(this);
+  m_subscriptions = nullptr;
   m_baseUrl = ":/konvergo";
   m_port = (quint16)SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "webserverport").toUInt();
 }
@@ -41,7 +43,13 @@ bool HttpServer::start()
   connect(m_server, &HttpListener::newRequest, this, &HttpServer::handleRequest);
 
   if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "embeddedServer").toBool())
+  {
     m_server->acceptWebSocketPath(NOTIFICATIONS_PATH);
+
+    m_subscriptions = new MediaSubscriptions(machineIdentifier(), this);
+    connect(m_subscriptions, &MediaSubscriptions::notification,
+            m_server, &HttpListener::broadcast);
+  }
 
   const bool remote = SettingsComponent::Get().remoteControlEnabled();
   const QHostAddress address = remote ? QHostAddress(QHostAddress::AnyIPv4)
@@ -282,19 +290,18 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
 
   const QString path = request.url().path();
 
-  const bool isConnection = path.startsWith("/media/providers/") && path.endsWith("/connection");
+  const bool claimed = m_subscriptions && m_subscriptions->claims(path);
 
-  if (path != "/" && path != "/identity" && path != "/media/providers"
-      && path != "/media/subscriptions" && path != "/media/providers/remote/status"
-      && path != "/:/prefs" && path != "/activities" && path != "/status/sessions"
-      && path != "/updater/status" && !isConnection)
+  if (path != "/" && path != "/identity" && path != "/media/providers/remote/status"
+      && path != "/:/prefs" && path != "/status/sessions" && path != "/updater/status"
+      && !claimed)
     return false;
 
   if (request.method() == QHttpServerRequest::Method::Options)
   {
     response->setStatusCode(HttpResponse::StatusCode::Ok);
     response->addHeader("Access-Control-Allow-Origin", "*");
-    response->addHeader("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS");
+    response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     response->addHeader("Access-Control-Allow-Headers", "*");
     response->addHeader("Access-Control-Max-Age", "86400");
     response->end();
@@ -312,25 +319,11 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
     return true;
   }
 
-  if (path == "/media/providers")
-  {
-    const QVariantMap provider = { { "identifier", "com.plexapp.plugins.library" },
-                                   { "title", "Library" },
-                                   { "types", "video,audio,photo" },
-                                   { "protocols", "stream" } };
-
-    writeMediaContainer(request, response,
-                        { { "size", 1 },
-                          { "machineIdentifier", machineIdentifier() },
-                          { "version", QCoreApplication::applicationVersion() },
-                          { "allowSync", 0 } },
-                        QStringLiteral("MediaProvider"), { provider });
+  if (claimed && m_subscriptions->handle(request, response))
     return true;
-  }
 
-  if (path == "/media/subscriptions" || path == "/media/providers/remote/status"
-      || path == "/:/prefs" || path == "/activities" || path == "/status/sessions"
-      || path == "/updater/status" || isConnection)
+  if (path == "/media/providers/remote/status" || path == "/:/prefs"
+      || path == "/status/sessions" || path == "/updater/status")
   {
     writeMediaContainer(request, response, { { "size", 0 } });
     return true;

@@ -25,6 +25,7 @@ public:
   bool listen(const QHostAddress& address, quint16 port);
 
   void acceptWebSocketPath(const QString& path);
+  void broadcast(const QByteArray& payload);
 
 signals:
   void newRequest(const QHttpServerRequest& request, HttpResponse* response);
