@@ -45,40 +45,26 @@ namespace
 
   bool settingsWriteAllowed(const QString& section, const QString& leaf, QVariant& value)
   {
+    static const QStringList privileged = { "main/embeddedServer",  "main/remoteControl",
+                                            "main/remoteInspector", "main/rokuRemote",
+                                            "main/userScripts",     "main/webserverport" };
+
+    if (privileged.contains(section + "/" + leaf))
+      return false;
+
     SettingsSection* target = SettingsComponent::Get().getSection(section);
-    if (!target)
-      return false;
-
-    if (target->isStorage())
+    if (!target || target->isStorage() || !target->contains(leaf))
       return true;
-
-    if (target->isHidden() || !target->contains(leaf) || target->isValueHidden(leaf))
-      return false;
 
     const QVariant defaultValue = target->defaultValue(leaf);
-    if (defaultValue.isValid() && value.metaType() != defaultValue.metaType()
-        && !value.convert(defaultValue.metaType()))
-      return false;
-
-    const QVariantList allowed = target->possibleValues(leaf);
-    if (allowed.isEmpty())
-      return true;
-
-    for (const QVariant& entry : allowed)
+    if (defaultValue.isValid() && value.metaType() != defaultValue.metaType())
     {
-      QVariant candidate = entry.typeId() == QMetaType::QVariantMap
-                             ? entry.toMap().value("value")
-                             : entry;
-      if (!candidate.isValid())
-        continue;
-      if (defaultValue.isValid() && candidate.metaType() != defaultValue.metaType()
-          && !candidate.convert(defaultValue.metaType()))
-        continue;
-      if (candidate == value)
-        return true;
+      QVariant converted = value;
+      if (converted.convert(defaultValue.metaType()))
+        value = converted;
     }
 
-    return false;
+    return true;
   }
 }
 
@@ -297,10 +283,8 @@ bool SettingsConnector::writeKey(const QString& key, const QVariant& value)
   if (key == "webInspectorPort")
   {
     if (value.toInt() != 0)
-    {
-      QLOG_WARN() << "Refusing to enable the remote inspector from the connector";
-      return false;
-    }
+      QLOG_WARN() << "Not enabling the remote inspector from the connector";
+
     SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, "remoteInspector", false);
     return true;
   }
@@ -896,8 +880,7 @@ InputConnector::InputConnector(QObject* parent) : ConnectorBase("input", parent)
 QVariantMap InputConnector::executeActions(const QVariantList& actions)
 {
   trace("executeActions", actions);
-  static const QStringList refusedHostCommands = { "poweroff", "reboot",      "suspend",
-                                                   "script",   "set_setting", "cycle_setting" };
+  static const QStringList refusedHostCommands = { "script", "set_setting", "cycle_setting" };
 
   QStringList list;
   for (const QVariant& action : actions)
@@ -907,7 +890,7 @@ QVariantMap InputConnector::executeActions(const QVariantList& actions)
         && refusedHostCommands.contains(name.mid(5).section(' ', 0, 0)))
     {
       QLOG_WARN() << "Refusing host command" << name << "from the connector";
-      return Envelope::failed();
+      continue;
     }
 
     list << name;
@@ -1043,7 +1026,7 @@ bool UserConnector::writeKey(const QString& key, const QVariant& value)
   if (key == "clientID")
   {
     const QString id = value.toString();
-    static const QRegularExpression allowed("\\A[A-Za-z0-9._:-]{1,128}\\z");
+    static const QRegularExpression allowed("\\A[^\\s\\x{0000}-\\x{001f}\\x{007f}]{1,256}\\z");
     if (!allowed.match(id).hasMatch())
     {
       QLOG_WARN() << "Refusing a client identifier that is not an identifier";
