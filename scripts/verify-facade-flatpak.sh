@@ -14,6 +14,7 @@ PUBKEY=$(cd "$(dirname "$0")/.." && pwd)/packaging/flatpak/signing-key.asc
 command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; exit 1; }
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found (apt install ffmpeg)" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
+command -v curl >/dev/null || { echo "curl not found" >&2; exit 1; }
 
 WIDTH=1280
 HEIGHT=720
@@ -105,6 +106,38 @@ echo "==> running headless for ${RUN_SECONDS}s, screen grab at ${GRAB_AT}s"
 ) &
 GRAB_PID=$!
 
+PROBE=$OUT/probe.txt
+(
+  port=
+  deadline=$((SECONDS + GRAB_AT))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    for cand in 32433 32434 32435; do
+      if curl -s -m 2 "http://127.0.0.1:$cand/identity" 2>/dev/null | grep -q MediaContainer; then
+        port=$cand
+        break
+      fi
+    done
+    [ -n "$port" ] && break
+    sleep 2
+  done
+
+  if [ -z "$port" ]; then
+    echo "loopback none" > "$PROBE"
+    exit 0
+  fi
+  echo "loopback served port=$port" > "$PROBE"
+
+  lan=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+  [ -n "$lan" ] || lan=$(hostname -I 2>/dev/null | awk '{print $1}')
+  if [ -z "$lan" ]; then
+    echo "offbox skipped" >> "$PROBE"
+    exit 0
+  fi
+  code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$lan:$port/identity" 2>/dev/null || true)
+  echo "offbox $code addr=$lan" >> "$PROBE"
+) &
+PROBE_PID=$!
+
 set +e
 timeout --signal=TERM "$RUN_SECONDS" \
   flatpak run --arch="$ARCH" --socket=x11 --nosocket=wayland --env=DISPLAY="$DISPLAY" \
@@ -117,6 +150,7 @@ set -e
 echo "    exited with $rc (124 = ran until the timeout, which is the good case)"
 
 wait "$GRAB_PID" 2>/dev/null || true
+wait "$PROBE_PID" 2>/dev/null || true
 flatpak kill "$APP_ID" 2>/dev/null || true
 
 cat > "$OUT/pixels.py" <<'PY'
@@ -182,6 +216,14 @@ for marker in \
 done
 
 echo
+echo "==> embedded server exposure"
+if [ -f "$PROBE" ]; then
+  sed 's/^/    /' "$PROBE"
+else
+  echo "    the probe produced nothing"
+fi
+
+echo
 echo "==> errors and warnings"
 grep -nE 'ERROR|FATAL|WARN|Uncaught|undefined is not' "$OUT/run.log" \
   | grep -vF '] JS: ' | head -30 || echo "    none"
@@ -240,6 +282,39 @@ if grep -qF 'Could not create QtWebEngine' "$OUT/run.log"; then
 else
   echo "    pass  QtWebEngine started"
 fi
+
+jserr=$(grep -F '] JS: ' "$OUT/run.log" | grep -cE 'Uncaught|TypeError|ReferenceError|Maximum call stack' || true)
+if [ "$jserr" -eq 0 ]; then
+  echo "    pass  the client logged no uncaught exception"
+else
+  echo "    FAIL  the client logged $jserr uncaught exception(s)"
+  grep -F '] JS: ' "$OUT/run.log" \
+    | grep -E 'Uncaught|TypeError|ReferenceError|Maximum call stack' \
+    | head -10 | sed 's/^/          /'
+  fail=1
+fi
+
+loopback=none
+offbox=skipped
+if [ -f "$PROBE" ]; then
+  loopback=$(awk '/^loopback/{print $2}' "$PROBE")
+  offbox=$(awk '/^offbox/{print $2}' "$PROBE")
+  [ -n "$offbox" ] || offbox=skipped
+fi
+
+if [ "$loopback" = served ]; then
+  echo "    pass  the embedded server answered the local client"
+else
+  echo "    FAIL  the embedded server never answered on loopback"
+  fail=1
+fi
+
+case $offbox in
+  skipped) echo "    pass  no routable address to probe from off-box" ;;
+  000|404) echo "    pass  the embedded server is not exposed off-box ($offbox)" ;;
+  *)       echo "    FAIL  the embedded server answered off-box with $offbox"
+           fail=1 ;;
+esac
 
 if [ "$fail" -ne 0 ]; then
   echo
