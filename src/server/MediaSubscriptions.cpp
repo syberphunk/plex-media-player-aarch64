@@ -1,6 +1,7 @@
 #include "MediaSubscriptions.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -61,6 +62,42 @@ namespace
         return entry.id;
 
     return 0;
+  }
+
+  QByteArray imageType(const QByteArray& body)
+  {
+    if (body.startsWith("\x89\x50\x4e\x47"))
+      return "image/png";
+    if (body.startsWith("GIF8"))
+      return "image/gif";
+    if (body.startsWith("RIFF") && body.mid(8, 4) == "WEBP")
+      return "image/webp";
+
+    return "image/jpeg";
+  }
+
+  bool writeImage(const QString& path, HttpResponse* response)
+  {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+      return false;
+
+    const QByteArray body = file.readAll();
+    if (body.isEmpty())
+      return false;
+
+    response->setStatusCode(HttpResponse::StatusCode::Ok);
+    response->addHeader("Content-Type", imageType(body));
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->end(body);
+    return true;
+  }
+
+  void writeNoImage(HttpResponse* response)
+  {
+    response->setStatusCode(HttpResponse::StatusCode::NotFound);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->end();
   }
 
   void splitSource(const QString& source, QString& machine, QString& provider)
@@ -227,7 +264,7 @@ bool MediaSubscriptions::claims(const QString& path) const
   if (path == "/media/providers" || path == "/media/providers/remote/sync"
       || path == "/media/subscriptions" || path == "/media/subscriptions/template"
       || path == "/media/subscriptions/process" || path == "/activities"
-      || path == "/updater/check")
+      || path == "/updater/check" || path == "/photo/:/transcode")
     return true;
 
   if (path.startsWith("/media/subscriptions/") || path.startsWith("/activities/"))
@@ -250,6 +287,9 @@ bool MediaSubscriptions::handle(const QHttpServerRequest& request, HttpResponse*
 
   if (path == "/media/providers")
     return handleProviders(request, response);
+
+  if (path == "/photo/:/transcode")
+    return handlePhoto(request, response);
 
   if (path.contains("/media/subscriptions/mapping/"))
     return handleMapping(request, response);
@@ -850,6 +890,7 @@ bool MediaSubscriptions::handleSubscription(const QHttpServerRequest& request,
     {
       QFile::remove(subscription.filePath);
       QFile::remove(subscription.filePath + ".part");
+      QDir(QFileInfo(subscription.filePath).absolutePath()).removeRecursively();
     }
 
     save();
@@ -1028,6 +1069,147 @@ bool MediaSubscriptions::handleMapping(const QHttpServerRequest& request, HttpRe
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
+const MediaSubscriptions::Subscription*
+MediaSubscriptions::subscriptionForImage(const QString& path) const
+{
+  for (auto it = m_subscriptions.constBegin(); it != m_subscriptions.constEnd(); ++it)
+  {
+    const Subscription& subscription = it.value();
+    if (path == subscription.thumb || path == subscription.parentThumb
+        || path == subscription.grandparentThumb || path == subscription.art)
+      return &it.value();
+  }
+
+  const QStringList parts = path.split('/', Qt::SkipEmptyParts);
+  if (parts.size() >= 3 && parts.at(0) == QLatin1String("library")
+      && parts.at(1) == QLatin1String("metadata"))
+  {
+    for (auto it = m_subscriptions.constBegin(); it != m_subscriptions.constEnd(); ++it)
+      if (it.value().ratingKey == parts.at(2))
+        return &it.value();
+  }
+
+  return nullptr;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+bool MediaSubscriptions::handlePhoto(const QHttpServerRequest& request, HttpResponse* response)
+{
+  const QUrlQuery query(request.url());
+  const QString imagePath =
+    QUrl(query.queryItemValue(QStringLiteral("url"), QUrl::FullyDecoded)).path();
+
+  const Subscription* subscription =
+    imagePath.startsWith('/') ? subscriptionForImage(imagePath) : nullptr;
+
+  if (!subscription)
+  {
+    writeNoImage(response);
+    return true;
+  }
+
+  const QString source = subscription->source;
+  const QString ratingKey = subscription->ratingKey;
+
+  QString machine, identifier;
+  splitSource(source, machine, identifier);
+
+  const QString directory =
+    Paths::dataDir(QStringLiteral("downloads/%1/%2/artwork").arg(machine, ratingKey));
+
+  QStringList variant = { imagePath };
+  QUrlQuery upstreamQuery;
+  upstreamQuery.addQueryItem(QStringLiteral("url"),
+                             QString::fromUtf8(QUrl::toPercentEncoding(imagePath)));
+
+  for (const QString& name : { QStringLiteral("width"), QStringLiteral("height"),
+                               QStringLiteral("size"), QStringLiteral("scale"),
+                               QStringLiteral("minSize"), QStringLiteral("upscale"),
+                               QStringLiteral("format"), QStringLiteral("quality") })
+  {
+    if (!query.hasQueryItem(name))
+      continue;
+
+    const QString value = query.queryItemValue(name, QUrl::FullyDecoded);
+    upstreamQuery.addQueryItem(name, value);
+    variant.append(name + "=" + value);
+  }
+
+  const QByteArray digest =
+    QCryptographicHash::hash(variant.join('|').toUtf8(), QCryptographicHash::Sha1).toHex();
+  const QString cached = directory + "/" + QString::fromLatin1(digest);
+
+  if (writeImage(cached, response))
+    return true;
+
+  const QString base = secureUrl(source);
+  const Provider* entry = provider(source);
+
+  if (base.isEmpty() || !entry || entry->token.isEmpty())
+  {
+    QLOG_WARN() << "Cannot fetch artwork from" << qPrintable(source)
+                << "- no verified https connection has been registered";
+    writeNoImage(response);
+    return true;
+  }
+
+  QUrl upstream(base + QStringLiteral("/photo/:/transcode"));
+  upstream.setQuery(upstreamQuery);
+
+  if (upstream.scheme() != QLatin1String("https"))
+  {
+    QLOG_WARN() << "Refusing to fetch artwork over" << qPrintable(upstream.scheme());
+    writeNoImage(response);
+    return true;
+  }
+
+  QNetworkRequest art(upstream);
+  art.setRawHeader("X-Plex-Token", entry->token.toUtf8());
+
+  QNetworkReply* reply = m_network->get(art);
+  QPointer<HttpResponse> target(response);
+
+  connect(reply, &QNetworkReply::sslErrors, this, [](const QList<QSslError>& errors)
+  {
+    for (const QSslError& error : errors)
+      QLOG_WARN() << "Refusing the artwork connection:" << qPrintable(error.errorString());
+  });
+
+  connect(reply, &QNetworkReply::finished, this, [reply, target, directory, cached]()
+  {
+    reply->deleteLater();
+
+    const QByteArray body = reply->readAll();
+
+    if (reply->error() != QNetworkReply::NoError || body.isEmpty())
+    {
+      QLOG_WARN() << "Could not read artwork:" << qPrintable(reply->errorString());
+      if (target)
+        writeNoImage(target.data());
+      return;
+    }
+
+    QDir().mkpath(directory);
+    QSaveFile file(cached);
+    if (file.open(QIODevice::WriteOnly))
+    {
+      file.write(body);
+      file.commit();
+    }
+
+    if (!target)
+      return;
+
+    target->setStatusCode(HttpResponse::StatusCode::Ok);
+    target->addHeader("Content-Type", imageType(body));
+    target->addHeader("Access-Control-Allow-Origin", "*");
+    target->end(body);
+  });
+
+  return true;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
 void MediaSubscriptions::enqueue(const QString& key)
 {
   if (!m_subscriptions.contains(key) || m_queue.contains(key) || m_current == key)
@@ -1188,6 +1370,7 @@ void MediaSubscriptions::finishGrab(const QString& key, const QString& error)
     {
       QFile::remove(subscription.filePath);
       QFile::remove(subscription.filePath + ".part");
+      QDir(QFileInfo(subscription.filePath).absolutePath()).removeRecursively();
     }
 
     save();

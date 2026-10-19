@@ -91,6 +91,7 @@ private:
   bool handleSubscription(const QHttpServerRequest& request, HttpResponse* response);
   bool handleActivities(const QHttpServerRequest& request, HttpResponse* response);
   bool handleMapping(const QHttpServerRequest& request, HttpResponse* response);
+  bool handlePhoto(const QHttpServerRequest& request, HttpResponse* response);
 
   void createSubscription(const QHttpServerRequest& request, HttpResponse* response);
   void fetchHint(const QString& key, QPointer<HttpResponse> response, bool wantsJson);
@@ -109,6 +110,7 @@ private:
   void publish(const Subscription& subscription, const QString& type, const QString& event);
 
   const Provider* provider(const QString& source) const;
+  const Subscription* subscriptionForImage(const QString& path) const;
   Provider& providerFor(const QString& source);
   QString secureUrl(const QString& source) const;
 
