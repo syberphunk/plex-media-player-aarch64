@@ -787,6 +787,10 @@ void SettingsComponent::setCommandLineValues(const QStringList& values)
       mode = "tv";
     else if (value == "auto-layout")
       mode = "auto";
+    else if (value == "update-check")
+      setValue(SETTINGS_SECTION_MAIN, "updateCheck", true);
+    else if (value == "no-update-check")
+      setValue(SETTINGS_SECTION_MAIN, "updateCheck", false);
   }
 
   if (mode == "desktop")

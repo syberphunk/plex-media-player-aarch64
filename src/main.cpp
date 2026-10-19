@@ -88,6 +88,8 @@ int main(int argc, char *argv[])
                        {"auto-layout",             "Use auto-layout mode"},
                        {"windowed",                "Start in windowed mode"},
                        {"fullscreen",              "Start in fullscreen"},
+                       {"update-check",            "Turn update checking on"},
+                       {"no-update-check",         "Turn update checking off"},
                        {"terminal",                "Log to terminal"}});
 
     auto scaleOption = QCommandLineOption("scale-factor", "Set to a integer or default auto which controls" \

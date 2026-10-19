@@ -10,6 +10,7 @@
 #include "player/PlayerComponent.h"
 #include "display/DisplayComponent.h"
 #include "system/SystemComponent.h"
+#include "system/UpdateManager.h"
 #include "settings/SettingsComponent.h"
 #include "remote/RemoteComponent.h"
 
@@ -64,6 +65,7 @@ void ComponentManager::initialize()
   registerComponent(&RemoteComponent::Get());
   registerComponent(&PlayerComponent::Get());
   registerComponent(&PowerComponent::Get());
+  registerComponent(&UpdateManager::Get());
 
   for(ComponentBase* component : m_components.values())
     component->componentPostInitialize();

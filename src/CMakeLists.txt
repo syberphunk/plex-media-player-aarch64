@@ -58,15 +58,18 @@ add_custom_command(OUTPUT resources.qrc
           ${CMAKE_CURRENT_BINARY_DIR}/resources.qrc
           /=${CMAKE_SOURCE_DIR}/resources/
           ui/webview.qml=${CMAKE_SOURCE_DIR}/src/ui/webview.qml
+          ui/UpdateOverlay.qml=${CMAKE_SOURCE_DIR}/src/ui/UpdateOverlay.qml
   COMMENT "Creating resources.qrc"
   DEPENDS ${CMAKE_SOURCE_DIR}/scripts/build-qt-resources.py
     ${RESOURCE_FILES}
     ${CMAKE_SOURCE_DIR}/src/ui/webview.qml
+    ${CMAKE_SOURCE_DIR}/src/ui/UpdateOverlay.qml
 )
 set_source_files_properties(resources.qrc PROPERTIES GENERATED TRUE)
 add_custom_command(OUTPUT qrc_resources.cpp
   COMMAND Qt6::rcc -name resources -o qrc_resources.cpp resources.qrc
-  DEPENDS resources.qrc ${CMAKE_SOURCE_DIR}/src/ui/webview.qml ${RESOURCE_FILES}
+  DEPENDS resources.qrc ${CMAKE_SOURCE_DIR}/src/ui/webview.qml
+    ${CMAKE_SOURCE_DIR}/src/ui/UpdateOverlay.qml ${RESOURCE_FILES}
 )
 set_source_files_properties(qrc_resources.cpp PROPERTIES GENERATED TRUE)
 

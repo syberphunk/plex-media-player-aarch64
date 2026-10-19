@@ -84,6 +84,15 @@
         "default": false
       },
       {
+        "value": "updateCheck",
+        "default": true
+      },
+      {
+        "value": "updateSkipped",
+        "default": "",
+        "hidden": true
+      },
+      {
         "value": "logLevel",
         "default": "debug",
         "hidden": true,

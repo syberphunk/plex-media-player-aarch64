@@ -245,6 +245,14 @@ KonvergoWindow
     }
   }
 
+  UpdateOverlay
+  {
+    id: updateOverlay
+    z: 8
+    anchors.fill: parent
+    onClosed: web.forceActiveFocus()
+  }
+
   Rectangle
   {
     id: debug
