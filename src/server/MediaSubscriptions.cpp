@@ -30,6 +30,7 @@
 #define ELEM QStringLiteral("_elem")
 #define KIDS QStringLiteral("_kids")
 #define SINGLE QStringLiteral("_single")
+#define EMPTY QStringLiteral("_empty")
 
 namespace
 {
@@ -113,6 +114,12 @@ namespace
 
       groups[name].append(nodeToJson(map));
       singles[name] = map.value(SINGLE).toBool();
+    }
+
+    for (const QString& name : node.value(EMPTY).toStringList())
+    {
+      if (!groups.contains(name))
+        object.insert(name, QJsonArray());
     }
 
     for (const QString& name : order)
@@ -309,12 +316,30 @@ QString MediaSubscriptions::secureUrl(const QString& source) const
 /////////////////////////////////////////////////////////////////////////////////////////
 QVariantList MediaSubscriptions::providerNodes(bool includeStorage) const
 {
+  QVariantList libraryChildren;
+
+  if (includeStorage)
+  {
+    qint64 stored = 0;
+    for (auto it = m_subscriptions.constBegin(); it != m_subscriptions.constEnd(); ++it)
+    {
+      if (it.value().complete)
+        stored += it.value().storageTotal;
+    }
+
+    QVariantMap feature = node(QStringLiteral("Feature"),
+                               { { "type", "content" }, { "storageTotal", stored } });
+    feature.insert(EMPTY, QStringList{ QStringLiteral("Directory") });
+    libraryChildren.append(feature);
+  }
+
   QVariantList nodes;
   nodes.append(node(QStringLiteral("MediaProvider"),
                     { { "identifier", "com.plexapp.plugins.library" },
                       { "title", "Library" },
                       { "types", "video,audio,photo" },
-                      { "protocols", "stream" } }));
+                      { "protocols", "stream" } },
+                    libraryChildren));
 
   for (const QString& source : m_providerOrder)
   {
@@ -322,29 +347,13 @@ QVariantList MediaSubscriptions::providerNodes(bool includeStorage) const
     if (!entry)
       continue;
 
-    QVariantMap attributes = { { "id", entry->id },
-                               { "identifier", entry->identifier },
-                               { "providerIdentifier", entry->providerIdentifier },
-                               { "title", entry->title },
-                               { "source", entry->source },
-                               { "subscriptions", 1 } };
-
-    QVariantList children;
-
-    if (includeStorage)
-    {
-      qint64 stored = 0;
-      for (auto it = m_subscriptions.constBegin(); it != m_subscriptions.constEnd(); ++it)
-      {
-        if (it.value().source == entry->source && it.value().complete)
-          stored += it.value().storageTotal;
-      }
-
-      children.append(node(QStringLiteral("Feature"),
-                           { { "type", "content" }, { "storageTotal", stored } }));
-    }
-
-    nodes.append(node(QStringLiteral("MediaProvider"), attributes, children));
+    nodes.append(node(QStringLiteral("MediaProvider"),
+                      { { "id", entry->id },
+                        { "identifier", entry->identifier },
+                        { "providerIdentifier", entry->providerIdentifier },
+                        { "title", entry->title },
+                        { "source", entry->source },
+                        { "subscriptions", 1 } }));
   }
 
   return nodes;
