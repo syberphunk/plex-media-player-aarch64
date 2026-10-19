@@ -42,6 +42,12 @@ signals:
   void notification(const QByteArray& payload);
 
 private:
+  struct Connection
+  {
+    QString url;
+    QString token;
+  };
+
   struct Provider
   {
     int id = 0;
@@ -49,8 +55,7 @@ private:
     QString identifier;
     QString providerIdentifier;
     QString title;
-    QStringList urls;
-    QString token;
+    QList<Connection> connections;
   };
 
   struct Subscription
@@ -112,7 +117,7 @@ private:
   const Provider* provider(const QString& source) const;
   const Subscription* subscriptionForImage(const QString& path) const;
   Provider& providerFor(const QString& source);
-  QString secureUrl(const QString& source) const;
+  bool secureConnection(const QString& source, Connection& connection) const;
 
   void load();
   void save() const;

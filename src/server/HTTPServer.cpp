@@ -20,6 +20,17 @@
 #define WEB_CLIENT_PATH "/web/tv"
 #define NOTIFICATIONS_PATH "/:/websockets/notifications"
 
+static bool isLocalAddress(const QHostAddress& address)
+{
+  if (address.isLoopback())
+    return true;
+
+  bool mapped = false;
+  const quint32 ipv4 = address.toIPv4Address(&mapped);
+
+  return mapped && QHostAddress(ipv4).isLoopback();
+}
+
 static bool pathHasPrefix(const QString& path, const QString& prefix)
 {
   if (!path.startsWith(prefix))
@@ -296,6 +307,13 @@ bool HttpServer::handleEmbeddedServerRequest(const QHttpServerRequest& request, 
       && path != "/:/prefs" && path != "/status/sessions" && path != "/updater/status"
       && !claimed)
     return false;
+
+  if (!isLocalAddress(request.remoteAddress()))
+  {
+    QLOG_WARN() << "Refusing" << qPrintable(path) << "from"
+                << qPrintable(request.remoteAddress().toString());
+    return false;
+  }
 
   if (request.method() == QHttpServerRequest::Method::Options)
   {

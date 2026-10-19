@@ -100,6 +100,64 @@ namespace
     response->end();
   }
 
+  bool safeComponent(const QString& value)
+  {
+    if (value.isEmpty() || value == QLatin1String(".") || value == QLatin1String(".."))
+      return false;
+
+    for (const QChar& character : value)
+    {
+      if (character.isLetterOrNumber())
+        continue;
+
+      if (character != '-' && character != '_' && character != '.')
+        return false;
+    }
+
+    return true;
+  }
+
+  bool safeFileName(const QString& value)
+  {
+    if (value.isEmpty() || value == QLatin1String(".") || value == QLatin1String(".."))
+      return false;
+
+    for (const QChar& character : value)
+      if (character == '/' || character == '\\' || character.category() == QChar::Other_Control)
+        return false;
+
+    return true;
+  }
+
+  QString downloadRoot()
+  {
+    return QDir::cleanPath(Paths::dataDir(QStringLiteral("downloads"))) + "/";
+  }
+
+  bool insideDownloads(const QString& path)
+  {
+    if (path.isEmpty() || QFileInfo(path).isSymLink())
+      return false;
+
+    return QDir::cleanPath(path).startsWith(downloadRoot());
+  }
+
+  void removeDownload(const QString& filePath)
+  {
+    if (!insideDownloads(filePath))
+    {
+      QLOG_WARN() << "Refusing to remove a download outside the downloads directory";
+      return;
+    }
+
+    QFile::remove(filePath);
+    QFile::remove(filePath + ".part");
+
+    const QString directory = QFileInfo(filePath).absolutePath();
+    if (insideDownloads(directory))
+      QDir(directory).removeRecursively();
+  }
+
   void splitSource(const QString& source, QString& machine, QString& provider)
   {
     QString rest = source;
@@ -340,17 +398,22 @@ MediaSubscriptions::Provider& MediaSubscriptions::providerFor(const QString& sou
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-QString MediaSubscriptions::secureUrl(const QString& source) const
+bool MediaSubscriptions::secureConnection(const QString& source, Connection& connection) const
 {
   const Provider* entry = provider(source);
   if (!entry)
-    return QString();
+    return false;
 
-  for (const QString& url : entry->urls)
-    if (QUrl(url).scheme() == QLatin1String("https"))
-      return url;
+  for (const Connection& candidate : entry->connections)
+  {
+    if (candidate.token.isEmpty() || QUrl(candidate.url).scheme() != QLatin1String("https"))
+      continue;
 
-  return QString();
+    connection = candidate;
+    return true;
+  }
+
+  return false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -456,10 +519,7 @@ bool MediaSubscriptions::handleConnection(const QHttpServerRequest& request, Htt
   if (request.method() == QHttpServerRequest::Method::Delete)
   {
     if (m_providers.contains(source))
-    {
-      m_providers[source].urls.clear();
-      m_providers[source].token.clear();
-    }
+      m_providers[source].connections.clear();
   }
   else
   {
@@ -470,21 +530,30 @@ bool MediaSubscriptions::handleConnection(const QHttpServerRequest& request, Htt
     if (!m_providerOrder.contains(source))
       m_providerOrder.append(source);
 
-    if (!token.isEmpty())
-      entry.token = token;
-
     if (!url.isEmpty())
     {
-      if (QUrl(url).scheme() == QLatin1String("https"))
-      {
-        if (!entry.urls.contains(url))
-          entry.urls.prepend(url);
-      }
-      else
+      if (QUrl(url).scheme() != QLatin1String("https"))
       {
         QLOG_WARN() << "Refusing a plaintext connection for downloads from"
                     << qPrintable(entry.identifier) << "- type"
                     << qPrintable(query.queryItemValue("connectionType"));
+      }
+      else if (token.isEmpty())
+      {
+        QLOG_WARN() << "Refusing a connection for downloads from"
+                    << qPrintable(entry.identifier) << "- it carries no token of its own";
+      }
+      else
+      {
+        int existing = -1;
+        for (int i = 0; i < entry.connections.size(); i++)
+          if (entry.connections.at(i).url == url)
+            existing = i;
+
+        if (existing >= 0)
+          entry.connections[existing].token = token;
+        else
+          entry.connections.prepend({ url, token });
       }
     }
 
@@ -710,17 +779,20 @@ void MediaSubscriptions::createSubscription(const QHttpServerRequest& request,
   const QString guid = query.queryItemValue("guid", QUrl::FullyDecoded);
   const int type = query.queryItemValue("type").toInt();
 
-  if (source.isEmpty() || ratingKey.isEmpty())
+  QString machine, providerIdentifier;
+  splitSource(source, machine, providerIdentifier);
+
+  if (source.isEmpty() || !safeComponent(ratingKey) || !safeComponent(machine))
   {
-    QLOG_WARN() << "Refusing a download with no source or rating key";
+    QLOG_WARN() << "Refusing a download with no usable source or rating key";
     response->setStatusCode(HttpResponse::StatusCode::BadRequest);
     response->addHeader("Access-Control-Allow-Origin", "*");
     response->end();
     return;
   }
 
-  const Provider* entry = provider(source);
-  if (!entry || entry->token.isEmpty() || secureUrl(source).isEmpty())
+  Connection connection;
+  if (!secureConnection(source, connection))
   {
     QLOG_WARN() << "Refusing a download from" << qPrintable(source)
                 << "- no verified https connection has been registered";
@@ -754,12 +826,27 @@ void MediaSubscriptions::fetchHint(const QString& key, QPointer<HttpResponse> re
                                    bool wantsJson)
 {
   const Subscription subscription = m_subscriptions.value(key);
-  const QString base = secureUrl(subscription.source);
-  const Provider* entry = provider(subscription.source);
 
-  QNetworkRequest metadata(QUrl(base + QStringLiteral("/library/metadata/%1").arg(subscription.ratingKey)));
+  Connection connection;
+  if (!secureConnection(subscription.source, connection))
+  {
+    QLOG_WARN() << "Cannot describe" << qPrintable(subscription.ratingKey)
+                << "- no verified https connection has been registered";
+
+    if (m_subscriptions.contains(key))
+      m_subscriptions[key].error = tr("Downloads need a secure connection to this server.");
+
+    if (response)
+      writeContainer(wantsJson, response.data(), { { "size", 1 } },
+                     { subscriptionNode(m_subscriptions.value(key), true, true) });
+
+    return;
+  }
+
+  QNetworkRequest metadata(
+    QUrl(connection.url + QStringLiteral("/library/metadata/%1").arg(subscription.ratingKey)));
   metadata.setRawHeader("Accept", "application/json");
-  metadata.setRawHeader("X-Plex-Token", entry->token.toUtf8());
+  metadata.setRawHeader("X-Plex-Token", connection.token.toUtf8());
 
   QNetworkReply* reply = m_network->get(metadata);
   connect(reply, &QNetworkReply::finished, this, [this, key, response, wantsJson, reply]()
@@ -839,16 +926,22 @@ void MediaSubscriptions::applyHint(Subscription& subscription, const QByteArray&
       subscription.total = part.value("size").toVariant().toLongLong();
 
       QString name = QFileInfo(part.value("file").toString()).fileName();
-      if (name.isEmpty())
+      if (!safeFileName(name))
       {
         name = subscription.ratingKey;
         const QString extension = part.value("container").toString();
-        if (!extension.isEmpty())
+        if (safeComponent(extension))
           name += "." + extension;
       }
 
       QString machine, identifier;
       splitSource(subscription.source, machine, identifier);
+
+      if (!safeComponent(machine) || !safeComponent(subscription.ratingKey))
+      {
+        subscription.error = tr("This item has no downloadable file.");
+        return;
+      }
 
       const QString directory =
         Paths::dataDir(QStringLiteral("downloads/%1/%2").arg(machine, subscription.ratingKey));
@@ -886,12 +979,7 @@ bool MediaSubscriptions::handleSubscription(const QHttpServerRequest& request,
     m_order.removeAll(key);
     m_subscriptions.remove(key);
 
-    if (!subscription.filePath.isEmpty())
-    {
-      QFile::remove(subscription.filePath);
-      QFile::remove(subscription.filePath + ".part");
-      QDir(QFileInfo(subscription.filePath).absolutePath()).removeRecursively();
-    }
+    removeDownload(subscription.filePath);
 
     save();
 
@@ -1114,6 +1202,12 @@ bool MediaSubscriptions::handlePhoto(const QHttpServerRequest& request, HttpResp
   QString machine, identifier;
   splitSource(source, machine, identifier);
 
+  if (!safeComponent(machine) || !safeComponent(ratingKey))
+  {
+    writeNoImage(response);
+    return true;
+  }
+
   const QString directory =
     Paths::dataDir(QStringLiteral("downloads/%1/%2/artwork").arg(machine, ratingKey));
 
@@ -1142,10 +1236,8 @@ bool MediaSubscriptions::handlePhoto(const QHttpServerRequest& request, HttpResp
   if (writeImage(cached, response))
     return true;
 
-  const QString base = secureUrl(source);
-  const Provider* entry = provider(source);
-
-  if (base.isEmpty() || !entry || entry->token.isEmpty())
+  Connection connection;
+  if (!secureConnection(source, connection))
   {
     QLOG_WARN() << "Cannot fetch artwork from" << qPrintable(source)
                 << "- no verified https connection has been registered";
@@ -1153,7 +1245,7 @@ bool MediaSubscriptions::handlePhoto(const QHttpServerRequest& request, HttpResp
     return true;
   }
 
-  QUrl upstream(base + QStringLiteral("/photo/:/transcode"));
+  QUrl upstream(connection.url + QStringLiteral("/photo/:/transcode"));
   upstream.setQuery(upstreamQuery);
 
   if (upstream.scheme() != QLatin1String("https"))
@@ -1164,7 +1256,7 @@ bool MediaSubscriptions::handlePhoto(const QHttpServerRequest& request, HttpResp
   }
 
   QNetworkRequest art(upstream);
-  art.setRawHeader("X-Plex-Token", entry->token.toUtf8());
+  art.setRawHeader("X-Plex-Token", connection.token.toUtf8());
 
   QNetworkReply* reply = m_network->get(art);
   QPointer<HttpResponse> target(response);
@@ -1247,10 +1339,8 @@ void MediaSubscriptions::beginGrab(const QString& key)
 {
   Subscription& subscription = m_subscriptions[key];
 
-  const QString base = secureUrl(subscription.source);
-  const Provider* entry = provider(subscription.source);
-
-  if (base.isEmpty() || !entry || entry->token.isEmpty())
+  Connection connection;
+  if (!secureConnection(subscription.source, connection))
   {
     QLOG_INFO() << "Holding download" << qPrintable(key)
                 << "until a verified https connection is registered";
@@ -1264,7 +1354,7 @@ void MediaSubscriptions::beginGrab(const QString& key)
     return;
   }
 
-  const QUrl url(base + subscription.partKey);
+  const QUrl url(connection.url + subscription.partKey);
   if (url.scheme() != QLatin1String("https"))
   {
     QLOG_WARN() << "Refusing to download over" << qPrintable(url.scheme());
@@ -1287,7 +1377,7 @@ void MediaSubscriptions::beginGrab(const QString& key)
   subscription.received = 0;
 
   QNetworkRequest grab(url);
-  grab.setRawHeader("X-Plex-Token", entry->token.toUtf8());
+  grab.setRawHeader("X-Plex-Token", connection.token.toUtf8());
   grab.setAttribute(QNetworkRequest::HttpPipeliningAllowedAttribute, true);
 
   QLOG_INFO() << "Downloading" << qPrintable(subscription.ratingKey) << "from"
@@ -1366,12 +1456,7 @@ void MediaSubscriptions::finishGrab(const QString& key, const QString& error)
     m_order.removeAll(key);
     m_subscriptions.remove(key);
 
-    if (!subscription.filePath.isEmpty())
-    {
-      QFile::remove(subscription.filePath);
-      QFile::remove(subscription.filePath + ".part");
-      QDir(QFileInfo(subscription.filePath).absolutePath()).removeRecursively();
-    }
+    removeDownload(subscription.filePath);
 
     save();
 
@@ -1482,8 +1567,14 @@ void MediaSubscriptions::load()
     subscription.error = object.value("error").toString();
     subscription.complete = object.value("complete").toBool();
 
-    if (subscription.key.isEmpty())
+    if (subscription.key.isEmpty() || !safeComponent(subscription.ratingKey))
       continue;
+
+    if (!subscription.filePath.isEmpty() && !insideDownloads(subscription.filePath))
+    {
+      QLOG_WARN() << "Dropping a stored download that points outside the downloads directory";
+      continue;
+    }
 
     m_nextKey = qMax(m_nextKey, subscription.key.toInt() + 1);
     m_subscriptions.insert(subscription.key, subscription);
