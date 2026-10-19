@@ -431,7 +431,7 @@ void UpdateManager::onUpdateAvailable(const QVariantMap& info)
     return;
   }
 
-  if (m_remoteCommit.isEmpty())
+  if (m_remoteCommit.isEmpty() || m_remoteCommit == m_localCommit)
     return;
 
   const QString skipped =
