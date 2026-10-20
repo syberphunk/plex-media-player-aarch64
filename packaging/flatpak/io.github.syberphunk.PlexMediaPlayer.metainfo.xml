@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.syberphunk.PlexMediaPlayer</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+
+  <name>Plex Media Player</name>
+  <summary>Plex client for 64-bit ARM</summary>
+
+  <developer id="io.github.syberphunk">
+    <name>syberphunk</name>
+  </developer>
+
+  <description>
+    <p>
+      An aarch64 build of Plex Media Player that runs the current Plex desktop web
+      client. Playback uses mpv with hardware decoding through VA-API.
+    </p>
+    <p>
+      The Plex web client is downloaded from Plex at install time as extra data and is
+      covered by Plex's own terms.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.syberphunk.PlexMediaPlayer.desktop</launchable>
+
+  <url type="homepage">https://github.com/syberphunk/plex-media-player-aarch64</url>
+  <url type="bugtracker">https://github.com/syberphunk/plex-media-player-aarch64/issues</url>
+  <url type="vcs-browser">https://github.com/syberphunk/plex-media-player-aarch64</url>
+
+  <provides>
+    <binary>plexmediaplayer</binary>
+  </provides>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Player</category>
+  </categories>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>gamepad</control>
+    <control>tv-remote</control>
+  </supports>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="2.58.0-aarch64.17" date="2026-10-21">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>A settings menu inside the app, opened with F1 by default.</li>
+          <li>Update checks against the release feed, with a manual check, a choice of
+              cadence and release notes.</li>
+          <li>A download folder setting, with an option to confirm each download.</li>
+          <li>Text size and high contrast settings for the app's own screens.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>Update reports arriving during an install no longer replace the install in
+              progress.</li>
+          <li>A skipped version is recorded by release tag rather than by commit.</li>
+          <li>Release notes are reached from the settings menu instead of a keyboard
+              shortcut.</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

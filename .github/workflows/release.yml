@@ -78,10 +78,12 @@ jobs:
             args="$args --allow-outdated"
           fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:
           ARGS: ${{ steps.args.outputs.args }}
+          RELEASE_TAG: ${{ steps.args.outputs.tag }}
         run: ./scripts/release.sh $ARGS --build-only
 
       - name: Import the signing key

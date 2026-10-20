@@ -1,2 +1,2 @@
 find_all_sources(. UI_SRCS)
-add_sources(${UI_SRCS} webview.qml UpdateOverlay.qml)
+add_sources(${UI_SRCS} webview.qml UpdateOverlay.qml MenuOverlay.qml)

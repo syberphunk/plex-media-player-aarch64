@@ -133,6 +133,7 @@ KonvergoWindow
     {
       web.profile = webProfile.instance()
       web.profile.httpUserAgent = components.system.getUserAgent()
+      web.profile.downloadPath = components.menu.downloadDir
 
       var bridge = WebEngine.script()
       bridge.name = "qwebchannel"
@@ -251,6 +252,48 @@ KonvergoWindow
     z: 8
     anchors.fill: parent
     onClosed: web.forceActiveFocus()
+  }
+
+  MenuOverlay
+  {
+    id: menuOverlay
+    z: 9
+    anchors.fill: parent
+    onClosed: web.forceActiveFocus()
+  }
+
+  Connections
+  {
+    target: web.profile
+    ignoreUnknownSignals: true
+
+    // Qt cancels any download that is not explicitly accepted.
+    function onDownloadRequested(download)
+    {
+      var menu = components.menu
+      var name = download.downloadFileName
+
+      download.downloadDirectory = menu.downloadDir
+
+      download.stateChanged.connect(function(state)
+      {
+        if (state === WebEngineDownloadRequest.DownloadCompleted)
+          menu.noteDownload(name, "completed")
+        else if (state === WebEngineDownloadRequest.DownloadCancelled)
+          menu.noteDownload(name, "cancelled")
+        else if (state === WebEngineDownloadRequest.DownloadInterrupted)
+          menu.noteDownload(name, "failed")
+      })
+
+      if (menu.downloadAsk)
+      {
+        menuOverlay.askDownload(download)
+        return
+      }
+
+      download.accept()
+      menu.noteDownload(name, "started")
+    }
   }
 
   Rectangle

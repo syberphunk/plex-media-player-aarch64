@@ -8,6 +8,11 @@ QString Version::GetVersionString()
   return QString("@VERSION_STRING@");
 }
 
+QString Version::GetReleaseTag()
+{
+  return QString("@RELEASE_TAG@");
+}
+
 QString Version::GetCanonicalVersionString()
 {
   return QString("@CANONICAL_VERSION_STRING@");

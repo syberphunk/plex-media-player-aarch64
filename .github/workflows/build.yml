@@ -7,6 +7,10 @@ on:
         description: Build even if a newer upstream release exists
         type: boolean
         default: true
+      release_tag:
+        description: Release tag to bake into the build, for testing update checks
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -48,6 +52,7 @@ jobs:
       - name: Build
         env:
           ARGS: ${{ steps.args.outputs.args }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: ./scripts/release.sh $ARGS --build-only
 
       - name: Import the signing key

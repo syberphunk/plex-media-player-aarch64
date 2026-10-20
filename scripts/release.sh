@@ -209,6 +209,21 @@ fi
 
 echo
 echo "==> step 3/6: building"
+
+# The app compares this tag against the release feed, so only a build that is
+# going to be published as a release carries one.
+TAG_FILE="$REPO_ROOT/.release-tag"
+rm -f "$TAG_FILE"
+if [ -n "${RELEASE_TAG:-}" ]; then
+  printf '%s' "$RELEASE_TAG" > "$TAG_FILE"
+  echo "    release tag $RELEASE_TAG"
+elif [ "$PUBLISH" -eq 1 ]; then
+  printf '%s' "$TAG" > "$TAG_FILE"
+  echo "    release tag $TAG"
+else
+  echo "    no release tag"
+fi
+
 flatpak-builder --arch="$ARCH" --force-clean --disable-rofiles-fuse \
   --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
 }

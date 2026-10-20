@@ -10,6 +10,7 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
+class QTimer;
 
 class UpdateManager : public ComponentBase
 {
@@ -45,6 +46,12 @@ public:
   Q_PROPERTY(QString releaseNotes READ releaseNotes NOTIFY releaseNotesChanged)
   Q_PROPERTY(QVariantList releaseNoteBlocks READ releaseNoteBlocks NOTIFY releaseNotesChanged)
   Q_PROPERTY(int notesStatus READ notesStatus NOTIFY releaseNotesChanged)
+  Q_PROPERTY(int checkStatus READ checkStatus NOTIFY checkStatusChanged)
+  Q_PROPERTY(QString checkMessage READ checkMessage NOTIFY checkStatusChanged)
+  Q_PROPERTY(QString cadence READ cadence NOTIFY cadenceChanged)
+  Q_PROPERTY(QString lastCheck READ lastCheck NOTIFY checkStatusChanged)
+  Q_PROPERTY(bool hasSkipped READ hasSkipped NOTIFY availableVersionChanged)
+  Q_PROPERTY(bool taggedBuild READ taggedBuild CONSTANT)
   Q_PROPERTY(int opIndex READ opIndex NOTIFY progressChanged)
   Q_PROPERTY(int opCount READ opCount NOTIFY progressChanged)
   Q_PROPERTY(int opProgress READ opProgress NOTIFY progressChanged)
@@ -59,11 +66,23 @@ public:
   };
   Q_ENUM(NotesStatus)
 
+  enum CheckStatus
+  {
+    CheckIdle = 0,
+    CheckBusy = 1,
+    CheckUpToDate = 2,
+    CheckFailed = 3
+  };
+  Q_ENUM(CheckStatus)
+
   int state() const { return m_state; }
   bool checkEnabled() const;
   bool needsPermission() const { return m_needsPermission; }
   bool infoVisible() const { return m_infoVisible; }
-  bool updatePending() const { return !m_remoteCommit.isEmpty() && m_remoteCommit != m_localCommit; }
+  bool updatePending() const
+  {
+    return m_state == StateAvailable || (!m_remoteCommit.isEmpty() && m_remoteCommit != m_localCommit);
+  }
   QString manualCommand() const;
   QString permissionCommand() const;
   QString installedVersion() const;
@@ -71,12 +90,21 @@ public:
   QString releaseNotes() const { return m_releaseNotes; }
   QVariantList releaseNoteBlocks() const { return m_releaseNoteBlocks; }
   int notesStatus() const { return m_notesStatus; }
+  int checkStatus() const { return m_checkStatus; }
+  QString checkMessage() const { return m_checkMessage; }
+  QString cadence() const;
+  QString lastCheck() const;
+  bool hasSkipped() const;
+  bool taggedBuild() const;
   int opIndex() const { return m_opIndex; }
   int opCount() const { return m_opCount; }
   int opProgress() const { return m_opProgress; }
   QString errorMessage() const { return m_errorMessage; }
 
   Q_INVOKABLE void fetchReleaseNotes();
+  Q_INVOKABLE void checkNow();
+  Q_INVOKABLE void forgetSkipped();
+  Q_INVOKABLE void setCadence(const QString& cadence);
   Q_INVOKABLE void showInfo();
   Q_INVOKABLE void hideInfo();
   Q_INVOKABLE void toggleInfo();
@@ -94,6 +122,8 @@ public:
   Q_SIGNAL void availableVersionChanged();
   Q_SIGNAL void releaseNotesChanged();
   Q_SIGNAL void progressChanged();
+  Q_SIGNAL void checkStatusChanged();
+  Q_SIGNAL void cadenceChanged();
 
 private:
   explicit UpdateManager(QObject* parent = nullptr);
@@ -104,6 +134,11 @@ private:
   void setState(State state);
   void applyFailed(const QString& name, const QString& message);
   void setNotesStatus(NotesStatus status);
+  void setCheckStatus(CheckStatus status, const QString& message = QString());
+  void fetchRelease(bool userCheck);
+  void scheduleChecks();
+  bool cadenceDue() const;
+  void considerRelease(const QString& tag, bool userCheck);
 
   Q_SLOT void onSettingsChanged(const QString& section, const QVariantMap& values);
   Q_SLOT void onUpdateAvailable(const QVariantMap& info);
@@ -112,12 +147,18 @@ private:
 
   State m_state = StateIdle;
   NotesStatus m_notesStatus = NotesIdle;
+  CheckStatus m_checkStatus = CheckIdle;
 
   bool m_inSandbox = false;
   bool m_needsPermission = false;
   bool m_infoVisible = false;
+  bool m_userCheck = false;
   QString m_appId;
+  QString m_appCommit;
   QString m_monitorPath;
+  QString m_checkMessage;
+  QString m_availableTag;
+  QTimer* m_checkTimer = nullptr;
 
   QString m_runningCommit;
   QString m_localCommit;

@@ -9,6 +9,7 @@
 #include "input/InputComponent.h"
 #include "player/PlayerComponent.h"
 #include "display/DisplayComponent.h"
+#include "system/MenuComponent.h"
 #include "system/SystemComponent.h"
 #include "system/UpdateManager.h"
 #include "settings/SettingsComponent.h"
@@ -58,6 +59,9 @@ void ComponentManager::initialize()
   // start our web server
   auto server = new HttpServer(this);
   server->start();
+
+  // before the input component, it writes the input map for the menu key
+  registerComponent(&MenuComponent::Get());
 
   registerComponent(&InputComponent::Get());
   registerComponent(&SystemComponent::Get());

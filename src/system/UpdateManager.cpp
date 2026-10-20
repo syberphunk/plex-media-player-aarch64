@@ -1,6 +1,7 @@
 #include "UpdateManager.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -9,6 +10,7 @@
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTimer>
 #include <QUrl>
 
 #ifdef LINUX_DBUS
@@ -37,10 +39,15 @@
 
 #define SETTING_UPDATE_CHECK "updateCheck"
 #define SETTING_UPDATE_SKIPPED "updateSkipped"
+#define SETTING_UPDATE_CADENCE "updateCadence"
+#define SETTING_UPDATE_LAST_CHECK "updateLastCheck"
 
 #define RELEASE_API_URL "https://api.github.com/repos/syberphunk/plex-media-player-aarch64/releases/latest"
 #define RELEASE_NOTES_LIMIT (256 * 1024)
 #define RELEASE_NOTES_TIMEOUT 15000
+
+#define CHECK_INTERVAL_MS (6 * 60 * 60 * 1000)
+#define CHECK_STARTUP_DELAY_MS 4000
 
 namespace
 {
@@ -166,6 +173,127 @@ void UpdateManager::componentPostInitialize()
   }
 
   startMonitor();
+  scheduleChecks();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QString UpdateManager::cadence() const
+{
+  const QString mode =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_CADENCE).toString();
+
+  return mode.isEmpty() ? QString("startup") : mode;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::setCadence(const QString& cadence)
+{
+  if (cadence == this->cadence())
+    return;
+
+  SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_CADENCE, cadence);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QString UpdateManager::lastCheck() const
+{
+  const QString stamp =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_LAST_CHECK).toString();
+
+  const QDateTime when = QDateTime::fromString(stamp, Qt::ISODate);
+  if (!when.isValid())
+    return QString();
+
+  return when.toLocalTime().toString("yyyy-MM-dd HH:mm");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool UpdateManager::taggedBuild() const
+{
+  return !Version::GetReleaseTag().isEmpty();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool UpdateManager::hasSkipped() const
+{
+  return !SettingsComponent::Get()
+            .value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED)
+            .toString()
+            .isEmpty();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::forgetSkipped()
+{
+  SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED, QString());
+  QLOG_INFO() << "Cleared the skipped version";
+  emit availableVersionChanged();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool UpdateManager::cadenceDue() const
+{
+  const QString mode = cadence();
+
+  if (mode == QLatin1String("manual"))
+    return false;
+
+  if (mode == QLatin1String("startup"))
+    return true;
+
+  const QString stamp =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_LAST_CHECK).toString();
+
+  const QDateTime last = QDateTime::fromString(stamp, Qt::ISODate);
+  if (!last.isValid())
+    return true;
+
+  const qint64 days = mode == QLatin1String("weekly") ? 7 : 1;
+  return last.secsTo(QDateTime::currentDateTimeUtc()) >= days * 24 * 60 * 60;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::scheduleChecks()
+{
+  if (!m_checkTimer)
+  {
+    m_checkTimer = new QTimer(this);
+    m_checkTimer->setInterval(CHECK_INTERVAL_MS);
+    connect(m_checkTimer, &QTimer::timeout, this, [this]()
+    {
+      if (checkEnabled() && cadenceDue())
+        fetchRelease(false);
+    });
+  }
+
+  if (cadence() == QLatin1String("manual"))
+  {
+    m_checkTimer->stop();
+    return;
+  }
+
+  m_checkTimer->start();
+
+  if (cadenceDue())
+    QTimer::singleShot(CHECK_STARTUP_DELAY_MS, this, [this]()
+    {
+      if (checkEnabled())
+        fetchRelease(false);
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::checkNow()
+{
+  fetchRelease(true);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::setCheckStatus(CheckStatus status, const QString& message)
+{
+  m_checkStatus = status;
+  m_checkMessage = message;
+  emit checkStatusChanged();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -177,11 +305,13 @@ void UpdateManager::readSandboxInfo()
   QSettings info("/.flatpak-info", QSettings::IniFormat);
 
   m_appId = info.value("Application/name").toString();
+  m_appCommit = info.value("Instance/app-commit").toString();
   const QString appPath = info.value("Instance/app-path").toString();
 
   m_inSandbox = !m_appId.isEmpty();
 
-  QLOG_INFO() << "Flatpak sandbox:" << m_appId << "app path" << appPath;
+  QLOG_INFO() << "Flatpak sandbox:" << m_appId << "commit" << shortCommit(m_appCommit)
+              << "release" << Version::GetReleaseTag() << "app path" << appPath;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -211,6 +341,10 @@ QString UpdateManager::permissionCommand() const
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 QString UpdateManager::installedVersion() const
 {
+  const QString tag = Version::GetReleaseTag();
+  if (!tag.isEmpty())
+    return tag;
+
   return Version::GetVersionString();
 }
 
@@ -222,6 +356,7 @@ void UpdateManager::setState(State state)
 
   m_state = state;
   emit stateChanged();
+  emit availableVersionChanged();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -234,17 +369,34 @@ void UpdateManager::setNotesStatus(NotesStatus status)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void UpdateManager::onSettingsChanged(const QString& section, const QVariantMap& values)
 {
-  if (section != SETTINGS_SECTION_MAIN || !values.contains(SETTING_UPDATE_CHECK))
+  if (section != SETTINGS_SECTION_MAIN)
+    return;
+
+  if (values.contains(SETTING_UPDATE_CADENCE))
+  {
+    emit cadenceChanged();
+
+    if (checkEnabled())
+      scheduleChecks();
+  }
+
+  if (!values.contains(SETTING_UPDATE_CHECK))
     return;
 
   if (values[SETTING_UPDATE_CHECK].toBool())
   {
     if (m_inSandbox && m_monitorPath.isEmpty())
       startMonitor();
+
+    scheduleChecks();
   }
   else
   {
     stopMonitor();
+
+    if (m_checkTimer)
+      m_checkTimer->stop();
+
     if (m_state == StateAvailable)
       setState(StateIdle);
   }
@@ -431,6 +583,13 @@ void UpdateManager::restartApp()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void UpdateManager::onUpdateAvailable(const QVariantMap& info)
 {
+  if (m_state == StateUpdating || m_state == StateDone)
+  {
+    // An install is in flight or finished, a fresh report would talk over it.
+    QLOG_INFO() << "Ignoring an update report while the install is in progress";
+    return;
+  }
+
   m_runningCommit = info.value("running-commit").toString();
   m_localCommit = info.value("local-commit").toString();
   m_remoteCommit = info.value("remote-commit").toString();
@@ -453,13 +612,13 @@ void UpdateManager::onUpdateAvailable(const QVariantMap& info)
 
   const QString skipped =
     SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED).toString();
-  if (!skipped.isEmpty() && skipped == m_remoteCommit)
+  if (!skipped.isEmpty() && (skipped == m_remoteCommit || skipped == m_availableTag))
   {
     QLOG_INFO() << "Skipping" << shortCommit(m_remoteCommit) << "at the user's request";
     return;
   }
 
-  m_availableVersion = shortCommit(m_remoteCommit);
+  m_availableVersion = m_availableTag.isEmpty() ? shortCommit(m_remoteCommit) : m_availableTag;
   emit availableVersionChanged();
   setState(StateAvailable);
 
@@ -503,14 +662,31 @@ void UpdateManager::onProgress(const QVariantMap& info)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void UpdateManager::fetchReleaseNotes()
 {
-  if (m_notesReply || m_notesStatus == NotesReady)
+  if (m_notesStatus == NotesReady)
     return;
+
+  fetchRelease(false);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::fetchRelease(bool userCheck)
+{
+  if (userCheck)
+    m_userCheck = true;
+
+  if (m_notesReply)
+  {
+    if (userCheck)
+      setCheckStatus(CheckBusy, QString("Checking for updates"));
+    return;
+  }
 
   const QUrl url(RELEASE_API_URL);
   if (url.scheme() != QLatin1String("https"))
   {
     QLOG_ERROR() << "Refusing to fetch release notes over" << url.scheme();
     setNotesStatus(NotesFailed);
+    setCheckStatus(CheckFailed, QString("The release feed must use https"));
     return;
   }
 
@@ -535,6 +711,7 @@ void UpdateManager::fetchReleaseNotes()
   });
 
   setNotesStatus(NotesLoading);
+  setCheckStatus(CheckBusy, QString("Checking for updates"));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -547,10 +724,14 @@ void UpdateManager::onNotesFinished()
 
   reply->deleteLater();
 
+  const bool userCheck = m_userCheck;
+  m_userCheck = false;
+
   if (reply->error() != QNetworkReply::NoError)
   {
     QLOG_WARN() << "Release notes request failed:" << reply->errorString();
     setNotesStatus(NotesFailed);
+    setCheckStatus(CheckFailed, QString("Could not reach the release feed"));
     return;
   }
 
@@ -561,6 +742,7 @@ void UpdateManager::onNotesFinished()
   {
     QLOG_WARN() << "Release notes are not an object:" << error.errorString();
     setNotesStatus(NotesFailed);
+    setCheckStatus(CheckFailed, QString("The release feed was unreadable"));
     return;
   }
 
@@ -568,19 +750,69 @@ void UpdateManager::onNotesFinished()
   const QString tag = release.value("tag_name").toString();
   const QString notes = release.value("body").toString();
 
-  if (!tag.isEmpty())
-  {
-    QString version = tag;
-    if (version.startsWith(QLatin1Char('v')))
-      version = version.mid(1);
-
-    m_availableVersion = version;
-    emit availableVersionChanged();
-  }
-
   m_releaseNoteBlocks = blockify(notes);
   m_releaseNotes = flatten(m_releaseNoteBlocks);
   setNotesStatus(m_releaseNoteBlocks.isEmpty() ? NotesFailed : NotesReady);
+
+  SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_LAST_CHECK,
+                                    QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+  if (tag.isEmpty())
+  {
+    setCheckStatus(CheckFailed, QString("The release feed named no version"));
+    return;
+  }
+
+  m_availableTag = tag;
+
+  if (m_state == StateAvailable || m_state == StateUpdating || m_state == StateDone)
+  {
+    // The portal found this one first, so only the label needs filling in.
+    m_availableVersion = tag;
+    emit availableVersionChanged();
+    setCheckStatus(CheckIdle);
+    return;
+  }
+
+  considerRelease(tag, userCheck);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::considerRelease(const QString& tag, bool userCheck)
+{
+  const QString installed = Version::GetReleaseTag();
+
+  if (installed.isEmpty())
+  {
+    QLOG_INFO() << "Untagged build, leaving detection to the system update monitor";
+    setCheckStatus(CheckIdle, QString("This build is not from a release, so the latest release "
+                                      "is shown for reference"));
+    return;
+  }
+
+  if (tag == installed)
+  {
+    QLOG_INFO() << "Running the latest release" << installed;
+    setCheckStatus(CheckUpToDate, QString("%1 is the latest release").arg(installed));
+    return;
+  }
+
+  const QString skipped =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED).toString();
+
+  if (!skipped.isEmpty() && skipped == tag && !userCheck)
+  {
+    QLOG_INFO() << "Skipping" << tag << "at the user's request";
+    setCheckStatus(CheckIdle, QString("%1 was skipped").arg(tag));
+    return;
+  }
+
+  QLOG_INFO() << "Release" << tag << "is newer than this build" << installed;
+
+  m_availableVersion = tag;
+  emit availableVersionChanged();
+  setCheckStatus(CheckIdle);
+  setState(StateAvailable);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -633,14 +865,17 @@ void UpdateManager::skipVersion()
 {
   hideInfo();
 
-  if (m_remoteCommit.isEmpty())
+  // The tag is what the user was shown, so that is what gets remembered.
+  const QString mark = !m_availableTag.isEmpty() ? m_availableTag : m_remoteCommit;
+
+  if (mark.isEmpty())
   {
     setState(StateIdle);
     return;
   }
 
-  SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED, m_remoteCommit);
-  QLOG_INFO() << "Marked" << shortCommit(m_remoteCommit) << "as skipped";
+  SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED, mark);
+  QLOG_INFO() << "Marked" << mark << "as skipped";
 
   setState(StateManual);
 }

@@ -30,3 +30,4 @@ plex-media-player-*-repo.tar.gz
 plex-desktop*.tar.bz2
 Plex-*-linux-*.tar.bz2
 __pycache__/
+/.release-tag

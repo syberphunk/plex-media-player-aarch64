@@ -93,6 +93,60 @@
         "hidden": true
       },
       {
+        "value": "updateCadence",
+        "default": "startup",
+        "hidden": true,
+        "possible_values": [
+          [ "startup", "startup" ],
+          [ "daily", "daily" ],
+          [ "weekly", "weekly" ],
+          [ "manual", "manual" ]
+        ]
+      },
+      {
+        "value": "updateLastCheck",
+        "default": "",
+        "hidden": true
+      },
+      {
+        "value": "downloadDir",
+        "default": "",
+        "hidden": true
+      },
+      {
+        "value": "downloadAsk",
+        "default": false,
+        "hidden": true
+      },
+      {
+        "value": "menuKey",
+        "default": "F1",
+        "hidden": true,
+        "possible_values": [
+          [ "F1", "F1" ],
+          [ "F2", "F2" ],
+          [ "F3", "F3" ],
+          [ "F4", "F4" ],
+          [ "F8", "F8" ],
+          [ "Menu", "Menu" ]
+        ]
+      },
+      {
+        "value": "menuTextScale",
+        "default": "normal",
+        "hidden": true,
+        "possible_values": [
+          [ "normal", "normal" ],
+          [ "large", "large" ],
+          [ "larger", "larger" ]
+        ]
+      },
+      {
+        "value": "menuHighContrast",
+        "default": false,
+        "hidden": true
+      },
+      {
         "value": "logLevel",
         "default": "debug",
         "hidden": true,
