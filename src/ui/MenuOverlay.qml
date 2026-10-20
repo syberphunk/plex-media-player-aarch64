@@ -108,9 +108,15 @@ FocusScope
   }
 
   // Keeps the item that just took focus inside the visible part of the list.
+  // Controls outside the list, in the footer or the download bar, scroll nothing.
   function reveal(item)
   {
-    if (!item || !flick.visible)
+    var probe = item
+
+    while (probe && probe !== list)
+      probe = probe.parent
+
+    if (!probe)
       return;
 
     var top = item.mapToItem(list, 0, 0).y
