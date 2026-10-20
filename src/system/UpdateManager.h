@@ -35,8 +35,10 @@ public:
 
   Q_PROPERTY(int state READ state NOTIFY stateChanged)
   Q_PROPERTY(bool checkEnabled READ checkEnabled NOTIFY checkEnabledChanged)
-  Q_PROPERTY(bool canApply READ canApply CONSTANT)
+  Q_PROPERTY(bool needsPermission READ needsPermission NOTIFY stateChanged)
+  Q_PROPERTY(bool infoVisible READ infoVisible NOTIFY infoVisibleChanged)
   Q_PROPERTY(QString manualCommand READ manualCommand CONSTANT)
+  Q_PROPERTY(QString permissionCommand READ permissionCommand CONSTANT)
   Q_PROPERTY(QString installedVersion READ installedVersion CONSTANT)
   Q_PROPERTY(QString availableVersion READ availableVersion NOTIFY availableVersionChanged)
   Q_PROPERTY(QString releaseNotes READ releaseNotes NOTIFY releaseNotesChanged)
@@ -58,8 +60,10 @@ public:
 
   int state() const { return m_state; }
   bool checkEnabled() const;
-  bool canApply() const { return m_canApply; }
+  bool needsPermission() const { return m_needsPermission; }
+  bool infoVisible() const { return m_infoVisible; }
   QString manualCommand() const;
+  QString permissionCommand() const;
   QString installedVersion() const;
   QString availableVersion() const { return m_availableVersion; }
   QString releaseNotes() const { return m_releaseNotes; }
@@ -71,6 +75,9 @@ public:
   QString errorMessage() const { return m_errorMessage; }
 
   Q_INVOKABLE void fetchReleaseNotes();
+  Q_INVOKABLE void showInfo();
+  Q_INVOKABLE void hideInfo();
+  Q_INVOKABLE void toggleInfo();
   Q_INVOKABLE void applyUpdate();
   Q_INVOKABLE void dismiss();
   Q_INVOKABLE void skipVersion();
@@ -79,6 +86,7 @@ public:
   Q_INVOKABLE void restartApp();
 
   Q_SIGNAL void stateChanged();
+  Q_SIGNAL void infoVisibleChanged();
   Q_SIGNAL void checkEnabledChanged();
   Q_SIGNAL void availableVersionChanged();
   Q_SIGNAL void releaseNotesChanged();
@@ -91,6 +99,7 @@ private:
   bool startMonitor();
   void stopMonitor();
   void setState(State state);
+  void applyFailed(const QString& name, const QString& message);
   void setNotesStatus(NotesStatus status);
 
   Q_SLOT void onSettingsChanged(const QString& section, const QVariantMap& values);
@@ -102,7 +111,8 @@ private:
   NotesStatus m_notesStatus = NotesIdle;
 
   bool m_inSandbox = false;
-  bool m_canApply = false;
+  bool m_needsPermission = false;
+  bool m_infoVisible = false;
   QString m_appId;
   QString m_monitorPath;
 

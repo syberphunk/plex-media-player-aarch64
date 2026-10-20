@@ -1,7 +1,6 @@
 #include "UpdateManager.h"
 
 #include <QCoreApplication>
-#include <QDir>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -25,6 +24,7 @@
 
 #include "QsLog.h"
 #include "Version.h"
+#include "input/InputComponent.h"
 #include "settings/SettingsComponent.h"
 #include "system/SystemComponent.h"
 
@@ -151,6 +151,8 @@ void UpdateManager::componentPostInitialize()
   connect(&SettingsComponent::Get(), &SettingsComponent::sectionValueUpdate,
           this, &UpdateManager::onSettingsChanged);
 
+  InputComponent::Get().registerHostCommand("showUpdate", [this]() { toggleInfo(); });
+
   if (!m_inSandbox)
   {
     QLOG_INFO() << "Not running in a flatpak sandbox, update checks disabled";
@@ -179,11 +181,7 @@ void UpdateManager::readSandboxInfo()
 
   m_inSandbox = !m_appId.isEmpty();
 
-  const QString userRoot = QDir::homePath() + "/.local/share/flatpak/";
-  m_canApply = appPath.startsWith(userRoot);
-
-  QLOG_INFO() << "Flatpak sandbox:" << m_appId << "app path" << appPath
-              << "in-app update" << (m_canApply ? "available" : "not available");
+  QLOG_INFO() << "Flatpak sandbox:" << m_appId << "app path" << appPath;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -199,6 +197,15 @@ QString UpdateManager::manualCommand() const
     return QString();
 
   return QString("flatpak update %1").arg(m_appId);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QString UpdateManager::permissionCommand() const
+{
+  if (m_appId.isEmpty())
+    return QString();
+
+  return QString("flatpak permission-set flatpak updates %1 yes").arg(m_appId);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -310,7 +317,9 @@ void UpdateManager::applyUpdate()
   if (m_state != StateAvailable)
     return;
 
-  if (!m_canApply || m_monitorPath.isEmpty())
+  hideInfo();
+
+  if (m_monitorPath.isEmpty())
   {
     setState(StateManual);
     return;
@@ -325,6 +334,7 @@ void UpdateManager::applyUpdate()
   m_opCount = 0;
   m_opProgress = 0;
   m_errorMessage.clear();
+  m_needsPermission = false;
   emit progressChanged();
   setState(StateUpdating);
 
@@ -336,18 +346,25 @@ void UpdateManager::applyUpdate()
     if (!reply.isError())
       return;
 
-    const QString name = reply.error().name();
-    QLOG_WARN() << "Portal Update failed:" << name << reply.error().message();
-
-    if (name == QLatin1String("org.freedesktop.DBus.Error.NotSupported"))
-    {
-      setState(StateManual);
-      return;
-    }
-
-    m_errorMessage = reply.error().message();
-    setState(StateFailed);
+    applyFailed(reply.error().name(), reply.error().message());
   });
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::applyFailed(const QString& name, const QString& message)
+{
+  QLOG_WARN() << "Update failed:" << name << message;
+
+  if (name == QLatin1String("org.freedesktop.DBus.Error.NotSupported"))
+  {
+    m_needsPermission = true;
+    m_errorMessage.clear();
+    setState(StateManual);
+    return;
+  }
+
+  m_errorMessage = message;
+  setState(StateFailed);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -474,9 +491,7 @@ void UpdateManager::onProgress(const QVariantMap& info)
       break;
 
     case PortalFailed:
-      m_errorMessage = info.value("error_message").toString();
-      QLOG_WARN() << "Update failed:" << info.value("error").toString() << m_errorMessage;
-      setState(StateFailed);
+      applyFailed(info.value("error").toString(), info.value("error_message").toString());
       break;
 
     default:
@@ -566,6 +581,38 @@ void UpdateManager::onNotesFinished()
   m_releaseNoteBlocks = blockify(notes);
   m_releaseNotes = flatten(m_releaseNoteBlocks);
   setNotesStatus(m_releaseNoteBlocks.isEmpty() ? NotesFailed : NotesReady);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::showInfo()
+{
+  if (m_notesStatus != NotesReady)
+    fetchReleaseNotes();
+
+  if (m_infoVisible)
+    return;
+
+  m_infoVisible = true;
+  emit infoVisibleChanged();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::hideInfo()
+{
+  if (!m_infoVisible)
+    return;
+
+  m_infoVisible = false;
+  emit infoVisibleChanged();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::toggleInfo()
+{
+  if (m_infoVisible)
+    hideInfo();
+  else
+    showInfo();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

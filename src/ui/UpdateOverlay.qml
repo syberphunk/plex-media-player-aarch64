@@ -42,19 +42,23 @@ FocusScope
   readonly property string track:      "#2A2E35"
   readonly property string rule:       "#2F333A"
 
-  readonly property bool showBanner: updateState === stateAvailable && view === viewBanner
-  readonly property bool showNotes: updateState === stateAvailable && view === viewNotes
-  readonly property bool showConfirm: updateState === stateAvailable && view === viewConfirm
-  readonly property bool showProgress: updateState === stateUpdating
-  readonly property bool showDone: updateState === stateDone
-  readonly property bool showManual: updateState === stateManual || updateState === stateFailed
+  readonly property bool infoOpen: updater ? updater.infoVisible : false
+  readonly property bool haveUpdate: updateState === stateAvailable
+
+  readonly property bool showBanner: !infoOpen && haveUpdate && view === viewBanner
+  readonly property bool showNotes: infoOpen || (haveUpdate && view === viewNotes)
+  readonly property bool showConfirm: !infoOpen && haveUpdate && view === viewConfirm
+  readonly property bool showProgress: !infoOpen && updateState === stateUpdating
+  readonly property bool showDone: !infoOpen && updateState === stateDone
+  readonly property bool showManual: !infoOpen
+                                     && (updateState === stateManual || updateState === stateFailed)
 
   readonly property bool modal: showNotes || showConfirm || showProgress || showDone || showManual
 
   signal closed()
 
   visible: opacity > 0
-  opacity: updateState === stateIdle ? 0 : 1
+  opacity: (updateState === stateIdle && !infoOpen) ? 0 : 1
 
   Behavior on opacity
   {
@@ -65,7 +69,18 @@ FocusScope
   {
     view = viewBanner
 
-    if (updateState === stateIdle)
+    if (updateState === stateIdle && !infoOpen)
+    {
+      overlay.closed()
+      return;
+    }
+
+    Qt.callLater(overlay.takeFocus)
+  }
+
+  onInfoOpenChanged:
+  {
+    if (!infoOpen && updateState === stateIdle)
     {
       overlay.closed()
       return;
@@ -79,7 +94,7 @@ FocusScope
     if (showBanner)
       bannerOpen.forceActiveFocus()
     else if (showNotes)
-      notesApply.forceActiveFocus()
+      notesApply.visible ? notesApply.forceActiveFocus() : notesClose.forceActiveFocus()
     else if (showConfirm)
       confirmNo.forceActiveFocus()
     else if (showDone)
@@ -101,6 +116,12 @@ FocusScope
 
   function close()
   {
+    if (infoOpen)
+    {
+      updater.hideInfo()
+      return;
+    }
+
     if (showConfirm)
     {
       view = viewNotes
@@ -363,14 +384,14 @@ FocusScope
     property real pad: Math.round(48 * overlay.u)
 
     Accessible.role: Accessible.Dialog
-    Accessible.name: qsTr("Update available")
+    Accessible.name: dialogTitle.text
 
     Text
     {
       id: dialogTitle
       x: dialog.pad
       y: dialog.pad
-      text: qsTr("Update available")
+      text: overlay.haveUpdate ? qsTr("Update available") : qsTr("Release notes")
       color: overlay.textPri
       font.pixelSize: Math.round(44 * overlay.u)
       font.weight: Font.Bold
@@ -385,10 +406,18 @@ FocusScope
       anchors.topMargin: Math.round(10 * overlay.u)
       elide: Text.ElideRight
       textFormat: Text.PlainText
-      text: overlay.updater
-            ? qsTr("installed %1   →   available %2").arg(overlay.updater.installedVersion)
-                                                          .arg(overlay.updater.availableVersion)
-            : ""
+      text:
+      {
+        if (!overlay.updater)
+          return ""
+        if (overlay.haveUpdate)
+          return qsTr("installed %1   →   available %2").arg(overlay.updater.installedVersion)
+                                                        .arg(overlay.updater.availableVersion)
+        if (overlay.updater.availableVersion.length > 0)
+          return qsTr("installed %1   ·   latest release %2")
+                 .arg(overlay.updater.installedVersion).arg(overlay.updater.availableVersion)
+        return qsTr("installed %1").arg(overlay.updater.installedVersion)
+      }
       color: overlay.textSec
       font.pixelSize: Math.round(24 * overlay.u)
     }
@@ -619,11 +648,9 @@ FocusScope
       Btn
       {
         id: notesApply
-        label: overlay.updater && overlay.updater.canApply ? qsTr("Update now")
-                                                           : qsTr("How to update")
-        hint: overlay.updater && overlay.updater.canApply
-              ? qsTr("Installs the update now")
-              : qsTr("Shows the command that installs the update")
+        label: qsTr("Update now")
+        hint: qsTr("Installs the update now")
+        visible: overlay.haveUpdate
         primary: true
         KeyNavigation.right: notesClose
         KeyNavigation.tab: notesClose
@@ -638,12 +665,23 @@ FocusScope
       {
         id: notesClose
         label: qsTr("Close")
-        hint: qsTr("Leaves the update for later. It is offered again next time Plex starts")
+        hint: overlay.haveUpdate
+              ? qsTr("Leaves the update for later. It is offered again next time Plex starts")
+              : qsTr("Closes the release notes")
         minW: 200
+        primary: !overlay.haveUpdate
         KeyNavigation.left: notesApply
         KeyNavigation.right: notesSkip
         KeyNavigation.tab: notesSkip
-        onClicked: overlay.updater ? overlay.updater.dismiss() : overlay.close()
+        onClicked:
+        {
+          if (!overlay.updater)
+            overlay.close()
+          else if (overlay.infoOpen)
+            overlay.updater.hideInfo()
+          else
+            overlay.updater.dismiss()
+        }
       }
     }
 
@@ -659,6 +697,7 @@ FocusScope
         id: notesSkip
         label: qsTr("Skip this version")
         hint: qsTr("Does not offer this version again. A later one is still offered")
+        visible: overlay.haveUpdate
         minW: 300
         KeyNavigation.left: notesClose
         KeyNavigation.right: notesNever
@@ -907,12 +946,15 @@ FocusScope
     height: Math.min(overlay.height - overlay.inset * 2,
                      manual.pad * 2 + manualTitle.height
                      + (manualError.visible ? manualError.height + Math.round(14 * overlay.u) : 0)
+                     + (manual.perm ? Math.round(26 * overlay.u) + permCommand.height
+                                      + Math.round(26 * overlay.u) + manualOr.height : 0)
                      + Math.round(26 * overlay.u) + manualCommand.height
                      + (manualReenable.visible ? Math.round(26 * overlay.u) + manualReenable.height : 0)
                      + Math.round(40 * overlay.u) + manualClose.height)
     anchors.centerIn: parent
 
     property real pad: Math.round(48 * overlay.u)
+    property bool perm: overlay.updater !== null && overlay.updater.needsPermission
 
     Accessible.role: Accessible.Dialog
     Accessible.name: manualTitle.text
@@ -932,6 +974,8 @@ FocusScope
       {
         if (!overlay.updater)
           return ""
+        if (manual.perm)
+          return qsTr("Plex is not allowed to install its own updates on this system yet. Run this once from a terminal, then try the update again:")
         if (overlay.updateState === overlay.stateFailed)
           return qsTr("The update could not be installed. Install it from a terminal with:")
         return qsTr("%1 is available, but has to be installed from a terminal:")
@@ -960,6 +1004,51 @@ FocusScope
 
     Rectangle
     {
+      id: permCommand
+      x: manual.pad
+      width: manual.width - manual.pad * 2
+      height: Math.max(Math.round(96 * overlay.u), permText.height + Math.round(44 * overlay.u))
+      radius: Math.round(8 * overlay.u)
+      color: overlay.panel
+      border.width: Math.max(1, Math.round(2 * overlay.u))
+      border.color: overlay.outline
+      visible: manual.perm
+      anchors.top: manualError.visible ? manualError.bottom : manualTitle.bottom
+      anchors.topMargin: Math.round(26 * overlay.u)
+
+      Text
+      {
+        id: permText
+        anchors.verticalCenter: parent.verticalCenter
+        x: Math.round(28 * overlay.u)
+        width: parent.width - Math.round(56 * overlay.u)
+        wrapMode: Text.WrapAnywhere
+        textFormat: Text.PlainText
+        text: overlay.updater ? overlay.updater.permissionCommand : ""
+        color: overlay.textPri
+        font.family: "monospace"
+        font.pixelSize: Math.round(22 * overlay.u)
+      }
+    }
+
+    Text
+    {
+      id: manualOr
+      x: manual.pad
+      width: manual.width - manual.pad * 2
+      anchors.top: permCommand.bottom
+      anchors.topMargin: Math.round(26 * overlay.u)
+      visible: manual.perm
+      wrapMode: Text.WordWrap
+      textFormat: Text.PlainText
+      lineHeight: 1.45
+      text: qsTr("Or install this update directly:")
+      color: overlay.textSec
+      font.pixelSize: Math.round(24 * overlay.u)
+    }
+
+    Rectangle
+    {
       id: manualCommand
       x: manual.pad
       width: manual.width - manual.pad * 2
@@ -968,7 +1057,8 @@ FocusScope
       color: overlay.panel
       border.width: Math.max(1, Math.round(2 * overlay.u))
       border.color: overlay.outline
-      anchors.top: manualError.visible ? manualError.bottom : manualTitle.bottom
+      anchors.top: manual.perm ? manualOr.bottom
+                               : (manualError.visible ? manualError.bottom : manualTitle.bottom)
       anchors.topMargin: Math.round(26 * overlay.u)
 
       Text
