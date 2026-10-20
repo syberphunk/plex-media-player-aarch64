@@ -616,6 +616,13 @@ void UpdateManager::toggleInfo()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::showManual()
+{
+  hideInfo();
+  setState(StateManual);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void UpdateManager::dismiss()
 {
   setState(StateIdle);
@@ -624,6 +631,8 @@ void UpdateManager::dismiss()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void UpdateManager::skipVersion()
 {
+  hideInfo();
+
   if (m_remoteCommit.isEmpty())
   {
     setState(StateIdle);
@@ -641,6 +650,7 @@ void UpdateManager::disableChecks()
 {
   SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_CHECK, false);
   stopMonitor();
+  hideInfo();
   setState(StateManual);
 }
 

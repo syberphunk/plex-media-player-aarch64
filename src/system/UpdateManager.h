@@ -37,6 +37,7 @@ public:
   Q_PROPERTY(bool checkEnabled READ checkEnabled NOTIFY checkEnabledChanged)
   Q_PROPERTY(bool needsPermission READ needsPermission NOTIFY stateChanged)
   Q_PROPERTY(bool infoVisible READ infoVisible NOTIFY infoVisibleChanged)
+  Q_PROPERTY(bool updatePending READ updatePending NOTIFY availableVersionChanged)
   Q_PROPERTY(QString manualCommand READ manualCommand CONSTANT)
   Q_PROPERTY(QString permissionCommand READ permissionCommand CONSTANT)
   Q_PROPERTY(QString installedVersion READ installedVersion CONSTANT)
@@ -62,6 +63,7 @@ public:
   bool checkEnabled() const;
   bool needsPermission() const { return m_needsPermission; }
   bool infoVisible() const { return m_infoVisible; }
+  bool updatePending() const { return !m_remoteCommit.isEmpty() && m_remoteCommit != m_localCommit; }
   QString manualCommand() const;
   QString permissionCommand() const;
   QString installedVersion() const;
@@ -78,6 +80,7 @@ public:
   Q_INVOKABLE void showInfo();
   Q_INVOKABLE void hideInfo();
   Q_INVOKABLE void toggleInfo();
+  Q_INVOKABLE void showManual();
   Q_INVOKABLE void applyUpdate();
   Q_INVOKABLE void dismiss();
   Q_INVOKABLE void skipVersion();

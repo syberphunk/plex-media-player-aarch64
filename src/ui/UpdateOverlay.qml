@@ -46,8 +46,9 @@ FocusScope
   readonly property bool haveUpdate: updateState === stateAvailable
 
   readonly property bool showBanner: !infoOpen && haveUpdate && view === viewBanner
-  readonly property bool showNotes: infoOpen || (haveUpdate && view === viewNotes)
-  readonly property bool showConfirm: !infoOpen && haveUpdate && view === viewConfirm
+  readonly property bool showNotes: (infoOpen && view !== viewConfirm)
+                                    || (haveUpdate && view === viewNotes)
+  readonly property bool showConfirm: (infoOpen || haveUpdate) && view === viewConfirm
   readonly property bool showProgress: !infoOpen && updateState === stateUpdating
   readonly property bool showDone: !infoOpen && updateState === stateDone
   readonly property bool showManual: !infoOpen
@@ -116,16 +117,16 @@ FocusScope
 
   function close()
   {
-    if (infoOpen)
-    {
-      updater.hideInfo()
-      return;
-    }
-
     if (showConfirm)
     {
       view = viewNotes
       Qt.callLater(overlay.takeFocus)
+      return;
+    }
+
+    if (infoOpen)
+    {
+      updater.hideInfo()
       return;
     }
 
@@ -663,16 +664,32 @@ FocusScope
 
       Btn
       {
+        id: notesHow
+        label: qsTr("How to update")
+        hint: qsTr("Shows the command that installs an update")
+        visible: !overlay.haveUpdate
+        primary: true
+        minW: 300
+        KeyNavigation.right: notesClose
+        KeyNavigation.tab: notesClose
+        onClicked:
+        {
+          if (overlay.updater)
+            overlay.updater.showManual()
+        }
+      }
+
+      Btn
+      {
         id: notesClose
         label: qsTr("Close")
         hint: overlay.haveUpdate
               ? qsTr("Leaves the update for later. It is offered again next time Plex starts")
               : qsTr("Closes the release notes")
         minW: 200
-        primary: !overlay.haveUpdate
-        KeyNavigation.left: notesApply
-        KeyNavigation.right: notesSkip
-        KeyNavigation.tab: notesSkip
+        KeyNavigation.left: overlay.haveUpdate ? notesApply : notesHow
+        KeyNavigation.right: overlay.haveUpdate ? notesSkip : notesNever
+        KeyNavigation.tab: overlay.haveUpdate ? notesSkip : notesNever
         onClicked:
         {
           if (!overlay.updater)
@@ -715,7 +732,7 @@ FocusScope
         label: qsTr("Never")
         hint: qsTr("Turns update checking off, after a confirmation")
         minW: 200
-        KeyNavigation.left: notesSkip
+        KeyNavigation.left: overlay.haveUpdate ? notesSkip : notesClose
         KeyNavigation.tab: checkToggle
         onClicked:
         {
@@ -978,8 +995,10 @@ FocusScope
           return qsTr("Plex is not allowed to install its own updates on this system yet. Run this once from a terminal, then try the update again:")
         if (overlay.updateState === overlay.stateFailed)
           return qsTr("The update could not be installed. Install it from a terminal with:")
-        return qsTr("%1 is available, but has to be installed from a terminal:")
-               .arg(overlay.updater.availableVersion)
+        if (overlay.updater.updatePending)
+          return qsTr("%1 is available, but has to be installed from a terminal:")
+                 .arg(overlay.updater.availableVersion)
+        return qsTr("Updates are installed from a terminal with:")
       }
     }
 
