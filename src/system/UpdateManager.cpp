@@ -64,6 +64,39 @@ namespace
     return commit.left(12);
   }
 
+  // Release tags read v2.58.0-aarch64.17, so the numbers in one, in order, rank it
+  // against another of the same shape.
+  QList<int> tagNumbers(const QString& tag)
+  {
+    static const QRegularExpression digits("\\d+");
+
+    QList<int> numbers;
+    QRegularExpressionMatchIterator matches = digits.globalMatch(tag);
+    while (matches.hasNext())
+      numbers.append(matches.next().captured(0).toInt());
+
+    return numbers;
+  }
+
+  // A build made ahead of the feed must not be offered the feed's older release.
+  bool tagIsNewer(const QString& candidate, const QString& installed)
+  {
+    const QList<int> left = tagNumbers(candidate);
+    const QList<int> right = tagNumbers(installed);
+
+    // Nothing to rank by, so fall back to the tags differing at all.
+    if (left.isEmpty() || right.isEmpty() || left.size() != right.size())
+      return candidate != installed;
+
+    for (int i = 0; i < left.size(); i++)
+    {
+      if (left[i] != right[i])
+        return left[i] > right[i];
+    }
+
+    return false;
+  }
+
   QVariantList blockify(const QString& markdown)
   {
     static const QRegularExpression newline("\r\n|\n|\r");
@@ -790,9 +823,9 @@ void UpdateManager::considerRelease(const QString& tag, bool userCheck)
     return;
   }
 
-  if (tag == installed)
+  if (!tagIsNewer(tag, installed))
   {
-    QLOG_INFO() << "Running the latest release" << installed;
+    QLOG_INFO() << "Running" << installed << "against feed release" << tag;
     setCheckStatus(CheckUpToDate, QString("%1 is the latest release").arg(installed));
     return;
   }
