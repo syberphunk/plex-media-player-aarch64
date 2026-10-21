@@ -136,6 +136,7 @@ private:
   void setNotesStatus(NotesStatus status);
   void setCheckStatus(CheckStatus status, const QString& message = QString());
   void fetchRelease(bool userCheck);
+  void startNotesRequest(bool allowHttp2);
   void scheduleChecks();
   bool cadenceDue() const;
   void considerRelease(const QString& tag, bool userCheck);
@@ -153,6 +154,7 @@ private:
   bool m_needsPermission = false;
   bool m_infoVisible = false;
   bool m_userCheck = false;
+  bool m_notesRetried = false;
   QString m_appId;
   QString m_appCommit;
   QString m_monitorPath;

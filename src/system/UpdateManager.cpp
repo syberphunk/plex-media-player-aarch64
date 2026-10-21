@@ -64,8 +64,6 @@ namespace
     return commit.left(12);
   }
 
-  // Release tags read v2.58.0-aarch64.17, so the numbers in one, in order, rank it
-  // against another of the same shape.
   QList<int> tagNumbers(const QString& tag)
   {
     static const QRegularExpression digits("\\d+");
@@ -78,13 +76,11 @@ namespace
     return numbers;
   }
 
-  // A build made ahead of the feed must not be offered the feed's older release.
   bool tagIsNewer(const QString& candidate, const QString& installed)
   {
     const QList<int> left = tagNumbers(candidate);
     const QList<int> right = tagNumbers(installed);
 
-    // Nothing to rank by, so fall back to the tags differing at all.
     if (left.isEmpty() || right.isEmpty() || left.size() != right.size())
       return candidate != installed;
 
@@ -618,7 +614,6 @@ void UpdateManager::onUpdateAvailable(const QVariantMap& info)
 {
   if (m_state == StateUpdating || m_state == StateDone)
   {
-    // An install is in flight or finished, a fresh report would talk over it.
     QLOG_INFO() << "Ignoring an update report while the install is in progress";
     return;
   }
@@ -723,6 +718,18 @@ void UpdateManager::fetchRelease(bool userCheck)
     return;
   }
 
+  m_notesRetried = false;
+  startNotesRequest(true);
+
+  setNotesStatus(NotesLoading);
+  setCheckStatus(CheckBusy, QString("Checking for updates"));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::startNotesRequest(bool allowHttp2)
+{
+  const QUrl url(RELEASE_API_URL);
+
   if (!m_network)
     m_network = new QNetworkAccessManager(this);
 
@@ -731,6 +738,7 @@ void UpdateManager::fetchRelease(bool userCheck)
   request.setRawHeader("User-Agent", SystemComponent::Get().getUserAgent().toUtf8());
   request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                        QNetworkRequest::NoLessSafeRedirectPolicy);
+  request.setAttribute(QNetworkRequest::Http2AllowedAttribute, allowHttp2);
   request.setTransferTimeout(RELEASE_NOTES_TIMEOUT);
 
   m_notesReply = m_network->get(request);
@@ -742,9 +750,6 @@ void UpdateManager::fetchRelease(bool userCheck)
       m_notesReply->abort();
     }
   });
-
-  setNotesStatus(NotesLoading);
-  setCheckStatus(CheckBusy, QString("Checking for updates"));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -763,6 +768,16 @@ void UpdateManager::onNotesFinished()
   if (reply->error() != QNetworkReply::NoError)
   {
     QLOG_WARN() << "Release notes request failed:" << reply->errorString();
+
+    if (!m_notesRetried && reply->error() != QNetworkReply::OperationCanceledError)
+    {
+      m_notesRetried = true;
+      m_userCheck = userCheck;
+      QLOG_INFO() << "Retrying the release feed without HTTP/2";
+      startNotesRequest(false);
+      return;
+    }
+
     setNotesStatus(NotesFailed);
     setCheckStatus(CheckFailed, QString("Could not reach the release feed"));
     return;
@@ -800,7 +815,6 @@ void UpdateManager::onNotesFinished()
 
   if (m_state == StateAvailable || m_state == StateUpdating || m_state == StateDone)
   {
-    // The portal found this one first, so only the label needs filling in.
     m_availableVersion = tag;
     emit availableVersionChanged();
     setCheckStatus(CheckIdle);
@@ -898,7 +912,6 @@ void UpdateManager::skipVersion()
 {
   hideInfo();
 
-  // The tag is what the user was shown, so that is what gets remembered.
   const QString mark = !m_availableTag.isEmpty() ? m_availableTag : m_remoteCommit;
 
   if (mark.isEmpty())
