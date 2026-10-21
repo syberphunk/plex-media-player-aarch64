@@ -271,36 +271,76 @@ KonvergoWindow
     z: 7
 
     readonly property real u: Math.max(0.6, Math.min(2.0, mainWindow.height / 1080))
-    readonly property real scale_: components.menu ? components.menu.textScale : 1.0
+    readonly property bool lit: handleArea.containsMouse
 
-    anchors.right: parent.right
+    anchors.left: parent.left
     anchors.bottom: parent.bottom
-    anchors.rightMargin: Math.round(28 * u)
-    anchors.bottomMargin: Math.round(28 * u)
+    anchors.leftMargin: Math.round(14 * u)
+    anchors.bottomMargin: Math.round(14 * u)
 
-    width: handleLabel.width + Math.round(32 * u)
-    height: handleLabel.height + Math.round(20 * u)
-    radius: height / 2
-    color: handleArea.containsMouse ? "#E08B20" : "#22252B"
-    border.color: handleArea.containsMouse ? "#E08B20" : "#767E8A"
+    width: Math.round(44 * u)
+    height: width
+    radius: width / 2
+    color: lit ? "#E08B20" : "#22252B"
+    border.color: lit ? "#E08B20" : "#767E8A"
     border.width: Math.max(1, Math.round(1.5 * u))
 
     visible: opacity > 0
     opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.modal) ? 1 : 0
+
+    Accessible.role: Accessible.Button
+    Accessible.name: "Player settings"
 
     Behavior on opacity
     {
       NumberAnimation { duration: 120 }
     }
 
-    Text
+    Item
     {
-      id: handleLabel
+      id: cog
       anchors.centerIn: parent
-      text: "Player settings"
-      color: handleArea.containsMouse ? "#101216" : "#ECEEF1"
-      font.pixelSize: Math.round(20 * menuHandle.u * menuHandle.scale_)
-      font.bold: true
+      width: Math.round(menuHandle.width * 0.52)
+      height: width
+
+      readonly property string ink: menuHandle.lit ? "#101216" : "#ECEEF1"
+      readonly property real tooth: Math.max(2, Math.round(cog.width * 0.17))
+
+      Repeater
+      {
+        model: 4
+
+        Rectangle
+        {
+          anchors.centerIn: parent
+          width: cog.tooth
+          height: cog.width * 1.1
+          radius: width / 2
+          color: cog.ink
+          rotation: index * 45
+          antialiasing: true
+        }
+      }
+
+      Rectangle
+      {
+        anchors.centerIn: parent
+        width: cog.width * 0.78
+        height: width
+        radius: width / 2
+        color: cog.ink
+        antialiasing: true
+      }
+
+      Rectangle
+      {
+        anchors.centerIn: parent
+        width: cog.width * 0.3
+        height: width
+        radius: width / 2
+        color: menuHandle.color
+        antialiasing: true
+      }
     }
 
     MouseArea

@@ -661,13 +661,19 @@ FocusScope
       anchors.top: askBar.visible ? askBar.bottom : subtitle.bottom
       anchors.bottom: footer.top
       anchors.leftMargin: Math.round(28 * menu.u)
-      anchors.rightMargin: Math.round(28 * menu.u)
+      anchors.rightMargin: Math.round(34 * menu.u)
       anchors.topMargin: Math.round(18 * menu.u)
       anchors.bottomMargin: Math.round(12 * menu.u)
       clip: true
       contentWidth: width
       contentHeight: list.implicitHeight
       boundsBehavior: Flickable.StopAtBounds
+
+      Behavior on contentY
+      {
+        enabled: !flick.moving && !scrollDrag.drag.active
+        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+      }
 
       Column
       {
@@ -1168,6 +1174,93 @@ FocusScope
         {
           width: parent.width
           height: Math.round(24 * menu.u)
+        }
+      }
+    }
+
+    Rectangle
+    {
+      id: scrollTrack
+
+      readonly property real span: flick.contentHeight - flick.height
+      readonly property real room: height - scrollHandle.height
+
+      visible: span > 1
+      width: Math.round(10 * menu.u)
+      radius: width / 2
+      color: menu.track
+      border.color: menu.contrast ? menu.outline : "transparent"
+      border.width: menu.contrast ? Math.max(1, Math.round(menu.u)) : 0
+
+      anchors.right: parent.right
+      anchors.rightMargin: Math.round(10 * menu.u)
+      anchors.top: flick.top
+      anchors.bottom: flick.bottom
+
+      MouseArea
+      {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        onClicked: function(mouse)
+        {
+          if (scrollTrack.span <= 0)
+            return;
+
+          var page = flick.height * 0.9
+          flick.contentY = Math.max(0, Math.min(scrollTrack.span,
+                                                mouse.y < scrollHandle.y
+                                                  ? flick.contentY - page
+                                                  : flick.contentY + page))
+        }
+      }
+
+      Rectangle
+      {
+        id: scrollHandle
+
+        width: parent.width
+        radius: width / 2
+        height: Math.max(Math.round(48 * menu.u),
+                         scrollTrack.height * (flick.height / Math.max(1, flick.contentHeight)))
+        color: scrollDrag.drag.active || scrollDrag.containsMouse ? menu.accentFill : menu.outline
+
+        Binding
+        {
+          target: scrollHandle
+          property: "y"
+          when: !scrollDrag.drag.active
+          value: scrollTrack.span > 0
+                   ? Math.max(0, Math.min(scrollTrack.room,
+                                          flick.contentY / scrollTrack.span * scrollTrack.room))
+                   : 0
+          restoreMode: Binding.RestoreNone
+        }
+
+        Behavior on color
+        {
+          ColorAnimation { duration: 120 }
+        }
+      }
+
+      MouseArea
+      {
+        id: scrollDrag
+
+        anchors.fill: scrollHandle
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+
+        drag.target: scrollHandle
+        drag.axis: Drag.YAxis
+        drag.minimumY: 0
+        drag.maximumY: scrollTrack.room
+
+        onPositionChanged:
+        {
+          if (!drag.active || scrollTrack.room <= 0)
+            return;
+
+          flick.contentY = scrollHandle.y / scrollTrack.room * scrollTrack.span
         }
       }
     }
