@@ -668,9 +668,26 @@ void UpdateManager::onProgress(const QVariantMap& info)
       break;
 
     case PortalEmpty:
-      QLOG_INFO() << "Portal reported nothing to install";
-      setState(StateIdle);
+    {
+      QLOG_INFO() << "Portal reported nothing to install, running"
+                  << shortCommit(m_runningCommit) << "local" << shortCommit(m_localCommit);
+
+      if (!m_localCommit.isEmpty() && !m_runningCommit.isEmpty()
+          && m_localCommit != m_runningCommit)
+      {
+        setState(StateDone);
+        break;
+      }
+
+      const QString name = !m_availableTag.isEmpty() ? m_availableTag : m_availableVersion;
+      m_errorMessage = name.isEmpty()
+                         ? QString("The remote this copy was installed from had nothing to install")
+                         : QString("%1 is published, but the remote this copy was installed from "
+                                   "does not carry it yet")
+                             .arg(name);
+      setState(StateFailed);
       break;
+    }
 
     case PortalDone:
       QLOG_INFO() << "Update installed";
