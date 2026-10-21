@@ -1,4 +1,33 @@
 message(STATUS ${CMAKE_FIND_ROOT_PATH})
+OPTION(ENABLE_SDL2 "Enable SDL2 for joystick handling" ON)
+if(ENABLE_SDL2)
+  find_package(SDL2)
+  if(SDL2_FOUND)
+    if(UNIX)
+      find_package(Iconv)
+
+      if(NOT ICONV_FOUND)
+        unset(SDL2_FOUND)
+      endif(NOT ICONV_FOUND)
+
+      find_package(DL)
+
+      if(NOT DL_FOUND)
+        unset(SDL2_FOUND)
+      endif(NOT DL_FOUND)
+
+      list(APPEND SDL2_LIBRARY ${ICONV_LIBRARIES} ${DL_LIBRARIES})
+    endif()
+  endif(SDL2_FOUND)
+  if(SDL2_FOUND)
+    list(APPEND ENABLED_INPUTS SDL2)
+    add_definitions(-DHAVE_SDL)
+    include_directories(${SDL2_INCLUDE_DIR})
+    set(EXTRA_LIBS ${SDL2_LIBRARY})
+  endif(SDL2_FOUND)
+
+endif(ENABLE_SDL2)
+
 OPTION(ENABLE_CEC "Enable HDMI/CEC support with libCEC" ON)
 if(ENABLE_CEC)
   find_package(CEC)

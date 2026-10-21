@@ -51,6 +51,9 @@ FocusScope
 
   onOpenChanged:
   {
+    if (cfg)
+      cfg.grabKeyboard("menu", open)
+
     if (open)
     {
       customPathOpen = cfg && cfg.downloadPreset === "custom"
@@ -1009,6 +1012,30 @@ FocusScope
           {
             if (settings)
               settings.setValue("main", "menuKey", value)
+          }
+        }
+
+        Picker
+        {
+          width: parent.width
+          label: qsTr("Gamepad button that opens this menu")
+          hint: qsTr("Button numbers follow the controller's own order")
+          options: [
+            { value: "KEY_BUTTON_7", label: qsTr("Button 7 (Start)") },
+            { value: "KEY_BUTTON_6", label: qsTr("Button 6 (Back)") },
+            { value: "KEY_BUTTON_2", label: qsTr("Button 2 (X)") },
+            { value: "KEY_BUTTON_3", label: qsTr("Button 3 (Y)") },
+            { value: "KEY_BUTTON_8", label: qsTr("Button 8") },
+            { value: "KEY_BUTTON_9", label: qsTr("Button 9") },
+            { value: "KEY_BUTTON_10", label: qsTr("Button 10") },
+            { value: "", label: qsTr("None") }
+          ]
+          current: cfg ? cfg.menuButton : "KEY_BUTTON_7"
+          currentLabel: cfg && cfg.menuButton !== "" ? cfg.menuButton : qsTr("None")
+          onPicked: function(value)
+          {
+            if (settings)
+              settings.setValue("main", "menuButton", value)
           }
         }
 

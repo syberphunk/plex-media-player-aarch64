@@ -166,6 +166,7 @@ void SystemComponent::setCursorVisibility(bool visible)
     m_mouseOutTimer->stop();
   }
 
+  emit cursorVisibilityChanged(m_cursorVisible);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -14,6 +14,7 @@ class SystemComponent : public ComponentBase
 
 public:
   Q_PROPERTY(bool isLinux READ platformIsLinux CONSTANT)
+  Q_PROPERTY(bool cursorVisible READ cursorVisible NOTIFY cursorVisibilityChanged)
   Q_PROPERTY(qreal scale MEMBER m_scale CONSTANT)
 
   bool componentExport() override { return true; }
@@ -81,6 +82,7 @@ signals:
   void hostMessage(const QString& message);
   void settingsMessage(const QString& setting, const QString& value);
   void scaleChanged(qreal scale);
+  void cursorVisibilityChanged(bool visible);
 
 private slots:
   void runUserScript(QString script);

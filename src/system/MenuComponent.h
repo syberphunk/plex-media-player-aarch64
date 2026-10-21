@@ -1,6 +1,7 @@
 #ifndef MENUCOMPONENT_H
 #define MENUCOMPONENT_H
 
+#include <QSet>
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
@@ -21,6 +22,8 @@ public:
 
   Q_PROPERTY(bool visible READ visible NOTIFY visibleChanged)
   Q_PROPERTY(QString menuKey READ menuKey NOTIFY configChanged)
+  Q_PROPERTY(QString menuButton READ menuButton NOTIFY configChanged)
+  Q_PROPERTY(bool keyboardGrabbed READ keyboardGrabbed NOTIFY keyboardGrabbedChanged)
   Q_PROPERTY(qreal textScale READ textScale NOTIFY configChanged)
   Q_PROPERTY(QString textSizeName READ textSizeName NOTIFY configChanged)
   Q_PROPERTY(bool highContrast READ highContrast NOTIFY configChanged)
@@ -33,6 +36,8 @@ public:
 
   bool visible() const { return m_visible; }
   QString menuKey() const;
+  QString menuButton() const;
+  bool keyboardGrabbed() const { return !m_grabbers.isEmpty(); }
   qreal textScale() const;
   QString textSizeName() const;
   bool highContrast() const;
@@ -50,8 +55,10 @@ public:
   Q_INVOKABLE bool applyDownloadDir(const QString& path);
   Q_INVOKABLE void restoreDefaults(const QString& group);
   Q_INVOKABLE void noteDownload(const QString& name, const QString& state);
+  Q_INVOKABLE void grabKeyboard(const QString& owner, bool grab);
 
   Q_SIGNAL void visibleChanged();
+  Q_SIGNAL void keyboardGrabbedChanged();
   Q_SIGNAL void configChanged();
   Q_SIGNAL void downloadChanged();
   Q_SIGNAL void downloadStatusChanged();
@@ -60,12 +67,15 @@ private:
   explicit MenuComponent(QObject* parent = nullptr);
 
   void writeInputMap();
+  void writeMapFile(const QString& relPath, const QString& name, const QString& idmatcher,
+                    const QString& trigger);
   void loadKeyBindings();
   bool ensureWritable(const QString& path) const;
 
   Q_SLOT void onSettingsChanged(const QString& section, const QVariantMap& values);
 
   bool m_visible = false;
+  QSet<QString> m_grabbers;
   QString m_downloadStatus;
   QVariantList m_keyBindings;
 };

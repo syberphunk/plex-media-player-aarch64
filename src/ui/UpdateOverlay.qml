@@ -5,6 +5,7 @@ FocusScope
   id: overlay
 
   property var updater: (typeof components !== "undefined") ? components.updater : null
+  property var cfg: (typeof components !== "undefined") ? components.menu : null
 
   readonly property int stateIdle: 0
   readonly property int stateAvailable: 1
@@ -64,6 +65,12 @@ FocusScope
   Behavior on opacity
   {
     NumberAnimation { duration: 150 }
+  }
+
+  onModalChanged:
+  {
+    if (cfg)
+      cfg.grabKeyboard("update", modal)
   }
 
   onUpdateStateChanged:

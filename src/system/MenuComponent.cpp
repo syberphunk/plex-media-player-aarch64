@@ -16,6 +16,7 @@
 #include "utils/Utils.h"
 
 #define SETTING_MENU_KEY "menuKey"
+#define SETTING_MENU_BUTTON "menuButton"
 #define SETTING_MENU_TEXT_SCALE "menuTextScale"
 #define SETTING_MENU_HIGH_CONTRAST "menuHighContrast"
 #define SETTING_DOWNLOAD_DIR "downloadDir"
@@ -24,6 +25,10 @@
 #define MAP_NAME "Plex Media Player Menu"
 #define MAP_IDMATCHER "^Keyboard"
 #define MAP_FILE "inputmaps/menu.json"
+
+#define PAD_MAP_NAME "Plex Media Player Menu Button"
+#define PAD_MAP_IDMATCHER "^(?!Keyboard|socket|roku|LIRC|CEC)"
+#define PAD_MAP_FILE "inputmaps/menu-gamepad.json"
 
 namespace
 {
@@ -43,6 +48,7 @@ namespace
       { "downloads", SETTING_DOWNLOAD_DIR, QString() },
       { "downloads", SETTING_DOWNLOAD_ASK, false },
       { "keys", SETTING_MENU_KEY, QString("F1") },
+      { "keys", SETTING_MENU_BUTTON, QString("KEY_BUTTON_7") },
       { "display", SETTING_MENU_TEXT_SCALE, QString("normal") },
       { "display", SETTING_MENU_HIGH_CONTRAST, false },
     };
@@ -69,6 +75,20 @@ namespace
     text.replace(QLatin1String("\\/"), QLatin1String("/"));
     text.replace(QLatin1String("\\-"), QLatin1String("-"));
     return text;
+  }
+
+  QString padLabel(const QString& trigger)
+  {
+    static const QMap<QString, QString> names = {
+      { "KEY_BUTTON_0", "A" },  { "KEY_BUTTON_1", "B" },    { "KEY_BUTTON_2", "X" },
+      { "KEY_BUTTON_3", "Y" },  { "KEY_BUTTON_4", "LB" },   { "KEY_BUTTON_5", "RB" },
+      { "KEY_BUTTON_6", "Back" }, { "KEY_BUTTON_7", "Start" },
+    };
+
+    if (names.contains(trigger))
+      return QString("%1 (%2)").arg(trigger, names.value(trigger));
+
+    return trigger;
   }
 
   bool plainKey(const QString& pattern)
@@ -106,7 +126,7 @@ void MenuComponent::onSettingsChanged(const QString& section, const QVariantMap&
   if (section != SETTINGS_SECTION_MAIN)
     return;
 
-  if (values.contains(SETTING_MENU_KEY))
+  if (values.contains(SETTING_MENU_KEY) || values.contains(SETTING_MENU_BUTTON))
   {
     writeInputMap();
     loadKeyBindings();
@@ -152,6 +172,26 @@ QString MenuComponent::menuKey() const
 {
   const QString key = SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_MENU_KEY).toString();
   return key.isEmpty() ? QString("F1") : key;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QString MenuComponent::menuButton() const
+{
+  return SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_MENU_BUTTON).toString();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void MenuComponent::grabKeyboard(const QString& owner, bool grab)
+{
+  const bool was = keyboardGrabbed();
+
+  if (grab)
+    m_grabbers.insert(owner);
+  else
+    m_grabbers.remove(owner);
+
+  if (keyboardGrabbed() != was)
+    emit keyboardGrabbedChanged();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -320,16 +360,25 @@ void MenuComponent::writeInputMap()
     return;
   }
 
+  writeMapFile(MAP_FILE, MAP_NAME, MAP_IDMATCHER, menuKey());
+  writeMapFile(PAD_MAP_FILE, PAD_MAP_NAME, PAD_MAP_IDMATCHER, menuButton());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void MenuComponent::writeMapFile(const QString& relPath, const QString& name, const QString& idmatcher,
+                                 const QString& trigger)
+{
   QJsonObject mapping;
-  mapping[menuKey()] = QString("host:showMenu");
+  if (!trigger.isEmpty())
+    mapping[trigger] = QString("host:showMenu");
 
   QJsonObject root;
-  root["name"] = QString(MAP_NAME);
-  root["idmatcher"] = QString(MAP_IDMATCHER);
+  root["name"] = name;
+  root["idmatcher"] = idmatcher;
   root["mapping"] = mapping;
 
   const QByteArray data = QJsonDocument(root).toJson(QJsonDocument::Indented);
-  const QString path = Paths::dataDir(MAP_FILE);
+  const QString path = Paths::dataDir(relPath);
 
   QFile existing(path);
   if (existing.open(QIODevice::ReadOnly))
@@ -351,7 +400,7 @@ void MenuComponent::writeInputMap()
   file.write(data);
   file.close();
 
-  QLOG_INFO() << "Menu key bound to" << menuKey();
+  QLOG_INFO() << name << "bound to" << (trigger.isEmpty() ? QString("nothing") : trigger);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -391,4 +440,13 @@ void MenuComponent::loadKeyBindings()
   menuEntry["key"] = menuKey();
   menuEntry["action"] = QString("this menu");
   m_keyBindings.prepend(menuEntry);
+
+  const QString button = menuButton();
+  if (!button.isEmpty())
+  {
+    QVariantMap padEntry;
+    padEntry["key"] = padLabel(button);
+    padEntry["action"] = QString("this menu (gamepad)");
+    m_keyBindings.insert(1, padEntry);
+  }
 }

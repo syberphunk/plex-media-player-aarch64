@@ -7,6 +7,7 @@
 #include "settings/SettingsComponent.h"
 #include "input/InputComponent.h"
 #include "input/InputKeyboard.h"
+#include "system/MenuComponent.h"
 #include "KonvergoWindow.h"
 
 #include <QGuiApplication>
@@ -165,6 +166,14 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
       return QObject::eventFilter(watched, event);
 
     QString keyName = keyEventToKeyString(kevent);
+
+    MenuComponent& menu = MenuComponent::Get();
+    if (menu.keyboardGrabbed() && keyName != menu.menuKey())
+    {
+      m_currentKeyDown = -1;
+      InputComponent::Get().cancelAutoRepeat();
+      return QObject::eventFilter(watched, event);
+    }
 
     if (belongsToTextEntry(kevent) && textEntryFocused())
     {

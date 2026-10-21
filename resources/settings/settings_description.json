@@ -132,6 +132,21 @@
         ]
       },
       {
+        "value": "menuButton",
+        "default": "KEY_BUTTON_7",
+        "hidden": true,
+        "possible_values": [
+          [ "KEY_BUTTON_7", "KEY_BUTTON_7" ],
+          [ "KEY_BUTTON_6", "KEY_BUTTON_6" ],
+          [ "KEY_BUTTON_2", "KEY_BUTTON_2" ],
+          [ "KEY_BUTTON_3", "KEY_BUTTON_3" ],
+          [ "KEY_BUTTON_8", "KEY_BUTTON_8" ],
+          [ "KEY_BUTTON_9", "KEY_BUTTON_9" ],
+          [ "KEY_BUTTON_10", "KEY_BUTTON_10" ],
+          [ "", "" ]
+        ]
+      },
+      {
         "value": "menuTextScale",
         "default": "normal",
         "hidden": true,
@@ -187,6 +202,11 @@
       {
         "value": "forceAlwaysFS",
         "default": false,
+        "hidden": true
+      },
+      {
+        "value": "sdlEnabled",
+        "default": true,
         "hidden": true
       }
     ]

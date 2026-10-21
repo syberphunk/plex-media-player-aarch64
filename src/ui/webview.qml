@@ -176,6 +176,9 @@ KonvergoWindow
       else if (loadRequest.status == WebEngineLoadingInfo.LoadSucceededStatus)
       {
         console.log("WebEngineLoadRequest success: " + loadRequest.url);
+
+        if (!mainWindow.webDesktopMode)
+          components.system.setCursorVisibility(false)
       }
       else if (loadRequest.status == WebEngineLoadingInfo.LoadFailedStatus)
       {
@@ -260,6 +263,54 @@ KonvergoWindow
     z: 9
     anchors.fill: parent
     onClosed: web.forceActiveFocus()
+  }
+
+  Rectangle
+  {
+    id: menuHandle
+    z: 7
+
+    readonly property real u: Math.max(0.6, Math.min(2.0, mainWindow.height / 1080))
+    readonly property real scale_: components.menu ? components.menu.textScale : 1.0
+
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.rightMargin: Math.round(28 * u)
+    anchors.bottomMargin: Math.round(28 * u)
+
+    width: handleLabel.width + Math.round(32 * u)
+    height: handleLabel.height + Math.round(20 * u)
+    radius: height / 2
+    color: handleArea.containsMouse ? "#E08B20" : "#22252B"
+    border.color: handleArea.containsMouse ? "#E08B20" : "#767E8A"
+    border.width: Math.max(1, Math.round(1.5 * u))
+
+    visible: opacity > 0
+    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.modal) ? 1 : 0
+
+    Behavior on opacity
+    {
+      NumberAnimation { duration: 120 }
+    }
+
+    Text
+    {
+      id: handleLabel
+      anchors.centerIn: parent
+      text: "Player settings"
+      color: handleArea.containsMouse ? "#101216" : "#ECEEF1"
+      font.pixelSize: Math.round(20 * menuHandle.u * menuHandle.scale_)
+      font.bold: true
+    }
+
+    MouseArea
+    {
+      id: handleArea
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: components.menu.show()
+    }
   }
 
   Connections

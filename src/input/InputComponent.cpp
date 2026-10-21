@@ -8,6 +8,10 @@
 #include "InputSocket.h"
 #include "InputRoku.h"
 
+#ifdef HAVE_SDL
+#include "InputSDL.h"
+#endif
+
 #ifdef HAVE_LIRC
 #include "InputLIRC.h"
 #endif
@@ -99,6 +103,10 @@ bool InputComponent::componentInitialize()
   addInput(new InputSocket(this));
   addInput(new InputRoku(this));
 
+#ifdef HAVE_SDL
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "sdlEnabled").toBool())
+    addInput(new InputSDL(this));
+#endif
 #ifdef HAVE_LIRC
   addInput(new InputLIRC(this));
 #endif
