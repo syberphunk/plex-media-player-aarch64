@@ -11,8 +11,6 @@ else(FULL_GIT_REVISION STREQUAL "GITDIR-NOTFOUND")
   string(SUBSTRING ${FULL_GIT_REVISION} 0 8 GIT_REVISION)
 endif(FULL_GIT_REVISION STREQUAL "GITDIR-NOTFOUND")
 
-# Get the release tag if the build was made from one. flatpak-builder passes no
-# environment into the build, so the tag arrives in a file written by release.sh.
 if(NOT DEFINED RELEASE_TAG)
   if(EXISTS "${CMAKE_SOURCE_DIR}/.release-tag")
     file(READ "${CMAKE_SOURCE_DIR}/.release-tag" RELEASE_TAG)

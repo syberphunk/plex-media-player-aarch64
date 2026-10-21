@@ -267,7 +267,6 @@ KonvergoWindow
     target: web.profile
     ignoreUnknownSignals: true
 
-    // Qt cancels any download that is not explicitly accepted.
     function onDownloadRequested(download)
     {
       var menu = components.menu

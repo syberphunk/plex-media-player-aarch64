@@ -210,8 +210,6 @@ fi
 echo
 echo "==> step 3/6: building"
 
-# The app compares this tag against the release feed, so only a build that is
-# going to be published as a release carries one.
 TAG_FILE="$REPO_ROOT/.release-tag"
 rm -f "$TAG_FILE"
 if [ -n "${RELEASE_TAG:-}" ]; then

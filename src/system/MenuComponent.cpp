@@ -27,8 +27,6 @@
 
 namespace
 {
-  // Keys we own in the main section, with the defaults from
-  // resources/settings/settings_description.json.
   struct Default
   {
     const char* group;
@@ -88,8 +86,6 @@ MenuComponent::MenuComponent(QObject* parent) : ComponentBase(parent)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 bool MenuComponent::componentInitialize()
 {
-  // This runs before InputComponent loads its mappings, so the file is in place
-  // the first time around and no reload is needed to make the menu key work.
   writeInputMap();
   loadKeyBindings();
   return true;
@@ -247,7 +243,6 @@ bool MenuComponent::ensureWritable(const QString& path) const
   if (!dir.exists() && !dir.mkpath("."))
     return false;
 
-  // isWritable() on a sandbox mount point can be optimistic, so write something.
   QTemporaryFile probe(dir.filePath(".plex-write-probe-XXXXXX"));
   return probe.open();
 }
@@ -266,7 +261,6 @@ bool MenuComponent::applyDownloadDir(const QString& path)
   if (target.startsWith("~/"))
     target = QDir::homePath() + target.mid(1);
 
-  // An empty path means "use the default download folder".
   if (!target.isEmpty() && !ensureWritable(target))
   {
     m_downloadStatus = QString("Cannot write to %1").arg(target);
@@ -343,7 +337,6 @@ void MenuComponent::writeInputMap()
     const bool same = existing.readAll() == data;
     existing.close();
 
-    // Rewriting the file would make the input watcher reload for nothing.
     if (same)
       return;
   }
@@ -381,7 +374,6 @@ void MenuComponent::loadKeyBindings()
     if (!plainKey(it.key()))
       continue;
 
-    // Long-press entries are objects, the short action is the interesting one.
     const QString action = it.value().typeId() == QMetaType::QVariantMap
                              ? it.value().toMap().value("short").toString()
                              : it.value().toString();

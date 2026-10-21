@@ -33,7 +33,6 @@ FocusScope
   readonly property string track:      contrast ? "#000000" : "#2A2E35"
   readonly property string rule:       contrast ? "#FFFFFF" : "#2F333A"
 
-  // The pending download when "ask every time" is on.
   property var pendingDownload: null
   property string pendingName: ""
 
@@ -88,8 +87,6 @@ FocusScope
     return Math.round(size * menu.u * menu.fontScale)
   }
 
-  // Tab order is the navigation order, but it must not walk out of the sheet
-  // and into the web view behind it.
   function step(item, forward)
   {
     var next = item.nextItemInFocusChain(forward)
@@ -107,8 +104,6 @@ FocusScope
     }
   }
 
-  // Keeps the item that just took focus inside the visible part of the list.
-  // Controls outside the list, in the footer or the download bar, scroll nothing.
   function reveal(item)
   {
     var probe = item
@@ -189,7 +184,6 @@ FocusScope
     cfg.applyDownloadDir(value === "appdata" ? cfg.presetPath("appdata") : "")
   }
 
-  // Called from webview.qml when a download needs the user's say-so.
   function askDownload(request)
   {
     pendingDownload = request
@@ -457,7 +451,6 @@ FocusScope
   {
     id: pick
 
-    // Each entry is { value: "...", label: "..." }
     property var options: []
     property string current: ""
     property string currentLabel: ""
@@ -598,7 +591,6 @@ FocusScope
       font.pixelSize: menu.fontPx(24)
     }
 
-    // The bar that appears when a download is waiting for an answer.
     Card
     {
       id: askBar
@@ -1205,7 +1197,6 @@ FocusScope
     }
   }
 
-  // The list a picker opens.
   FocusScope
   {
     id: picker

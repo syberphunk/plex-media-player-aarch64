@@ -60,7 +60,6 @@ void ComponentManager::initialize()
   auto server = new HttpServer(this);
   server->start();
 
-  // before the input component, it writes the input map for the menu key
   registerComponent(&MenuComponent::Get());
 
   registerComponent(&InputComponent::Get());
