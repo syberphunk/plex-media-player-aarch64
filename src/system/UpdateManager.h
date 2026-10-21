@@ -75,6 +75,14 @@ public:
   };
   Q_ENUM(CheckStatus)
 
+  enum RepoAnswer
+  {
+    RepoUnknown = 0,
+    RepoCurrent = 1,
+    RepoAhead = 2
+  };
+  Q_ENUM(RepoAnswer)
+
   int state() const { return m_state; }
   bool checkEnabled() const;
   bool needsPermission() const { return m_needsPermission; }
@@ -135,16 +143,22 @@ private:
   void applyFailed(const QString& name, const QString& message);
   void setNotesStatus(NotesStatus status);
   void setCheckStatus(CheckStatus status, const QString& message = QString());
+  void runCheck(bool userCheck);
   void fetchRelease(bool userCheck);
   void startNotesRequest(bool allowHttp2);
   void scheduleChecks();
   bool cadenceDue() const;
   void considerRelease(const QString& tag, bool userCheck);
+  QString repoStateUrl() const;
+  bool fetchRepoState(bool userCheck);
+  void startStateRequest(bool allowHttp2);
+  void considerCommit(const QString& commit, const QString& tag, bool userCheck);
 
   Q_SLOT void onSettingsChanged(const QString& section, const QVariantMap& values);
   Q_SLOT void onUpdateAvailable(const QVariantMap& info);
   Q_SLOT void onProgress(const QVariantMap& info);
   Q_SLOT void onNotesFinished();
+  Q_SLOT void onStateFinished();
 
   State m_state = StateIdle;
   NotesStatus m_notesStatus = NotesIdle;
@@ -155,6 +169,11 @@ private:
   bool m_infoVisible = false;
   bool m_userCheck = false;
   bool m_notesRetried = false;
+  bool m_stateUserCheck = false;
+  bool m_stateRetried = false;
+  RepoAnswer m_repoAnswer = RepoUnknown;
+  QString m_repoCommit;
+  QString m_repoTag;
   QString m_appId;
   QString m_appCommit;
   QString m_monitorPath;
@@ -176,6 +195,7 @@ private:
 
   QNetworkAccessManager* m_network = nullptr;
   QNetworkReply* m_notesReply = nullptr;
+  QNetworkReply* m_stateReply = nullptr;
 };
 
 #endif // UPDATEMANAGER_H

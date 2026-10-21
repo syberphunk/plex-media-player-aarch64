@@ -109,6 +109,11 @@
         "hidden": true
       },
       {
+        "value": "updateRepoUrl",
+        "default": "",
+        "hidden": true
+      },
+      {
         "value": "downloadDir",
         "default": "",
         "hidden": true

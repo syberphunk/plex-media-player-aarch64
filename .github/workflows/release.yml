@@ -130,6 +130,7 @@ jobs:
       - name: Stage the repository for Pages
         env:
           OWNER: ${{ github.repository_owner }}
+          RELEASE_TAG: ${{ steps.args.outputs.tag }}
         run: |
           set -eu
           ./scripts/stage-pages.sh "$(dirname "$GITHUB_WORKSPACE")/fp-repo" \

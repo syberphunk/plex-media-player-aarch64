@@ -38,6 +38,19 @@ flatpak build-update-repo "${GPG_ARGS[@]}" --generate-static-deltas --prune "$OU
 
 touch "$OUT/.nojekyll"
 
+APP_REF=app/$APP_ID/aarch64/master
+APP_COMMIT=$(ostree --repo="$OUT" rev-parse "$APP_REF")
+[ -n "$APP_COMMIT" ] || { echo "no commit for $APP_REF in $OUT" >&2; exit 1; }
+
+cat > "$OUT/update.json" <<EOF
+{
+  "ref": "$APP_REF",
+  "commit": "$APP_COMMIT",
+  "tag": "${RELEASE_TAG:-}",
+  "published": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+
 cat > "$OUT/$APP_ID.flatpakref" <<EOF
 [Flatpak Ref]
 Name=$APP_ID

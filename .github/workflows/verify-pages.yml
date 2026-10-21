@@ -50,3 +50,23 @@ jobs:
             echo "    present  /app/bin/plexmediaplayer"
           '
           flatpak info --user io.github.syberphunk.PlexMediaPlayer
+
+      - name: Check the update manifest
+        env:
+          URL: ${{ inputs.url }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -eu
+          url=${URL:-https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}/}
+          curl -fsSL "${url%/}/update.json" -o update.json
+          cat update.json
+          commit=$(flatpak info --user --show-commit io.github.syberphunk.PlexMediaPlayer)
+          python3 -c '
+          import json, sys
+          state = json.load(open("update.json"))
+          if state["commit"] != sys.argv[1]:
+              sys.exit("update.json names %s, installed %s" % (state["commit"], sys.argv[1]))
+          if not state["tag"]:
+              sys.exit("update.json names no tag")
+          print("    matches  %s %s" % (state["tag"], state["commit"]))
+          ' "$commit"

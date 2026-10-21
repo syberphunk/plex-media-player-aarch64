@@ -41,10 +41,15 @@
 #define SETTING_UPDATE_SKIPPED "updateSkipped"
 #define SETTING_UPDATE_CADENCE "updateCadence"
 #define SETTING_UPDATE_LAST_CHECK "updateLastCheck"
+#define SETTING_UPDATE_REPO_URL "updateRepoUrl"
 
 #define RELEASE_API_URL "https://api.github.com/repos/syberphunk/plex-media-player-aarch64/releases/latest"
 #define RELEASE_NOTES_LIMIT (256 * 1024)
 #define RELEASE_NOTES_TIMEOUT 15000
+
+#define REPO_STATE_URL "https://syberphunk.github.io/plex-media-player-aarch64/update.json"
+#define REPO_STATE_LIMIT (16 * 1024)
+#define REPO_STATE_TIMEOUT 15000
 
 #define CHECK_INTERVAL_MS (6 * 60 * 60 * 1000)
 #define CHECK_STARTUP_DELAY_MS 4000
@@ -91,6 +96,17 @@ namespace
     }
 
     return false;
+  }
+
+  bool predatesBuild(const QString& published)
+  {
+    const QDate stamp = QDateTime::fromString(published, Qt::ISODate).date();
+    const QDate built = QDate::fromString(Version::GetBuildDate(), "yyyy-MM-dd");
+
+    if (!stamp.isValid() || !built.isValid())
+      return false;
+
+    return stamp < built;
   }
 
   QVariantList blockify(const QString& markdown)
@@ -291,7 +307,7 @@ void UpdateManager::scheduleChecks()
     connect(m_checkTimer, &QTimer::timeout, this, [this]()
     {
       if (checkEnabled() && cadenceDue())
-        fetchRelease(false);
+        runCheck(false);
     });
   }
 
@@ -307,14 +323,23 @@ void UpdateManager::scheduleChecks()
     QTimer::singleShot(CHECK_STARTUP_DELAY_MS, this, [this]()
     {
       if (checkEnabled())
-        fetchRelease(false);
+        runCheck(false);
     });
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::runCheck(bool userCheck)
+{
+  if (fetchRepoState(userCheck))
+    return;
+
+  fetchRelease(userCheck);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void UpdateManager::checkNow()
 {
-  fetchRelease(true);
+  runCheck(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -646,7 +671,11 @@ void UpdateManager::onUpdateAvailable(const QVariantMap& info)
     return;
   }
 
-  m_availableVersion = m_availableTag.isEmpty() ? shortCommit(m_remoteCommit) : m_availableTag;
+  if (!m_repoTag.isEmpty() && m_repoCommit == m_remoteCommit)
+    m_availableVersion = m_repoTag;
+  else
+    m_availableVersion = m_availableTag.isEmpty() ? shortCommit(m_remoteCommit) : m_availableTag;
+
   emit availableVersionChanged();
   setState(StateAvailable);
 
@@ -679,7 +708,7 @@ void UpdateManager::onProgress(const QVariantMap& info)
         break;
       }
 
-      const QString name = !m_availableTag.isEmpty() ? m_availableTag : m_availableVersion;
+      const QString name = !m_availableVersion.isEmpty() ? m_availableVersion : m_availableTag;
       m_errorMessage = name.isEmpty()
                          ? QString("The remote this copy was installed from had nothing to install")
                          : QString("%1 is published, but the remote this copy was installed from "
@@ -711,6 +740,219 @@ void UpdateManager::fetchReleaseNotes()
     return;
 
   fetchRelease(false);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QString UpdateManager::repoStateUrl() const
+{
+  const QString configured =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_REPO_URL).toString();
+
+  return configured.isEmpty() ? QString(REPO_STATE_URL) : configured;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool UpdateManager::fetchRepoState(bool userCheck)
+{
+  if (m_appCommit.isEmpty())
+  {
+    QLOG_INFO() << "No sandbox commit to compare, leaving detection to the release feed";
+    m_repoAnswer = RepoUnknown;
+    return false;
+  }
+
+  if (m_stateReply)
+  {
+    if (userCheck)
+      setCheckStatus(CheckBusy, QString("Checking for updates"));
+    return true;
+  }
+
+  const QUrl url(repoStateUrl());
+  if (!url.isValid() || url.scheme() != QLatin1String("https"))
+  {
+    QLOG_ERROR() << "Refusing to read the update remote over" << url.scheme();
+    m_repoAnswer = RepoUnknown;
+    return false;
+  }
+
+  m_stateRetried = false;
+  m_stateUserCheck = userCheck;
+  startStateRequest(true);
+
+  setCheckStatus(CheckBusy, QString("Checking for updates"));
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::startStateRequest(bool allowHttp2)
+{
+  const QUrl url(repoStateUrl());
+
+  if (!m_network)
+    m_network = new QNetworkAccessManager(this);
+
+  QNetworkRequest request(url);
+  request.setRawHeader("Accept", "application/json");
+  request.setRawHeader("User-Agent", SystemComponent::Get().getUserAgent().toUtf8());
+  request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                       QNetworkRequest::NoLessSafeRedirectPolicy);
+  request.setAttribute(QNetworkRequest::Http2AllowedAttribute, allowHttp2);
+  request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                       QNetworkRequest::AlwaysNetwork);
+  request.setTransferTimeout(REPO_STATE_TIMEOUT);
+
+  m_stateReply = m_network->get(request);
+  connect(m_stateReply, &QNetworkReply::finished, this, &UpdateManager::onStateFinished);
+  connect(m_stateReply, &QNetworkReply::readyRead, this, [this]() {
+    if (m_stateReply && m_stateReply->bytesAvailable() > REPO_STATE_LIMIT)
+    {
+      QLOG_WARN() << "Update remote state exceeds" << REPO_STATE_LIMIT << "bytes, aborting";
+      m_stateReply->abort();
+    }
+  });
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::onStateFinished()
+{
+  QNetworkReply* reply = m_stateReply;
+  m_stateReply = nullptr;
+  if (!reply)
+    return;
+
+  reply->deleteLater();
+
+  const bool userCheck = m_stateUserCheck;
+  m_stateUserCheck = false;
+
+  if (reply->error() != QNetworkReply::NoError)
+  {
+    QLOG_WARN() << "Update remote state request failed:" << reply->errorString();
+
+    if (!m_stateRetried && reply->error() != QNetworkReply::OperationCanceledError)
+    {
+      m_stateRetried = true;
+      m_stateUserCheck = userCheck;
+      QLOG_INFO() << "Retrying the update remote state without HTTP/2";
+      startStateRequest(false);
+      return;
+    }
+
+    m_repoAnswer = RepoUnknown;
+    fetchRelease(userCheck);
+    return;
+  }
+
+  const QByteArray body = reply->read(REPO_STATE_LIMIT);
+  QJsonParseError error;
+  const QJsonDocument document = QJsonDocument::fromJson(body, &error);
+  if (error.error != QJsonParseError::NoError || !document.isObject())
+  {
+    QLOG_WARN() << "Update remote state is not an object:" << error.errorString();
+    m_repoAnswer = RepoUnknown;
+    fetchRelease(userCheck);
+    return;
+  }
+
+  const QJsonObject state = document.object();
+  const QString ref = state.value("ref").toString();
+  const QString commit = state.value("commit").toString();
+  const QString tag = state.value("tag").toString();
+  const QString published = state.value("published").toString();
+
+  if (!ref.isEmpty() && !m_appId.isEmpty() && !ref.contains(m_appId))
+  {
+    QLOG_WARN() << "Update remote state names" << ref << "not" << m_appId;
+    m_repoAnswer = RepoUnknown;
+    fetchRelease(userCheck);
+    return;
+  }
+
+  if (commit.isEmpty())
+  {
+    QLOG_WARN() << "Update remote state names no commit";
+    m_repoAnswer = RepoUnknown;
+    fetchRelease(userCheck);
+    return;
+  }
+
+  if (predatesBuild(published))
+  {
+    QLOG_INFO() << "Update remote state from" << published << "predates this build, built"
+                << Version::GetBuildDate();
+    m_repoAnswer = RepoCurrent;
+
+    if (m_state == StateIdle)
+      setCheckStatus(CheckUpToDate, QString("%1 is newer than the update remote")
+                                      .arg(installedVersion()));
+
+    fetchReleaseNotes();
+    return;
+  }
+
+  considerCommit(commit, tag, userCheck);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void UpdateManager::considerCommit(const QString& commit, const QString& tag, bool userCheck)
+{
+  m_repoCommit = commit;
+  m_repoTag = tag;
+
+  SettingsComponent::Get().setValue(SETTINGS_SECTION_MAIN, SETTING_UPDATE_LAST_CHECK,
+                                    QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+  if (commit == m_appCommit)
+  {
+    m_repoAnswer = RepoCurrent;
+    QLOG_INFO() << "Update remote carries" << shortCommit(commit) << "which is what is running";
+
+    if (m_state == StateIdle)
+      setCheckStatus(CheckUpToDate, QString("%1 is the latest build on the update remote")
+                                      .arg(installedVersion()));
+
+    fetchReleaseNotes();
+    return;
+  }
+
+  m_repoAnswer = RepoAhead;
+  m_runningCommit = m_appCommit;
+  m_remoteCommit = commit;
+
+  QLOG_INFO() << "Update remote carries" << shortCommit(commit) << "against running"
+              << shortCommit(m_appCommit) << "tag" << (tag.isEmpty() ? QString("none") : tag);
+
+  if (m_state == StateUpdating || m_state == StateDone)
+    return;
+
+  if (!m_localCommit.isEmpty() && m_localCommit == commit && m_localCommit != m_appCommit)
+  {
+    m_availableVersion = tag.isEmpty() ? shortCommit(commit) : tag;
+    emit availableVersionChanged();
+    setCheckStatus(CheckIdle);
+    setState(StateDone);
+    fetchReleaseNotes();
+    return;
+  }
+
+  const QString skipped =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_UPDATE_SKIPPED).toString();
+
+  if (!skipped.isEmpty() && !userCheck && (skipped == commit || (!tag.isEmpty() && skipped == tag)))
+  {
+    QLOG_INFO() << "Skipping" << shortCommit(commit) << "at the user's request";
+    setCheckStatus(CheckIdle, QString("%1 was skipped")
+                                .arg(tag.isEmpty() ? shortCommit(commit) : tag));
+    return;
+  }
+
+  m_availableVersion = tag.isEmpty() ? shortCommit(commit) : tag;
+  emit availableVersionChanged();
+  setCheckStatus(CheckIdle);
+  setState(StateAvailable);
+
+  fetchReleaseNotes();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -832,11 +1074,14 @@ void UpdateManager::onNotesFinished()
 
   if (m_state == StateAvailable || m_state == StateUpdating || m_state == StateDone)
   {
-    m_availableVersion = tag;
+    m_availableVersion = m_repoTag.isEmpty() ? tag : m_repoTag;
     emit availableVersionChanged();
     setCheckStatus(CheckIdle);
     return;
   }
+
+  if (m_repoAnswer != RepoUnknown)
+    return;
 
   considerRelease(tag, userCheck);
 }
@@ -929,7 +1174,7 @@ void UpdateManager::skipVersion()
 {
   hideInfo();
 
-  const QString mark = !m_availableTag.isEmpty() ? m_availableTag : m_remoteCommit;
+  const QString mark = !m_remoteCommit.isEmpty() ? m_remoteCommit : m_availableTag;
 
   if (mark.isEmpty())
   {
