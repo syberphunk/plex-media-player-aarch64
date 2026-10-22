@@ -7,6 +7,7 @@ namespace Version
   QString GetReleaseTag();
   QString GetCanonicalVersionString();
   QString GetBuildDate();
+  QString GetBuildTimestamp();
   QString GetWebVersion();
   QString GetQtDepsVersion();
   QString GetDependenciesVersion();

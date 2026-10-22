@@ -1,6 +1,7 @@
 # Get the current date.
 # include(WebClientVariables)
 string(TIMESTAMP CURRENT_DATE "%Y-%m-%d")
+string(TIMESTAMP CURRENT_TIMESTAMP "%Y-%m-%dT%H:%M:%SZ" UTC)
 
 # Get git revision version
 include(GetGitRevisionDescription)

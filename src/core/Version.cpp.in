@@ -23,6 +23,11 @@ QString Version::GetBuildDate()
   return QString("@CURRENT_DATE@");
 }
 
+QString Version::GetBuildTimestamp()
+{
+  return QString("@CURRENT_TIMESTAMP@");
+}
+
 QString Version::GetWebVersion()
 {
   return QString("@WEB_CLIENT_VERSTR@");

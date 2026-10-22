@@ -100,13 +100,21 @@ namespace
 
   bool predatesBuild(const QString& published)
   {
-    const QDate stamp = QDateTime::fromString(published, Qt::ISODate).date();
-    const QDate built = QDate::fromString(Version::GetBuildDate(), "yyyy-MM-dd");
-
-    if (!stamp.isValid() || !built.isValid())
+    const QDateTime stamp = QDateTime::fromString(published, Qt::ISODate);
+    if (!stamp.isValid())
       return false;
 
-    return stamp < built;
+    const QDateTime built = QDateTime::fromString(Version::GetBuildTimestamp(), Qt::ISODate);
+    if (built.isValid())
+      return stamp < built;
+
+    const QDate stampDay = stamp.date();
+    const QDate builtDay = QDate::fromString(Version::GetBuildDate(), "yyyy-MM-dd");
+
+    if (!stampDay.isValid() || !builtDay.isValid())
+      return false;
+
+    return stampDay < builtDay;
   }
 
   QVariantList blockify(const QString& markdown)
@@ -880,7 +888,8 @@ void UpdateManager::onStateFinished()
   if (predatesBuild(published))
   {
     QLOG_INFO() << "Update remote state from" << published << "predates this build, built"
-                << Version::GetBuildDate();
+                << (Version::GetBuildTimestamp().isEmpty() ? Version::GetBuildDate()
+                                                           : Version::GetBuildTimestamp());
     m_repoAnswer = RepoCurrent;
 
     if (m_state == StateIdle)
