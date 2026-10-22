@@ -48,6 +48,23 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.18" date="2026-10-22">
+      <description>
+        <p>Changed:</p>
+        <ul>
+          <li>The settings menu and the update prompt take all keyboard, gamepad and
+              mouse input while they are open, so the Plex interface behind them no
+              longer responds.</li>
+        </ul>
+        <p>Fixed:</p>
+        <ul>
+          <li>An update is no longer offered when the installed build is newer than the
+              published release. The comparison uses the build's time of day as well as
+              its date.</li>
+          <li>The provider list sends the storage feature only in its JSON form.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.17" date="2026-10-22">
       <description>
         <p>Added:</p>
