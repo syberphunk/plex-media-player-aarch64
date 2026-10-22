@@ -124,6 +124,7 @@ private:
   void handleAction(const QString& action);
   QStringList throttleActions(const QStringList& actions, bool inPlayback);
   void dispatchActions(const QStringList& actions);
+  void dispatchToOverlay(const QStringList& actions);
 
   QHash<QString, ReceiverSlot*> m_hostCommands;
   QList<InputBase*> m_inputs;

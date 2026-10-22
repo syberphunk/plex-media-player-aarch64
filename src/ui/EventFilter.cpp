@@ -165,6 +165,9 @@ bool EventFilter::eventFilter(QObject* watched, QEvent* event)
     if (!kevent)
       return QObject::eventFilter(watched, event);
 
+    if (!kevent->spontaneous())
+      return QObject::eventFilter(watched, event);
+
     QString keyName = keyEventToKeyString(kevent);
 
     MenuComponent& menu = MenuComponent::Get();

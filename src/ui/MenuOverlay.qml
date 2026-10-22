@@ -554,7 +554,13 @@ FocusScope
     MouseArea
     {
       anchors.fill: parent
-      onClicked: menu.dismiss()
+      hoverEnabled: true
+      acceptedButtons: Qt.AllButtons
+      onClicked: (mouse) =>
+      {
+        if (mouse.button === Qt.LeftButton)
+          menu.dismiss()
+      }
     }
   }
 

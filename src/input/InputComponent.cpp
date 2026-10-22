@@ -2,11 +2,17 @@
 #include "InputComponent.h"
 #include "settings/SettingsComponent.h"
 #include "system/SystemComponent.h"
+#include "system/MenuComponent.h"
 #include "power/PowerComponent.h"
 #include "player/PlayerComponent.h"
+#include "core/Globals.h"
+#include "ui/KonvergoWindow.h"
 #include "InputKeyboard.h"
 #include "InputSocket.h"
 #include "InputRoku.h"
+
+#include <QCoreApplication>
+#include <QKeyEvent>
 
 #ifdef HAVE_SDL
 #include "InputSDL.h"
@@ -50,6 +56,21 @@ static bool actionRepeats(const QString& action)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+static int overlayKey(const QString& action)
+{
+  static const QHash<QString, int> keys = {
+    { "up", Qt::Key_Up },
+    { "down", Qt::Key_Down },
+    { "left", Qt::Key_Left },
+    { "right", Qt::Key_Right },
+    { "enter", Qt::Key_Return },
+    { "back", Qt::Key_Escape },
+  };
+
+  return keys.value(action, 0);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 InputComponent::InputComponent(QObject* parent) : ComponentBase(parent), m_lastSourceSeen(0)
 {
   m_mappings = new InputMapping(this);
@@ -66,8 +87,7 @@ InputComponent::InputComponent(QObject* parent) : ComponentBase(parent), m_lastS
       return;
     }
 
-    QLOG_DEBUG() << "Emit input action (autorepeat):" << m_autoRepeatActions;
-    emit hostInput(m_autoRepeatActions);
+    dispatchActions(m_autoRepeatActions);
 
     m_autoRepeatTimer->setInterval(AUTOREPEAT_MSEC);
   });
@@ -312,6 +332,12 @@ void InputComponent::dispatchActions(const QStringList& actions)
   if (webActions.isEmpty())
     return;
 
+  if (MenuComponent::Get().keyboardGrabbed())
+  {
+    dispatchToOverlay(webActions);
+    return;
+  }
+
   if (SystemComponent::Get().isWebClientConnected())
   {
     QLOG_DEBUG() << "Emit input action:" << webActions;
@@ -321,6 +347,31 @@ void InputComponent::dispatchActions(const QStringList& actions)
   {
     QLOG_DEBUG() << "Web Client has not connected, handling input in host instead.";
     executeActions(webActions);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+void InputComponent::dispatchToOverlay(const QStringList& actions)
+{
+  KonvergoWindow* window = Globals::MainWindow();
+
+  for (const auto& action : actions)
+  {
+    const int key = overlayKey(action);
+
+    if (!window || !key)
+    {
+      QLOG_DEBUG() << "Overlay holds the input, dropped action:" << action;
+      continue;
+    }
+
+    QLOG_DEBUG() << "Overlay holds the input, action as key:" << action;
+
+    QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+    QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+
+    QCoreApplication::sendEvent(window, &press);
+    QCoreApplication::sendEvent(window, &release);
   }
 }
 

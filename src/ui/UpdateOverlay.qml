@@ -56,6 +56,7 @@ FocusScope
                                      && (updateState === stateManual || updateState === stateFailed)
 
   readonly property bool modal: showNotes || showConfirm || showProgress || showDone || showManual
+  readonly property bool captures: modal || showBanner
 
   signal closed()
 
@@ -67,10 +68,10 @@ FocusScope
     NumberAnimation { duration: 150 }
   }
 
-  onModalChanged:
+  onCapturesChanged:
   {
     if (cfg)
-      cfg.grabKeyboard("update", modal)
+      cfg.grabKeyboard("update", captures)
   }
 
   onUpdateStateChanged:
@@ -246,12 +247,19 @@ FocusScope
   {
     anchors.fill: parent
     color: "black"
-    opacity: 0.72
-    visible: overlay.modal
+    opacity: overlay.modal ? 0.72 : 0
+    visible: overlay.captures
+
+    Behavior on opacity
+    {
+      NumberAnimation { duration: 150 }
+    }
 
     MouseArea
     {
       anchors.fill: parent
+      hoverEnabled: true
+      acceptedButtons: Qt.AllButtons
     }
   }
 
@@ -302,6 +310,8 @@ FocusScope
       anchors.top: parent.top
       anchors.margins: Math.round(24 * overlay.u)
       activeFocusOnTab: true
+      KeyNavigation.tab: bannerOpen
+      KeyNavigation.down: bannerOpen
 
       Accessible.role: Accessible.Button
       Accessible.name: qsTr("Close")

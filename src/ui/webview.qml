@@ -123,6 +123,7 @@ KonvergoWindow
     settings.errorPageEnabled: false
     settings.localContentCanAccessRemoteUrls: true
     focus: true
+    enabled: !menuOverlay.open && !updateOverlay.captures
     property string currentHoveredUrl: ""
     onLinkHovered: (hoveredUrl) => { web.currentHoveredUrl = hoveredUrl }
     onUrlChanged: mainWindow.webClientNavigated(web.url)
@@ -254,7 +255,7 @@ KonvergoWindow
     id: updateOverlay
     z: 8
     anchors.fill: parent
-    onClosed: web.forceActiveFocus()
+    onClosed: Qt.callLater(web.forceActiveFocus)
   }
 
   MenuOverlay
@@ -262,7 +263,7 @@ KonvergoWindow
     id: menuOverlay
     z: 9
     anchors.fill: parent
-    onClosed: web.forceActiveFocus()
+    onClosed: Qt.callLater(web.forceActiveFocus)
   }
 
   Rectangle
@@ -286,7 +287,7 @@ KonvergoWindow
     border.width: Math.max(1, Math.round(1.5 * u))
 
     visible: opacity > 0
-    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.modal) ? 1 : 0
+    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures) ? 1 : 0
 
     Accessible.role: Accessible.Button
     Accessible.name: "Player settings"
