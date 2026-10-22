@@ -151,6 +151,85 @@ network access. It verifies the download against the `sha256` and `size` pinned
 in the manifest, then stages and verifies it on the target; a mismatch fails
 the install.
 
+## Settings menu
+
+The application draws its own settings menu over the Plex client, for the
+settings Plex's own preferences cannot carry. Open it with:
+
+- `F1` on a keyboard.
+- The Menu or Start button on a controller (button 7).
+- The cog in the bottom left of the Plex client.
+
+Both bindings are changed from inside the menu, under **Keys and remotes**:
+*Key that opens this menu* (`F1`–`F4`, `F8` or `Menu`) and *Gamepad button that
+opens this menu* (buttons 2, 3, 6, 7, 8, 9, 10, or none). Gamepad input is read
+through SDL.
+
+Up and down move between rows, and the list has a scroll bar. Enter, Return or
+Space activates a row; left and right change a drop-down without opening it;
+Escape or the controller's Back button closes the menu, as does **Close**. Each
+section has its own defaults button, and **Restore all defaults** resets every
+setting in the menu.
+
+The sections are:
+
+- **Updates** — covered below.
+- **Downloads** — *Save downloads to* chooses Plex's own data folder or the
+  system Downloads folder, and *Ask before every download* asks for
+  confirmation each time instead of saving straight away.
+- **Keys and remotes** — the two bindings above.
+- **Display** — *Text size in this menu* (normal, large, larger) and *High
+  contrast* (black background, white outlines, brighter highlights). Both apply
+  to the menu and to the update messages, not to the Plex client itself.
+
+Settings are stored in
+`~/.var/app/io.github.syberphunk.PlexMediaPlayer/data/plexmediaplayer/plexmediaplayer.conf`.
+
+## Updates
+
+The application checks the published repository for a newer build and offers it
+in place. The check compares the ostree commit of the running install against
+the commit the repository publishes in `update.json`, so a release that keeps
+its tag but carries newer contents is still detected. The GitHub release feed
+is used when the manifest cannot be reached, and supplies the release notes
+either way.
+
+When a newer build is found, an **Update available** screen appears over the
+client with the version, the release notes and these choices:
+
+- **Update now** — downloads and installs through the Flatpak portal, with
+  progress, then offers **Restart app now** or **On next launch**.
+- **Close** — leaves the update; it is offered again next time Plex starts.
+- **Skip this version** — does not offer this version again. A later one is
+  still offered, and **Stop skipping a version** in the menu undoes it.
+- **Never** — turns checking off after a confirmation.
+
+Under **Updates** in the settings menu:
+
+- **Installed** shows the running version.
+- **Check for updates** runs a check now.
+- **Install update** appears once an update is available.
+- **Release notes** shows what changed in the latest release.
+- **Check for updates automatically** turns the scheduled check on or off.
+- **How often to check** — every time Plex starts (the default), once a day,
+  once a week, or only when asked.
+
+The install goes through `flatpak-portal`, which asks
+`org.freedesktop.impl.portal.Access` to confirm it. SteamOS Game Mode has no
+Access implementation, so the request fails there unless the confirmation is
+already stored:
+
+```
+flatpak permission-set flatpak updates io.github.syberphunk.PlexMediaPlayer yes
+flatpak permission-show io.github.syberphunk.PlexMediaPlayer
+```
+
+An update can also be installed from a terminal, which does not use the portal:
+
+```
+flatpak update --user io.github.syberphunk.PlexMediaPlayer
+```
+
 ## Steam shortcut
 
 `packaging/steam/plex-steam-shortcut.py` puts Plex in your Steam library, so you
