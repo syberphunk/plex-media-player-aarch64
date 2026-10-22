@@ -48,23 +48,29 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
-    <release version="2.58.0-aarch64.17" date="2026-10-21">
+    <release version="2.58.0-aarch64.17" date="2026-10-22">
       <description>
         <p>Added:</p>
         <ul>
-          <li>A settings menu inside the app, opened with F1 by default.</li>
-          <li>Update checks against the release feed, with a manual check, a choice of
-              cadence and release notes.</li>
+          <li>A settings menu inside the app, opened with F1 or the gamepad's Menu
+              button.</li>
+          <li>Update checks, with a manual check, a choice of cadence and release notes.
+              The check compares the installed build's commit against the one the update
+              repository publishes, so a rebuilt release is detected.</li>
           <li>A download folder setting, with an option to confirm each download.</li>
           <li>Text size and high contrast settings for the app's own screens.</li>
+          <li>Gamepad input, read through SDL.</li>
         </ul>
         <p>Changed:</p>
         <ul>
           <li>Update reports arriving during an install no longer replace the install in
               progress.</li>
-          <li>A skipped version is recorded by release tag rather than by commit.</li>
+          <li>A skipped version is recorded by the build's commit rather than by release
+              tag.</li>
           <li>Release notes are reached from the settings menu instead of a keyboard
               shortcut.</li>
+          <li>The settings list has a scroll bar and scrolls smoothly from the
+              gamepad.</li>
         </ul>
       </description>
     </release>
