@@ -27,7 +27,7 @@ public:
   bool claims(const QString& path) const;
   bool handle(const QHttpServerRequest& request, HttpResponse* response);
 
-  QVariantList providerNodes(bool includeStorage) const;
+  QVariantList providerNodes(bool includeStorage, bool wantsJson) const;
 
   static QVariantMap node(const QString& name, const QVariantMap& attributes,
                           const QVariantList& children = QVariantList());

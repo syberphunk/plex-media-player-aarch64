@@ -417,11 +417,11 @@ bool MediaSubscriptions::secureConnection(const QString& source, Connection& con
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-QVariantList MediaSubscriptions::providerNodes(bool includeStorage) const
+QVariantList MediaSubscriptions::providerNodes(bool includeStorage, bool wantsJson) const
 {
   QVariantList libraryChildren;
 
-  if (includeStorage)
+  if (includeStorage && wantsJson)
   {
     qint64 stored = 0;
     for (auto it = m_subscriptions.constBegin(); it != m_subscriptions.constEnd(); ++it)
@@ -497,7 +497,8 @@ bool MediaSubscriptions::handleProviders(const QHttpServerRequest& request, Http
   }
 
   const QUrlQuery providerQuery(request.url().query());
-  const QVariantList nodes = providerNodes(providerQuery.hasQueryItem("includeStorage"));
+  const QVariantList nodes = providerNodes(providerQuery.hasQueryItem("includeStorage"),
+                                           wantsJson(request));
   writeContainer(request, response,
                  { { "size", nodes.size() },
                    { "machineIdentifier", m_machineIdentifier },
