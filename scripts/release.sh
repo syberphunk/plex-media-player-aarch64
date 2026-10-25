@@ -12,6 +12,7 @@ usage: release.sh [options]
   --build-dir DIR    flatpak-builder build dir (default: ../fp-build)
   --repo-dir DIR     ostree repo dir (default: ../fp-repo)
   --verify-seconds N headless run length (default: 60)
+  --notes-file FILE  release body to publish (default: tag and artifact name)
   --allow-outdated   build even if a newer upstream release exists
   --no-verify        skip the headless verification gate
   --no-publish       build and verify, then stop before publishing
@@ -28,10 +29,16 @@ publish() {
   [ -n "$GH_REPO" ] || { echo "no GitHub repository: pass --gh-repo" >&2; exit 1; }
 
   echo "==> step 6/6: publishing $TAG to $GH_REPO"
-  BODY="${TAG#v}
+  if [ -n "$NOTES_FILE" ]; then
+    [ -r "$NOTES_FILE" ] || { echo "cannot read notes file: $NOTES_FILE" >&2; exit 1; }
+    BODY=$(cat "$NOTES_FILE")
+    [ -n "$BODY" ] || { echo "notes file is empty: $NOTES_FILE" >&2; exit 1; }
+  else
+    BODY="${TAG#v}
 
 $(basename "$ARTIFACT")
 "
+  fi
 
   if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
     gh release edit "$TAG" --repo "$GH_REPO" \
@@ -54,6 +61,7 @@ GH_REPO=
 BUILD_DIR=
 REPO_DIR=
 VERIFY_SECONDS=60
+NOTES_FILE=
 ALLOW_OUTDATED=0
 VERIFY=1
 PUBLISH=1
@@ -70,6 +78,7 @@ while [ $# -gt 0 ]; do
     --build-dir) BUILD_DIR=${2:?}; shift 2;;
     --repo-dir) REPO_DIR=${2:?}; shift 2;;
     --verify-seconds) VERIFY_SECONDS=${2:?}; shift 2;;
+    --notes-file) NOTES_FILE=${2:?}; shift 2;;
     --allow-outdated) ALLOW_OUTDATED=1; shift;;
     --no-verify) VERIFY=0; shift;;
     --no-publish) PUBLISH=0; shift;;
