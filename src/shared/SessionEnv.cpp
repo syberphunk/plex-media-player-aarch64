@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMap>
 #include <QSet>
 #include <QStringList>
 #include <QSysInfo>
@@ -16,6 +17,7 @@
 #include <fcntl.h>
 #include <linux/videodev2.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -131,13 +133,16 @@ static void collectV4l2CodedFormats(int fd, unsigned int bufferType, QSet<unsign
   }
 }
 
-static QStringList probeV4l2DecodeCodecs(QStringList& report)
+static QStringList probeV4l2DecodeCodecs(QStringList& report, QStringList& problems)
 {
   QStringList codecs;
 
   DIR* dev = opendir("/dev");
   if (!dev)
+  {
+    problems << QString("cannot read /dev: %1").arg(QString::fromLocal8Bit(strerror(errno)));
     return codecs;
+  }
 
   QStringList nodes;
   for (struct dirent* entry = readdir(dev); entry; entry = readdir(dev))
@@ -148,11 +153,32 @@ static QStringList probeV4l2DecodeCodecs(QStringList& report)
   closedir(dev);
   nodes.sort();
 
+  if (nodes.isEmpty())
+  {
+    problems << QString("no /dev/video* nodes present");
+    return codecs;
+  }
+
+  QSet<quint64> devices;
+  QMap<QString, int> openErrors;
+
   for (const QString& path : nodes)
   {
+    struct stat info = {};
+    if (stat(QFile::encodeName(path).constData(), &info) == 0 && S_ISCHR(info.st_mode))
+    {
+      const quint64 rdev = (quint64)info.st_rdev;
+      if (devices.contains(rdev))
+        continue;
+      devices.insert(rdev);
+    }
+
     const int fd = open(QFile::encodeName(path).constData(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0)
+    {
+      openErrors[QString::fromLocal8Bit(strerror(errno))]++;
       continue;
+    }
 
     struct v4l2_capability cap = {};
     if (v4l2Ioctl(fd, VIDIOC_QUERYCAP, &cap) == -1)
@@ -192,6 +218,13 @@ static QStringList probeV4l2DecodeCodecs(QStringList& report)
                                         found.join(','));
   }
 
+  for (auto it = openErrors.constBegin(); it != openErrors.constEnd(); ++it)
+  {
+    problems << QString("%1 node%2: %3").arg(QString::number(it.value()),
+                                             it.value() == 1 ? QString() : QString("s"),
+                                             it.key());
+  }
+
   return codecs;
 }
 
@@ -214,9 +247,14 @@ QStringList SessionEnv::v4l2DecodeCodecs()
 
 #ifdef PMP_HAVE_V4L2
   QStringList report;
-  codecs = probeV4l2DecodeCodecs(report);
-  g_v4l2DecodeReport = report.isEmpty() ? QString("no stateful decoder found")
-                                        : report.join("; ");
+  QStringList problems;
+  codecs = probeV4l2DecodeCodecs(report, problems);
+  if (!report.isEmpty())
+    g_v4l2DecodeReport = report.join("; ");
+  else if (!problems.isEmpty())
+    g_v4l2DecodeReport = QString("no stateful decoder found (%1)").arg(problems.join("; "));
+  else
+    g_v4l2DecodeReport = "no stateful decoder found";
 #else
   g_v4l2DecodeReport = "not built with V4L2 support";
 #endif
