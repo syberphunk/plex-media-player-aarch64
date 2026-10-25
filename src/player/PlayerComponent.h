@@ -23,6 +23,8 @@ class PlayerComponent : public ComponentBase
   Q_OBJECT
   DEFINE_SINGLETON(PlayerComponent);
 
+  Q_PROPERTY(bool videoWindowVisible READ videoWindowVisible NOTIFY windowVisible)
+
 public:
   const char* componentName() override { return "player"; }
   bool componentExport() override { return true; }

@@ -287,7 +287,7 @@ KonvergoWindow
     border.width: Math.max(1, Math.round(1.5 * u))
 
     visible: opacity > 0
-    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures) ? 1 : 0
+    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures && !components.player.videoWindowVisible) ? 1 : 0
 
     Accessible.role: Accessible.Button
     Accessible.name: "Player settings"
