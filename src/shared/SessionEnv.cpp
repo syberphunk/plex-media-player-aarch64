@@ -163,7 +163,6 @@ static QStringList probeV4l2DecodeCodecs(QStringList& report)
 
     const unsigned int caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps
                                                                        : cap.capabilities;
-    const bool mplane = caps & V4L2_CAP_VIDEO_M2M_MPLANE;
     if (!(caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE)))
     {
       close(fd);
@@ -171,8 +170,8 @@ static QStringList probeV4l2DecodeCodecs(QStringList& report)
     }
 
     QSet<unsigned int> formats;
-    collectV4l2CodedFormats(fd, mplane ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE
-                                       : V4L2_BUF_TYPE_VIDEO_OUTPUT, formats);
+    collectV4l2CodedFormats(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT, formats);
+    collectV4l2CodedFormats(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, formats);
     close(fd);
 
     QStringList found;
