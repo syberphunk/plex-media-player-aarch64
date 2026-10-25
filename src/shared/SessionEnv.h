@@ -2,6 +2,7 @@
 #define SESSIONENV_H
 
 #include <QString>
+#include <QStringList>
 
 namespace SessionEnv
 {
@@ -14,6 +15,10 @@ namespace SessionEnv
   bool insideFlatpak();
 
   QString drmDriver();
+
+  QStringList v4l2DecodeCodecs();
+
+  QString v4l2DecodeReport();
 
   void sanitizeGraphicsEnv();
 

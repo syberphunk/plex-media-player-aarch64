@@ -1357,6 +1357,26 @@ void PlayerComponent::updateVideoSettings()
 
   mpv::qt::set_property(m_mpv, "hwdec", hwdecMode);
 
+  QStringList videoDecoders;
+  if (hwdecMode != "no")
+  {
+    for (const QString& codec : SessionEnv::v4l2DecodeCodecs())
+      videoDecoders << codec + "_v4l2m2m";
+  }
+
+  if (!videoDecoders.isEmpty())
+  {
+    QLOG_INFO() << "V4L2 stateful decoding available:" << qPrintable(SessionEnv::v4l2DecodeReport());
+    QLOG_INFO() << "preferring video decoders" << qPrintable(videoDecoders.join(","))
+                << "- any other codec falls back to software";
+  }
+  else if (hwdecMode != "no")
+  {
+    QLOG_INFO() << "no V4L2 stateful decoding:" << qPrintable(SessionEnv::v4l2DecodeReport());
+  }
+
+  mpv::qt::set_property(m_mpv, "vd", videoDecoders.join(","));
+
   QVariant deinterlace = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "deinterlace");
   mpv::qt::set_property(m_mpv, "deinterlace", deinterlace.toBool() ? "yes" : "no");
 

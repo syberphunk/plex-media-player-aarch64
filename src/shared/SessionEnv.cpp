@@ -4,10 +4,23 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 #include <QStringList>
 #include <QSysInfo>
 
+#if defined(Q_OS_LINUX) && __has_include(<linux/videodev2.h>)
+#define PMP_HAVE_V4L2 1
+#include <cerrno>
+#include <cstring>
+#include <dirent.h>
+#include <fcntl.h>
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 static QString g_graphicsEnvReport;
+static QString g_v4l2DecodeReport;
 
 bool SessionEnv::insideGamescope()
 {
@@ -61,6 +74,161 @@ QString SessionEnv::drmDriver()
     }
   }
   return QString();
+}
+
+#ifdef PMP_HAVE_V4L2
+
+static const struct { unsigned int fourcc; const char* codec; } k_v4l2CodedFormats[] = {
+#ifdef V4L2_PIX_FMT_H264
+  {V4L2_PIX_FMT_H264, "h264"},
+#endif
+#ifdef V4L2_PIX_FMT_HEVC
+  {V4L2_PIX_FMT_HEVC, "hevc"},
+#endif
+#ifdef V4L2_PIX_FMT_VP9
+  {V4L2_PIX_FMT_VP9, "vp9"},
+#endif
+#ifdef V4L2_PIX_FMT_VP8
+  {V4L2_PIX_FMT_VP8, "vp8"},
+#endif
+#ifdef V4L2_PIX_FMT_MPEG2
+  {V4L2_PIX_FMT_MPEG2, "mpeg2"},
+#endif
+#ifdef V4L2_PIX_FMT_MPEG4
+  {V4L2_PIX_FMT_MPEG4, "mpeg4"},
+#endif
+#ifdef V4L2_PIX_FMT_MPEG1
+  {V4L2_PIX_FMT_MPEG1, "mpeg1"},
+#endif
+#ifdef V4L2_PIX_FMT_H263
+  {V4L2_PIX_FMT_H263, "h263"},
+#endif
+#ifdef V4L2_PIX_FMT_VC1_ANNEX_G
+  {V4L2_PIX_FMT_VC1_ANNEX_G, "vc1"},
+#endif
+};
+
+static int v4l2Ioctl(int fd, unsigned long request, void* arg)
+{
+  int result;
+  do
+  {
+    result = ioctl(fd, request, arg);
+  } while (result == -1 && errno == EINTR);
+  return result;
+}
+
+static void collectV4l2CodedFormats(int fd, unsigned int bufferType, QSet<unsigned int>& formats)
+{
+  for (unsigned int index = 0;; index++)
+  {
+    struct v4l2_fmtdesc desc = {};
+    desc.index = index;
+    desc.type = bufferType;
+    if (v4l2Ioctl(fd, VIDIOC_ENUM_FMT, &desc) == -1)
+      return;
+    formats.insert(desc.pixelformat);
+  }
+}
+
+static QStringList probeV4l2DecodeCodecs(QStringList& report)
+{
+  QStringList codecs;
+
+  DIR* dev = opendir("/dev");
+  if (!dev)
+    return codecs;
+
+  QStringList nodes;
+  for (struct dirent* entry = readdir(dev); entry; entry = readdir(dev))
+  {
+    if (strncmp(entry->d_name, "video", 5) == 0)
+      nodes << QString("/dev/") + QString::fromLocal8Bit(entry->d_name);
+  }
+  closedir(dev);
+  nodes.sort();
+
+  for (const QString& path : nodes)
+  {
+    const int fd = open(QFile::encodeName(path).constData(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0)
+      continue;
+
+    struct v4l2_capability cap = {};
+    if (v4l2Ioctl(fd, VIDIOC_QUERYCAP, &cap) == -1)
+    {
+      close(fd);
+      continue;
+    }
+
+    const unsigned int caps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps
+                                                                       : cap.capabilities;
+    const bool mplane = caps & V4L2_CAP_VIDEO_M2M_MPLANE;
+    if (!(caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE)))
+    {
+      close(fd);
+      continue;
+    }
+
+    QSet<unsigned int> formats;
+    collectV4l2CodedFormats(fd, mplane ? V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE
+                                       : V4L2_BUF_TYPE_VIDEO_OUTPUT, formats);
+    close(fd);
+
+    QStringList found;
+    for (const auto& entry : k_v4l2CodedFormats)
+    {
+      if (!formats.contains(entry.fourcc))
+        continue;
+      found << QString::fromLatin1(entry.codec);
+      if (!codecs.contains(QString::fromLatin1(entry.codec)))
+        codecs << QString::fromLatin1(entry.codec);
+    }
+
+    if (found.isEmpty())
+      continue;
+
+    report << QString("%1 (%2) %3").arg(path,
+                                        QString::fromLatin1((const char*)cap.driver),
+                                        found.join(','));
+  }
+
+  return codecs;
+}
+
+#endif
+
+QStringList SessionEnv::v4l2DecodeCodecs()
+{
+  static bool probed = false;
+  static QStringList codecs;
+
+  if (probed)
+    return codecs;
+  probed = true;
+
+  if (qEnvironmentVariableIsSet("PMP_NO_V4L2_DECODE"))
+  {
+    g_v4l2DecodeReport = "disabled by PMP_NO_V4L2_DECODE";
+    return codecs;
+  }
+
+#ifdef PMP_HAVE_V4L2
+  QStringList report;
+  codecs = probeV4l2DecodeCodecs(report);
+  g_v4l2DecodeReport = report.isEmpty() ? QString("no stateful decoder found")
+                                        : report.join("; ");
+#else
+  g_v4l2DecodeReport = "not built with V4L2 support";
+#endif
+
+  return codecs;
+}
+
+QString SessionEnv::v4l2DecodeReport()
+{
+  v4l2DecodeCodecs();
+  return g_v4l2DecodeReport;
 }
 
 static bool haveVulkanIcd(const QString& nameFilter)

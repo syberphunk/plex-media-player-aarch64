@@ -14,7 +14,9 @@
   <description>
     <p>
       An aarch64 build of Plex Media Player that runs the current Plex desktop web
-      client. Playback uses mpv with hardware decoding through VA-API.
+      client. Playback uses mpv. Hardware decoding is used where the system provides it,
+      through a stateful V4L2 decoder or VA-API, and decoding falls back to software for
+      any codec the hardware does not accept.
     </p>
     <p>
       The Plex web client is downloaded from Plex at install time as extra data and is
