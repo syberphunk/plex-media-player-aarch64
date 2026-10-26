@@ -15,8 +15,9 @@
     <p>
       An aarch64 build of Plex Media Player that runs the current Plex desktop web
       client. Playback uses mpv. Hardware decoding is used where the system provides it,
-      through a stateful V4L2 decoder or VA-API, and decoding falls back to software for
-      any codec the hardware does not accept.
+      through a stateful V4L2 decoder or VA-API. Decoding falls back to software for any
+      stream the hardware cannot decode correctly, which on a device whose decoder emits
+      only 8 bit frames includes 10 bit, HDR and Dolby Vision video.
     </p>
     <p>
       The Plex web client is downloaded from Plex at install time as extra data and is
@@ -50,6 +51,27 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.19" date="2026-10-26">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>Hardware video decoding through the system's stateful V4L2 decoder, for
+              H.264, HEVC and VP9 where the device provides one. On the Steam Frame this
+              takes 8 bit video off the CPU.</li>
+          <li>The hardware decoder is offered only for streams it can emit correctly.
+              10 bit, HDR and Dolby Vision video decodes in software, because a decoder
+              that emits only 8 bit frames decodes 10 bit video into 8 bit samples
+              without reporting an error.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>The settings cog is hidden while video is on screen.</li>
+          <li>The Flatpak takes <code>--device=all</code>, which is what gives the
+              sandbox the <code>/dev/video*</code> decoder nodes. Flatpak has no
+              narrower option for them.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.18" date="2026-10-22">
       <description>
         <p>Changed:</p>
