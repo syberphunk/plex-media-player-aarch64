@@ -1348,7 +1348,7 @@ void PlayerComponent::updateVideoSettings()
     hwdecMode = "auto-copy";
   }
 
-  if (hwdecMode == "auto" && SessionEnv::drmDriver() == "msm")
+  if (hwdecMode == "auto" && SessionEnv::drmDriver().startsWith("msm"))
   {
     QLOG_WARN() << "Adreno/msm: using hwdec=auto-copy instead of auto, to avoid the "
                    "dma-buf import path that can lock up the GPU (SteamOS#2882)";
@@ -1357,17 +1357,18 @@ void PlayerComponent::updateVideoSettings()
 
   mpv::qt::set_property(m_mpv, "hwdec", hwdecMode);
 
-  QStringList videoDecoders;
+  m_videoDecoderPreference.clear();
   if (hwdecMode != "no")
   {
     for (const QString& codec : SessionEnv::v4l2DecodeCodecs())
-      videoDecoders << codec + "_v4l2m2m";
+      m_videoDecoderPreference << codec + "_v4l2m2m";
   }
 
-  if (!videoDecoders.isEmpty())
+  if (!m_videoDecoderPreference.isEmpty())
   {
     QLOG_INFO() << "V4L2 stateful decoding available:" << qPrintable(SessionEnv::v4l2DecodeReport());
-    QLOG_INFO() << "preferring video decoders" << qPrintable(videoDecoders.join(","))
+    QLOG_INFO() << "preferring video decoders"
+                << qPrintable(m_videoDecoderPreference.join(","))
                 << "- any other codec falls back to software";
   }
   else if (hwdecMode != "no")
@@ -1375,7 +1376,7 @@ void PlayerComponent::updateVideoSettings()
     QLOG_INFO() << "no V4L2 stateful decoding:" << qPrintable(SessionEnv::v4l2DecodeReport());
   }
 
-  mpv::qt::set_property(m_mpv, "vd", videoDecoders.join(","));
+  mpv::qt::set_property(m_mpv, "vd", m_videoDecoderPreference.join(","));
 
   QVariant deinterlace = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "deinterlace");
   mpv::qt::set_property(m_mpv, "deinterlace", deinterlace.toBool() ? "yes" : "no");
@@ -1577,7 +1578,7 @@ void PlayerComponent::setPreferredCodecs(const QList<CodecDriver>& codecs)
   // For simplicity, we don't distinguish between audio and video. The player
   // will ignore entries with mismatching media type.
   mpv::qt::set_property(m_mpv, "ad", opt);
-  mpv::qt::set_property(m_mpv, "vd", opt);
+  mpv::qt::set_property(m_mpv, "vd", (m_videoDecoderPreference + items).join(","));
 }
 
 // For QVariant.

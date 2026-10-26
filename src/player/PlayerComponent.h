@@ -251,6 +251,7 @@ private:
   QMap<QString, bool> m_codecSupport;
   bool m_doAc3Transcoding;
   QStringList m_passthroughCodecs;
+  QStringList m_videoDecoderPreference;
   QVariantMap m_serverMediaInfo;
   QString m_currentSubtitleStream;
   QString m_currentAudioStream;
