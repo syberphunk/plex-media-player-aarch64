@@ -7,6 +7,9 @@ FocusScope
   property var cfg: (typeof components !== "undefined") ? components.menu : null
   property var settings: (typeof components !== "undefined") ? components.settings : null
   property var updater: (typeof components !== "undefined") ? components.updater : null
+  property var system: (typeof components !== "undefined") ? components.system : null
+
+  readonly property bool signedIn: system ? system.signedIn : false
 
   readonly property bool open: cfg ? cfg.visible : false
   readonly property bool contrast: cfg ? cfg.highContrast : false
@@ -699,6 +702,7 @@ FocusScope
         Heading
         {
           width: parent.width
+          visible: !menu.signedIn
           text: qsTr("Account")
         }
 
@@ -706,6 +710,7 @@ FocusScope
         {
           width: parent.width - Math.round(36 * menu.u)
           x: Math.round(18 * menu.u)
+          visible: !menu.signedIn
           text: qsTr("Use this if Plex opens on an empty screen with a loading wheel. "
                      + "That is how a signed-out client looks, and it offers no way "
                      + "back to sign-in on its own.")
@@ -714,7 +719,8 @@ FocusScope
         Item
         {
           width: parent.width
-          height: Math.round(96 * menu.u)
+          visible: !menu.signedIn
+          height: visible ? Math.round(96 * menu.u) : 0
 
           Btn
           {

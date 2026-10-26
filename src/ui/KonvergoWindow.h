@@ -126,8 +126,13 @@ private:
   void updateForcedScreen();
   QScreen* findCurrentScreen();
 
+  void armSignInProbe();
+  void checkSignInProbe();
+
   bool m_debugLayer;
   QTimer* m_infoTimer;
+  QTimer* m_signInProbe;
+  bool m_signInProbeDone;
   QString m_debugInfo, m_systemDebugInfo, m_videoInfo;
   int m_ignoreFullscreenSettingsChange;
   int m_forcedFullscreenCount;

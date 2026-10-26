@@ -253,6 +253,16 @@ void SystemComponent::setAuthenticationToken(const QString& token)
   emit userInfoChanged();
 }
 
+void SystemComponent::setSignedIn(bool signedIn)
+{
+  if (signedIn == m_signedIn)
+    return;
+
+  QLOG_INFO() << "Web client" << (signedIn ? "has" : "has no") << "Plex account session.";
+  m_signedIn = signedIn;
+  emit signedInChanged();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 void SystemComponent::openExternalUrl(const QString& url)
 {
@@ -307,6 +317,7 @@ void SystemComponent::hello(const QString& version)
 {
   QLOG_DEBUG() << QString("Web-client (%1) fully inited.").arg(version);
   m_webClientVersion = version;
+  emit webClientReady();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
