@@ -29,6 +29,11 @@ KonvergoWindow
       web.reload()
   }
 
+  function goToWebClientRoute(fragment)
+  {
+    web.runJavaScript("window.location.hash = " + JSON.stringify(fragment))
+  }
+
   Shortcut
   {
     enabled: mainWindow.webDesktopMode
@@ -276,6 +281,7 @@ KonvergoWindow
     anchors.fill: parent
     onClosed: Qt.callLater(web.forceActiveFocus)
     onSignIn: mainWindow.goToSignIn()
+    onOnlineMediaSources: mainWindow.goToWebClientRoute("#!/settings/online-media-sources")
   }
 
   Rectangle

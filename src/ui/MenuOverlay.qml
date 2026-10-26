@@ -44,6 +44,7 @@ FocusScope
 
   signal closed()
   signal signIn()
+  signal onlineMediaSources()
 
   visible: opacity > 0
   opacity: open ? 1 : 0
@@ -137,6 +138,14 @@ FocusScope
       cfg.hide()
 
     menu.signIn()
+  }
+
+  function openOnlineMediaSources()
+  {
+    if (cfg)
+      cfg.hide()
+
+    menu.onlineMediaSources()
   }
 
   function openReleaseNotes()
@@ -702,7 +711,6 @@ FocusScope
         Heading
         {
           width: parent.width
-          visible: !menu.signedIn
           text: qsTr("Account")
         }
 
@@ -732,6 +740,36 @@ FocusScope
             hint: qsTr("Load the Plex sign-in screen")
             minW: 330
             onClicked: menu.openSignIn()
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.signedIn
+          text: qsTr("The Trending and Activity tabs on Home are not served to "
+                     + "this client and report an error when opened. Turning off "
+                     + "Discover Source removes them. This is a Plex account "
+                     + "setting and applies to every Plex app you sign in to.")
+        }
+
+        Item
+        {
+          width: parent.width
+          visible: menu.signedIn
+          height: visible ? Math.round(96 * menu.u) : 0
+
+          Btn
+          {
+            id: onlineMediaSourcesButton
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: qsTr("Online Media Sources")
+            hint: qsTr("Open the Plex page for Discover and other online sources")
+            minW: 330
+            onClicked: menu.openOnlineMediaSources()
           }
         }
 
