@@ -11,8 +11,8 @@ usage: release.sh [options]
   --gh-repo O/N      GitHub repository to publish to (default: origin)
   --build-dir DIR    flatpak-builder build dir (default: ../fp-build)
   --repo-dir DIR     ostree repo dir (default: ../fp-repo)
-  --verify-seconds N headless run length (default: 60)
-  --notes-file FILE  release body to publish (default: tag and artifact name)
+  --verify-seconds N headless run length (default: 60; under qemu use 240+)
+  --notes-file FILE  release body to publish (default: the metainfo release entry)
   --allow-outdated   build even if a newer upstream release exists
   --no-verify        skip the headless verification gate
   --no-publish       build and verify, then stop before publishing
@@ -37,7 +37,8 @@ publish() {
     BODY="${TAG#v}
 
 $(basename "$ARTIFACT")
-"
+
+$NOTES_BODY"
   fi
 
   if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
@@ -160,6 +161,16 @@ if [ -z "$TAG" ]; then
     [ -n "$existing" ] && next=$((existing + 1))
   fi
   TAG="v$VERSION-aarch64.$next"
+fi
+
+# Checked here rather than in publish(), so a tag with no release entry fails
+# before the build instead of after it.
+NOTES_BODY=
+if [ "$PUBLISH" -eq 1 ] && [ -z "$NOTES_FILE" ]; then
+  NOTES_BODY=$("$REPO_ROOT/scripts/release-notes.py" "${TAG#v}") || {
+    echo "add a <release version=\"${TAG#v}\"> entry to the metainfo, or pass --notes-file" >&2
+    exit 1
+  }
 fi
 
 echo "==> plex-media-player $VERSION, $ARCH, tag $TAG"
