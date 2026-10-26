@@ -18,6 +18,11 @@ namespace SessionEnv
 
   QStringList v4l2DecodeCodecs();
 
+  // Highest bit depth the stateful decoder can emit on its CAPTURE side, or 0
+  // if there is no such decoder. A device that enumerates only 8 bit raw
+  // formats will truncate 10 bit content instead of refusing it.
+  int v4l2DecodeBitDepth();
+
   QString v4l2DecodeReport();
 
   void sanitizeGraphicsEnv();

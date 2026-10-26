@@ -23,6 +23,7 @@
 
 static QString g_graphicsEnvReport;
 static QString g_v4l2DecodeReport;
+static int g_v4l2DecodeBitDepth = -1;
 
 bool SessionEnv::insideGamescope()
 {
@@ -110,6 +111,30 @@ static const struct { unsigned int fourcc; const char* codec; } k_v4l2CodedForma
 #endif
 };
 
+#define PMP_FOURCC(a, b, c, d) \
+  ((unsigned int)(a) | ((unsigned int)(b) << 8) | ((unsigned int)(c) << 16) | ((unsigned int)(d) << 24))
+
+// Raw CAPTURE formats that carry more than 8 bits per component. Spelled as
+// literal fourccs so the set does not depend on the kernel headers this is
+// built against. Anything outside this set is treated as 8 bit.
+static const struct { unsigned int fourcc; int depth; } k_v4l2DeepRawFormats[] = {
+  {PMP_FOURCC('Q', '1', '0', 'C'), 10}, // QCOM compressed 10 bit
+  {PMP_FOURCC('P', '0', '1', '0'), 10},
+  {PMP_FOURCC('P', 'M', '1', '0'), 10}, // P010 multiplanar
+  {PMP_FOURCC('N', 'V', '1', '5'), 10},
+  {PMP_FOURCC('R', 'K', '2', '0'), 10}, // NV12_10LE40
+  {PMP_FOURCC('Y', '0', '1', '0'), 10},
+  {PMP_FOURCC('A', 'R', '3', '0'), 10},
+  {PMP_FOURCC('A', 'B', '3', '0'), 10},
+  {PMP_FOURCC('X', 'R', '3', '0'), 10},
+  {PMP_FOURCC('X', 'B', '3', '0'), 10},
+  {PMP_FOURCC('P', '0', '1', '2'), 12},
+  {PMP_FOURCC('P', 'M', '1', '2'), 12}, // P012 multiplanar
+  {PMP_FOURCC('Y', '0', '1', '2'), 12},
+  {PMP_FOURCC('P', '0', '1', '6'), 16},
+  {PMP_FOURCC('P', 'M', '1', '6'), 16},
+};
+
 static int v4l2Ioctl(int fd, unsigned long request, void* arg)
 {
   int result;
@@ -133,9 +158,10 @@ static void collectV4l2CodedFormats(int fd, unsigned int bufferType, QSet<unsign
   }
 }
 
-static QStringList probeV4l2DecodeCodecs(QStringList& report, QStringList& problems)
+static QStringList probeV4l2DecodeCodecs(QStringList& report, QStringList& problems, int& bitDepth)
 {
   QStringList codecs;
+  bitDepth = 0;
 
   DIR* dev = opendir("/dev");
   if (!dev)
@@ -198,6 +224,10 @@ static QStringList probeV4l2DecodeCodecs(QStringList& report, QStringList& probl
     QSet<unsigned int> formats;
     collectV4l2CodedFormats(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT, formats);
     collectV4l2CodedFormats(fd, V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, formats);
+
+    QSet<unsigned int> rawFormats;
+    collectV4l2CodedFormats(fd, V4L2_BUF_TYPE_VIDEO_CAPTURE, rawFormats);
+    collectV4l2CodedFormats(fd, V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, rawFormats);
     close(fd);
 
     QStringList found;
@@ -213,9 +243,19 @@ static QStringList probeV4l2DecodeCodecs(QStringList& report, QStringList& probl
     if (found.isEmpty())
       continue;
 
-    report << QString("%1 (%2) %3").arg(path,
-                                        QString::fromLatin1((const char*)cap.driver),
-                                        found.join(','));
+    int depth = rawFormats.isEmpty() ? 0 : 8;
+    for (const auto& entry : k_v4l2DeepRawFormats)
+    {
+      if (rawFormats.contains(entry.fourcc) && entry.depth > depth)
+        depth = entry.depth;
+    }
+    if (depth > bitDepth)
+      bitDepth = depth;
+
+    report << QString("%1 (%2) %3 up to %4 bit").arg(path,
+                                                     QString::fromLatin1((const char*)cap.driver),
+                                                     found.join(','),
+                                                     QString::number(depth));
   }
 
   for (auto it = openErrors.constBegin(); it != openErrors.constEnd(); ++it)
@@ -239,6 +279,8 @@ QStringList SessionEnv::v4l2DecodeCodecs()
     return codecs;
   probed = true;
 
+  g_v4l2DecodeBitDepth = 0;
+
   if (qEnvironmentVariableIsSet("PMP_NO_V4L2_DECODE"))
   {
     g_v4l2DecodeReport = "disabled by PMP_NO_V4L2_DECODE";
@@ -248,7 +290,7 @@ QStringList SessionEnv::v4l2DecodeCodecs()
 #ifdef PMP_HAVE_V4L2
   QStringList report;
   QStringList problems;
-  codecs = probeV4l2DecodeCodecs(report, problems);
+  codecs = probeV4l2DecodeCodecs(report, problems, g_v4l2DecodeBitDepth);
   if (!report.isEmpty())
     g_v4l2DecodeReport = report.join("; ");
   else if (!problems.isEmpty())
@@ -260,6 +302,12 @@ QStringList SessionEnv::v4l2DecodeCodecs()
 #endif
 
   return codecs;
+}
+
+int SessionEnv::v4l2DecodeBitDepth()
+{
+  v4l2DecodeCodecs();
+  return g_v4l2DecodeBitDepth < 0 ? 0 : g_v4l2DecodeBitDepth;
 }
 
 QString SessionEnv::v4l2DecodeReport()
