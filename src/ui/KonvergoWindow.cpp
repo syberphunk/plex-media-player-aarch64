@@ -605,6 +605,15 @@ void KonvergoWindow::webClientNavigated(const QUrl& url)
   }
 }
 
+void KonvergoWindow::requestSignIn()
+{
+  auto& settings = SettingsComponent::Get();
+
+  QLOG_INFO() << "Sending the web client to the sign-in page on request.";
+  settings.setValue(SETTINGS_SECTION_MAIN, "signInPending", true);
+  emit webUrlChanged();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 void KonvergoWindow::updateScreens()
 {

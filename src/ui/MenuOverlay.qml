@@ -40,6 +40,7 @@ FocusScope
   property string customPath: ""
 
   signal closed()
+  signal signIn()
 
   visible: opacity > 0
   opacity: open ? 1 : 0
@@ -125,6 +126,14 @@ FocusScope
     else if (bottom + Math.round(24 * menu.u) > flick.contentY + flick.height)
       flick.contentY = Math.min(Math.max(0, flick.contentHeight - flick.height),
                                 bottom + Math.round(24 * menu.u) - flick.height)
+  }
+
+  function openSignIn()
+  {
+    if (cfg)
+      cfg.hide()
+
+    menu.signIn()
   }
 
   function openReleaseNotes()
@@ -686,6 +695,39 @@ FocusScope
         id: list
         width: flick.width
         spacing: Math.round(4 * menu.u)
+
+        Heading
+        {
+          width: parent.width
+          text: qsTr("Account")
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          text: qsTr("Use this if Plex opens on an empty screen with a loading wheel. "
+                     + "That is how a signed-out client looks, and it offers no way "
+                     + "back to sign-in on its own.")
+        }
+
+        Item
+        {
+          width: parent.width
+          height: Math.round(96 * menu.u)
+
+          Btn
+          {
+            id: signInButton
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: qsTr("Sign in to Plex")
+            hint: qsTr("Load the Plex sign-in screen")
+            minW: 330
+            onClicked: menu.openSignIn()
+          }
+        }
 
         Heading
         {

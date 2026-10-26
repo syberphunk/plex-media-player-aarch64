@@ -89,6 +89,7 @@ public:
   QString webUrl();
 
   Q_INVOKABLE void webClientNavigated(const QUrl& url);
+  Q_INVOKABLE void requestSignIn();
 
 Q_SIGNALS:
   void fullScreenSwitched();

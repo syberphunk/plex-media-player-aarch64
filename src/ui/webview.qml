@@ -18,6 +18,17 @@ KonvergoWindow
       web.triggerWebAction(action)
   }
 
+  function goToSignIn()
+  {
+    var current = web.url.toString()
+
+    mainWindow.requestSignIn()
+    web.url = Qt.binding(function() { return mainWindow.webUrl })
+
+    if (current === mainWindow.webUrl)
+      web.reload()
+  }
+
   Shortcut
   {
     enabled: mainWindow.webDesktopMode
@@ -264,6 +275,7 @@ KonvergoWindow
     z: 9
     anchors.fill: parent
     onClosed: Qt.callLater(web.forceActiveFocus)
+    onSignIn: mainWindow.goToSignIn()
   }
 
   Rectangle
