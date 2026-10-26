@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Render a release body from the metainfo <release> entry for a version.
-
-usage: release-notes.py <version> [metainfo.xml]
-
-AppStream already carries every release's description, and that description is
-what the application shows under "Release notes", so it is taken as the single
-source for the published GitHub release body as well. Exits non-zero when the
-version has no entry.
-"""
+"""usage: release-notes.py <version> [metainfo.xml]"""
 
 import re
 import sys
@@ -26,7 +18,6 @@ WIDTH = 78
 
 
 def inline(element):
-    """Element text as markdown, keeping <code> and <em> runs."""
     marks = {"code": "`", "em": "*"}
     out = [element.text or ""]
     for child in element:
