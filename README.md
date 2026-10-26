@@ -44,6 +44,14 @@ One command installs the runtime, builds, packages, verifies and publishes:
 `--no-publish` stops after verification. `--allow-outdated` builds against the
 current pins when a newer upstream release exists.
 
+The published release body is rendered from the `<release>` entry in
+`packaging/flatpak/io.github.syberphunk.PlexMediaPlayer.metainfo.xml` whose
+`version` matches the tag, by `scripts/release-notes.py`. That entry is the only
+copy of a release's wording: AppStream reports it as the installed version, the
+application shows it under *Release notes*, and the GitHub release carries it.
+A tag with no matching entry fails before the build rather than publishing an
+empty body. `--notes-file FILE` publishes that file instead.
+
 The individual steps:
 
 ```
@@ -60,6 +68,13 @@ tar -C ../fp-repo -czf plex-media-player-aarch64-repo.tar.gz .
 `scripts/verify-facade-flatpak.sh` installs from the packaged repository and
 runs it headless, and exits non-zero unless the web client completes the host
 handshake, so a build whose client never starts cannot be published.
+
+Its last argument is how long the run is given. 60 seconds is enough on native
+aarch64, which is what the release workflow uses. Emulated under `qemu-user`,
+the client takes far longer to reach the handshake: 240 is the shortest that has
+passed, and a slow host needs 480. Too short a window fails a build that is
+fine, so raise it rather than trusting the default when cross-building.
+`release.sh --verify-seconds` passes the same value through.
 
 The release artifact is an OSTree repository rather than a single-file bundle.
 `flatpak install` downloads `extra-data` while pulling from a remote;
@@ -150,6 +165,51 @@ The install step downloads the Plex Desktop client from plex.tv, so it needs
 network access. It verifies the download against the `sha256` and `size` pinned
 in the manifest, then stages and verifies it on the target; a mismatch fails
 the install.
+
+## Hardware decoding
+
+mpv is given `hwdec=auto-copy`, so video is decoded off the CPU wherever the
+system offers a way to do it. On a device with a stateful V4L2 decoder, the
+`*_v4l2m2m` decoder for each codec that decoder accepts is put at the front of
+mpv's decoder list; VA-API is used where it is present. Every other codec
+decodes in software.
+
+On the Steam Frame this covers H.264, HEVC and VP9, **8 bit only**. Its V4L2
+decoder emits `Q08C`, `NV12`, `NV21`, `AB24` and `QC24` and no 10 bit format at
+all, so 10 bit video — which is every HDR and Dolby Vision file — decodes in
+software. That is a limit of the kernel driver rather than of this build. Vulkan
+video decode, NVDEC, VA-API and VDPAU are all absent on that device as well.
+
+The hardware decoder is therefore only offered for streams it can represent.
+FFmpeg's V4L2 wrapper does not check a stream against the device: it configures
+an 8 bit capture format, decodes a 10 bit stream into it and returns success, so
+the result is 8 bit samples labelled BT.2020 PQ rather than an error and a
+fallback to software. The bit depth the server reports for the stream, or
+failing that the depth encoded in the codec profile name, is compared against
+the deepest format the device enumerates, and the hardware decoder is dropped
+for that file when the stream is deeper. Dolby Vision is dropped the same way.
+
+What was found and what was used is in the app log:
+
+```
+V4L2 stateful decoding available: /dev/video-dec0 (iris_driver) h264,hevc,vp9 up to 8 bit
+preferring video decoders h264_v4l2m2m,hevc_v4l2m2m,vp9_v4l2m2m - any other codec falls back to software
+V4L2 decoder emits at most 8 bit; deeper streams will use software decoding
+not using hevc_v4l2m2m for hevc profile main 10 - stream is 10 bit, decoder emits 8 bit - falling back to software
+```
+
+*Hardware decoding* in Plex's own video settings turns all of it off.
+`PMP_NO_V4L2_DECODE` skips the V4L2 probe alone and leaves the rest of hardware
+decoding in place:
+
+```
+flatpak run --env=PMP_NO_V4L2_DECODE=1 io.github.syberphunk.PlexMediaPlayer
+```
+
+The sandbox takes `--device=all` to reach the `/dev/video*` nodes, because
+Flatpak has no narrower option for them. Access to those nodes is granted by
+uaccess ACLs on the seat's own devices, not by group membership, so the sandbox
+reaches them as the user who is logged in.
 
 ## Settings menu
 
