@@ -302,7 +302,7 @@ void SessionEnv::sanitizeGraphicsEnv()
   QStringList report;
 
   const QString driver = drmDriver();
-  const bool adreno = driver == "msm";
+  const bool adreno = driver.startsWith("msm");
   const bool armFlatpak = insideFlatpak() && QSysInfo::buildCpuArchitecture() == "arm64";
   const bool clampTarget = adreno || armFlatpak;
   const bool driverFromEnv = qEnvironmentVariableIsSet("MESA_LOADER_DRIVER_OVERRIDE");
