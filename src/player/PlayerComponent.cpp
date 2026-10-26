@@ -1370,6 +1370,8 @@ void PlayerComponent::updateVideoSettings()
     QLOG_INFO() << "preferring video decoders"
                 << qPrintable(m_videoDecoderPreference.join(","))
                 << "- any other codec falls back to software";
+    QLOG_INFO() << "V4L2 decoder emits at most" << SessionEnv::v4l2DecodeBitDepth()
+                << "bit; deeper streams will use software decoding";
   }
   else if (hwdecMode != "no")
   {
@@ -1528,6 +1530,8 @@ PlaybackInfo PlayerComponent::getPlaybackInfo()
           if (streamInfoMap["index"].toInt(&ok) == index && ok)
           {
             stream.profile = streamInfoMap["profile"].toString();
+            stream.videoBitDepth = streamInfoMap["bitDepth"].toInt();
+            stream.videoDolbyVision = streamInfoMap["DOVIPresent"].toBool();
             QLOG_DEBUG() << "h264profile:" << stream.profile;
           }
         }
@@ -1554,6 +1558,8 @@ PlaybackInfo PlayerComponent::getPlaybackInfo()
         stream.audioChannels = streamInfoMap["channels"].toInt();
         stream.videoResolution = QSize(streamInfoMap["width"].toInt(), streamInfoMap["height"].toInt());
         stream.profile = streamInfoMap["profile"].toString();
+        stream.videoBitDepth = streamInfoMap["bitDepth"].toInt();
+        stream.videoDolbyVision = streamInfoMap["DOVIPresent"].toBool();
 
         info.streams.append(stream);
       }
@@ -1564,7 +1570,104 @@ PlaybackInfo PlayerComponent::getPlaybackInfo()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-void PlayerComponent::setPreferredCodecs(const QList<CodecDriver>& codecs)
+// Bit depth of a video stream, from what the server reported. Falls back to the
+// profile name, which encodes the depth for every format that has a deep
+// variant. Returns 0 when neither says anything.
+static int videoStreamBitDepth(const StreamInfo& stream)
+{
+  if (stream.videoBitDepth > 0)
+    return stream.videoBitDepth;
+
+  const QString profile = stream.profile.toLower().remove(' ');
+  if (profile.contains("16"))
+    return 16;
+  if (profile.contains("12"))
+    return 12;
+  if (profile.contains("10"))
+    return 10;
+  // VP9 profiles 2 and 3 are the 10/12 bit ones.
+  if (stream.codec == "vp9" && (profile == "profile2" || profile == "profile3" ||
+                                profile == "2" || profile == "3"))
+    return 10;
+
+  return 0;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+// The V4L2 wrapper does not check whether the hardware can represent the stream
+// it is handed: it configures an 8 bit CAPTURE format and decodes into it
+// regardless, so 10 bit content comes out corrupted rather than failing over.
+// Drop the hardware decoder for any stream the device cannot emit correctly.
+QStringList PlayerComponent::allowedVideoDecoders(const PlaybackInfo& info) const
+{
+  if (m_videoDecoderPreference.isEmpty())
+    return m_videoDecoderPreference;
+
+  const int deviceDepth = SessionEnv::v4l2DecodeBitDepth();
+  QStringList excluded;
+
+  // The streams in info may have no profile at all, because that lookup matches
+  // the server's stream index against ffmpeg's and the two do not always agree.
+  // Read the server's own list as well, which needs no index match.
+  QList<StreamInfo> streams = info.streams;
+  for (auto partInfo : m_serverMediaInfo["Part"].toList())
+  {
+    for (auto streamInfo : partInfo.toMap()["Stream"].toList())
+    {
+      auto streamInfoMap = streamInfo.toMap();
+      if (!streamInfoMap["width"].isValid())
+        continue;
+
+      StreamInfo stream = {};
+      stream.isVideo = true;
+      stream.codec = Codecs::plexNameToFF(streamInfoMap["codec"].toString());
+      stream.profile = streamInfoMap["profile"].toString();
+      stream.videoBitDepth = streamInfoMap["bitDepth"].toInt();
+      stream.videoDolbyVision = streamInfoMap["DOVIPresent"].toBool();
+      streams.append(stream);
+    }
+  }
+
+  for (const StreamInfo& stream : streams)
+  {
+    if (!stream.isVideo || stream.codec.isEmpty())
+      continue;
+
+    const QString decoder = stream.codec + "_v4l2m2m";
+    if (!m_videoDecoderPreference.contains(decoder) || excluded.contains(decoder))
+      continue;
+
+    QString reason;
+    const int depth = videoStreamBitDepth(stream);
+    if (deviceDepth > 0 && depth > deviceDepth)
+      reason = QString("stream is %1 bit, decoder emits %2 bit").arg(depth).arg(deviceDepth);
+    else if (stream.videoDolbyVision)
+      reason = "Dolby Vision, which the decoder cannot process";
+
+    if (reason.isEmpty())
+      continue;
+
+    QLOG_INFO() << "not using" << qPrintable(decoder) << "for" << qPrintable(stream.codec)
+                << "profile" << qPrintable(stream.profile.isEmpty() ? QString("unknown")
+                                                                    : stream.profile)
+                << "-" << qPrintable(reason) << "- falling back to software";
+    excluded << decoder;
+  }
+
+  if (excluded.isEmpty())
+    return m_videoDecoderPreference;
+
+  QStringList allowed;
+  for (const QString& decoder : m_videoDecoderPreference)
+  {
+    if (!excluded.contains(decoder))
+      allowed << decoder;
+  }
+  return allowed;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::setPreferredCodecs(const QList<CodecDriver>& codecs, const PlaybackInfo& info)
 {
   QStringList items;
   for (auto codec : codecs)
@@ -1578,7 +1681,7 @@ void PlayerComponent::setPreferredCodecs(const QList<CodecDriver>& codecs)
   // For simplicity, we don't distinguish between audio and video. The player
   // will ignore entries with mismatching media type.
   mpv::qt::set_property(m_mpv, "ad", opt);
-  mpv::qt::set_property(m_mpv, "vd", (m_videoDecoderPreference + items).join(","));
+  mpv::qt::set_property(m_mpv, "vd", (allowedVideoDecoders(info) + items).join(","));
 }
 
 // For QVariant.
@@ -1591,8 +1694,9 @@ void PlayerComponent::startCodecsLoading(std::function<void()> resume)
   fetcher->userData = QVariant::fromValue(resume);
   connect(fetcher, &CodecsFetcher::done, this, &PlayerComponent::onCodecsLoadingDone);
   Codecs::updateCachedCodecList();
-  QList<CodecDriver> codecs = Codecs::determineRequiredCodecs(getPlaybackInfo());
-  setPreferredCodecs(codecs);
+  PlaybackInfo info = getPlaybackInfo();
+  QList<CodecDriver> codecs = Codecs::determineRequiredCodecs(info);
+  setPreferredCodecs(codecs, info);
   fetcher->installCodecs(codecs);
 }
 
