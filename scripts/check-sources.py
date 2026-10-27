@@ -93,6 +93,15 @@ UPSTREAM = {
         "readme": ("zlib (minizip)", ""),
         "hold": ("1.3.1", "CVE-2026-85091 affects 1.3.1.2 through 1.3.2"),
     },
+    "openxr-loader": {
+        "probe": ("github", "KhronosGroup/OpenXR-SDK"),
+        "strip_v": True,
+        "prefix": "release-",
+        "url": "https://github.com/KhronosGroup/OpenXR-SDK/archive/refs/tags/"
+               "release-%(v)s.tar.gz",
+        "vendor": "openxr-sdk-%(v)s.tar.gz",
+        "readme": ("OpenXR-SDK (loader)", ""),
+    },
     "libplacebo": {
         "probe": ("gitlab", "https://code.videolan.org", "videolan%2Flibplacebo"),
         "strip_v": True,
@@ -332,10 +341,12 @@ def check_actions(offline):
     return failures, newer
 
 
-def latest_version(spec):
+def latest_version(spec, prefix="v"):
     found = probe_version(spec)
     if found is None:
         return None
+    if isinstance(found, str) and prefix != "v" and found.startswith(prefix):
+        found = found[len(prefix):]
     if not isinstance(found, str) or not TAG_RE.fullmatch(found):
         raise RuntimeError("%s probe returned an implausible version %r"
                            % (spec[0], found))
@@ -403,10 +414,12 @@ def pinned_version(source, module):
     return None
 
 
-def normalise(version, strip_v):
+def normalise(version, strip_v, prefix="v"):
     if version is None:
         return None
-    return version[1:] if strip_v and version.startswith("v") else version
+    if strip_v and version.startswith(prefix):
+        return version[len(prefix):]
+    return version
 
 
 def interesting(sources):
@@ -514,7 +527,9 @@ def check(sources, deep, offline):
         if pin is None:
             continue
         try:
-            latest = normalise(latest_version(spec["probe"]), spec["strip_v"])
+            prefix = spec.get("prefix", "v")
+            latest = normalise(latest_version(spec["probe"], prefix),
+                               spec["strip_v"], prefix)
         except Exception as problem:
             failures.append(report(source.module, False,
                                    "version probe failed: %s" % problem))
