@@ -3,9 +3,14 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
 #include <QSysInfo>
 
 #include "QsLog.h"
+#include "Paths.h"
 
 #ifdef HAVE_OPENXR
 #include <openxr/openxr.h>
@@ -32,6 +37,40 @@ namespace
       const QString path = QStringLiteral("/opt/steamvr/") + name;
       if (QFileInfo(path).isFile())
         return path;
+    }
+    return QString();
+  }
+
+  QString existingPathRegistry()
+  {
+    QStringList paths;
+    const QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
+    if (!configHome.isEmpty())
+      paths << configHome + QStringLiteral("/openvr/openvrpaths.vrpath");
+    paths << QDir::homePath() + QStringLiteral("/.config/openvr/openvrpaths.vrpath")
+          << QDir::homePath() + QStringLiteral("/.openvr/openvrpaths.vrpath");
+
+    for (const QString& path : paths)
+    {
+      if (QFileInfo(path).isReadable())
+        return path;
+    }
+    return QString();
+  }
+
+  QString runtimeDirFromRegistry(const QString& path)
+  {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+      return QString();
+
+    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    const QJsonArray runtimes = root.value(QStringLiteral("runtime")).toArray();
+    for (const QJsonValue& value : runtimes)
+    {
+      const QString dir = value.toString();
+      if (!dir.isEmpty() && QFileInfo(dir).isDir())
+        return dir;
     }
     return QString();
   }
@@ -74,6 +113,55 @@ bool XrSupport::ensureRuntimeJson()
   return true;
 }
 
+bool XrSupport::ensurePathRegistry()
+{
+  if (qEnvironmentVariableIsSet("VR_PATHREG_OVERRIDE"))
+    return true;
+
+  const QString existing = existingPathRegistry();
+  const QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
+  if (!existing.isEmpty() && !configHome.isEmpty() && existing.startsWith(configHome))
+    return true;
+
+  QString runtimeDir;
+  if (!existing.isEmpty())
+    runtimeDir = runtimeDirFromRegistry(existing);
+  if (runtimeDir.isEmpty())
+  {
+    const QString manifest = runtimeManifestCandidate();
+    if (!manifest.isEmpty())
+      runtimeDir = QFileInfo(manifest).absolutePath();
+  }
+  if (runtimeDir.isEmpty())
+    return false;
+
+  const QString dir = Paths::dataDir(QStringLiteral("openvr"));
+  if (!QDir().mkpath(dir + "/config") || !QDir().mkpath(dir + "/log"))
+    return false;
+
+  QJsonObject root;
+  root.insert(QStringLiteral("config"), QJsonArray{dir + "/config"});
+  root.insert(QStringLiteral("external_drivers"), QJsonValue::Null);
+  root.insert(QStringLiteral("jsonid"), QStringLiteral("vrpathreg"));
+  root.insert(QStringLiteral("log"), QJsonArray{dir + "/log"});
+  root.insert(QStringLiteral("runtime"), QJsonArray{runtimeDir});
+  root.insert(QStringLiteral("version"), 1);
+
+  const QString path = dir + "/openvrpaths.vrpath";
+  QSaveFile out(path);
+  if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    return false;
+
+  const QByteArray data = QJsonDocument(root).toJson(QJsonDocument::Indented);
+  if (out.write(data) != data.size() || !out.commit())
+    return false;
+
+  qputenv("VR_PATHREG_OVERRIDE", path.toLocal8Bit());
+  QLOG_INFO() << "OpenXR: path registry written to" << qPrintable(path)
+              << "pointing at" << qPrintable(runtimeDir);
+  return true;
+}
+
 #ifdef HAVE_OPENXR
 
 namespace
@@ -103,7 +191,11 @@ const XrSupport::Info& XrSupport::probe()
   g_info.compiledIn = true;
 
   ensureRuntimeJson();
+  ensurePathRegistry();
   g_info.manifest = QString::fromLocal8Bit(qgetenv("XR_RUNTIME_JSON"));
+  g_info.pathRegistry = qEnvironmentVariableIsSet("VR_PATHREG_OVERRIDE")
+                          ? QString::fromLocal8Bit(qgetenv("VR_PATHREG_OVERRIDE"))
+                          : existingPathRegistry();
 
   quint32 extensionCount = 0;
   XrResult result = xrEnumerateInstanceExtensionProperties(nullptr, 0, &extensionCount, nullptr);
@@ -225,6 +317,8 @@ QString XrSupport::report()
 
   parts << QString("manifest=%1").arg(info.manifest.isEmpty() ? QString("(discovered)")
                                                               : info.manifest);
+  parts << QString("pathreg=%1").arg(info.pathRegistry.isEmpty() ? QString("none")
+                                                                 : info.pathRegistry);
   parts << QString("runtime=%1").arg(info.runtimeFound
                                        ? QString("%1 %2").arg(info.runtimeName, info.runtimeVersion)
                                        : QString("none"));
