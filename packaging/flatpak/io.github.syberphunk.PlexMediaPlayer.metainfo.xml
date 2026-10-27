@@ -51,6 +51,27 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.22" date="2026-10-27">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>A Steam section in the settings menu. It adds a Plex icon to your Steam
+              library, writes that icon again if it was changed or deleted, and restarts
+              Plex through Steam. Started from Steam, the device runs Plex on the
+              performance profile it reserves for games, which is what 4K playback
+              needs. Steam reads its shortcut list when it starts, so a new icon appears
+              once Steam has restarted. The existing list is copied into the app's own
+              data directory before anything is written to it.</li>
+          <li>On a headset, the app offers to add that icon the first time it is started
+              outside Steam, and stops offering it if you answer never. The buttons in
+              the settings menu remain either way.</li>
+          <li>The startup log now records whether Steam started the app, and on a device
+              with SteamVR installed whether the OpenXR runtime answers, which headset
+              it reports and the resolution it recommends per eye. Stereoscopic playback
+              is not implemented; this is the groundwork for it.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.21" date="2026-10-27">
       <description>
         <p>Changed:</p>
