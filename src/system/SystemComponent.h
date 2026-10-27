@@ -50,6 +50,7 @@ public:
   Q_SIGNAL void userInfoChanged();
   Q_SIGNAL void signedInChanged();
   Q_SIGNAL void webClientReady();
+  Q_SIGNAL void signInFailed();
 
   // possible os types type enum
   enum PlatformType

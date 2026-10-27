@@ -24,6 +24,7 @@
 #endif
 
 #define SIGN_IN_PROBE_DELAY 20000
+#define SIGN_IN_FAILURE_GRACE 5000
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 class ScopedDecrementer
@@ -42,6 +43,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   QQuickWindow(parent),
   m_debugLayer(false),
   m_signInProbeDone(false),
+  m_signInFailureSeen(false),
   m_ignoreFullscreenSettingsChange(0),
   m_forcedFullscreenCount(0),
   m_closing(false)
@@ -62,6 +64,14 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   connect(m_signInProbe, &QTimer::timeout, this, &KonvergoWindow::checkSignInProbe);
   connect(&SystemComponent::Get(), &SystemComponent::webClientReady,
           this, &KonvergoWindow::armSignInProbe);
+  connect(&SystemComponent::Get(), &SystemComponent::signInFailed, this, [this]
+  {
+    if (m_signInProbeDone || SystemComponent::Get().signedIn())
+      return;
+
+    m_signInFailureSeen = true;
+    m_signInProbe->start(SIGN_IN_FAILURE_GRACE);
+  });
   connect(&SystemComponent::Get(), &SystemComponent::signedInChanged, this, [this]
   {
     if (SystemComponent::Get().signedIn())
@@ -630,24 +640,40 @@ void KonvergoWindow::armSignInProbe()
 
 void KonvergoWindow::checkSignInProbe()
 {
+  if (m_signInFailureSeen)
+    considerSignIn(QString("the web client could not restore the session, and none appeared in "
+                           "the %1 seconds after").arg(SIGN_IN_FAILURE_GRACE / 1000));
+  else
+    considerSignIn(QString("no Plex account session %1 seconds after the web client was ready")
+                     .arg(SIGN_IN_PROBE_DELAY / 1000));
+}
+
+void KonvergoWindow::considerSignIn(const QString& reason)
+{
   auto& system = SystemComponent::Get();
 
   if (m_signInProbeDone || system.signedIn())
     return;
 
   m_signInProbeDone = true;
+  m_signInProbe->stop();
 
   if (system.signInSkipped())
   {
-    QLOG_INFO() << "No Plex account session, but the web client was told to skip sign-in.";
+    QLOG_INFO() << "Sign-in needed (" << qPrintable(reason)
+                << "), but the web client was told to skip sign-in.";
     return;
   }
 
   if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "signInPending").toBool())
+  {
+    QLOG_INFO() << "Sign-in needed (" << qPrintable(reason)
+                << "), and the web client is already on the sign-in page.";
     return;
+  }
 
-  QLOG_INFO() << "No Plex account session" << SIGN_IN_PROBE_DELAY / 1000
-              << "seconds after the web client was ready. Sending it to the sign-in page.";
+  QLOG_INFO() << "Sign-in needed (" << qPrintable(reason)
+              << "). Sending the web client to the sign-in page.";
   requestSignIn();
 }
 

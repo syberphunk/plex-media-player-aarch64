@@ -128,11 +128,13 @@ private:
 
   void armSignInProbe();
   void checkSignInProbe();
+  void considerSignIn(const QString& reason);
 
   bool m_debugLayer;
   QTimer* m_infoTimer;
   QTimer* m_signInProbe;
   bool m_signInProbeDone;
+  bool m_signInFailureSeen;
   QString m_debugInfo, m_systemDebugInfo, m_videoInfo;
   int m_ignoreFullscreenSettingsChange;
   int m_forcedFullscreenCount;
