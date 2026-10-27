@@ -51,6 +51,16 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.21" date="2026-10-27">
+      <description>
+        <p>Changed:</p>
+        <ul>
+          <li>Re-worked scenarios where the client would be logged out to prompt the
+              user to log back in, either automatically or login from the cog where the
+              user may be stuck at a constant loading screen.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.20" date="2026-10-27">
       <description>
         <p>Added:</p>

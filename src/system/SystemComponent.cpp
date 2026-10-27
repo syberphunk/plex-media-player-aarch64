@@ -140,6 +140,9 @@ void SystemComponent::restart()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void SystemComponent::info(QString text)
 {
+  if (text.contains(QLatin1String("tokenPromise failed")))
+    emit signInFailed();
+
   if (QsLogging::Logger::instance().loggingLevel() <= QsLogging::InfoLevel)
     QsLogging::Logger::Helper(QsLogging::InfoLevel).stream() << "JS:" << qPrintable(text);
 }
