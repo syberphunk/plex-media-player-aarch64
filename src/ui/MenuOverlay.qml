@@ -7,6 +7,9 @@ FocusScope
   property var cfg: (typeof components !== "undefined") ? components.menu : null
   property var settings: (typeof components !== "undefined") ? components.settings : null
   property var updater: (typeof components !== "undefined") ? components.updater : null
+  property var system: (typeof components !== "undefined") ? components.system : null
+
+  readonly property bool signedIn: system ? system.signedIn : false
 
   readonly property bool open: cfg ? cfg.visible : false
   readonly property bool contrast: cfg ? cfg.highContrast : false
@@ -40,6 +43,8 @@ FocusScope
   property string customPath: ""
 
   signal closed()
+  signal signIn()
+  signal onlineMediaSources()
 
   visible: opacity > 0
   opacity: open ? 1 : 0
@@ -125,6 +130,22 @@ FocusScope
     else if (bottom + Math.round(24 * menu.u) > flick.contentY + flick.height)
       flick.contentY = Math.min(Math.max(0, flick.contentHeight - flick.height),
                                 bottom + Math.round(24 * menu.u) - flick.height)
+  }
+
+  function openSignIn()
+  {
+    if (cfg)
+      cfg.hide()
+
+    menu.signIn()
+  }
+
+  function openOnlineMediaSources()
+  {
+    if (cfg)
+      cfg.hide()
+
+    menu.onlineMediaSources()
   }
 
   function openReleaseNotes()
@@ -686,6 +707,71 @@ FocusScope
         id: list
         width: flick.width
         spacing: Math.round(4 * menu.u)
+
+        Heading
+        {
+          width: parent.width
+          text: qsTr("Account")
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: !menu.signedIn
+          text: qsTr("Use this if Plex opens on an empty screen with a loading wheel. "
+                     + "That is how a signed-out client looks, and it offers no way "
+                     + "back to sign-in on its own.")
+        }
+
+        Item
+        {
+          width: parent.width
+          visible: !menu.signedIn
+          height: visible ? Math.round(96 * menu.u) : 0
+
+          Btn
+          {
+            id: signInButton
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: qsTr("Sign in to Plex")
+            hint: qsTr("Load the Plex sign-in screen")
+            minW: 330
+            onClicked: menu.openSignIn()
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.signedIn
+          text: qsTr("The Trending and Activity tabs on Home are not served to "
+                     + "this client and report an error when opened. Turning off "
+                     + "Discover Source removes them. This is a Plex account "
+                     + "setting and applies to every Plex app you sign in to.")
+        }
+
+        Item
+        {
+          width: parent.width
+          visible: menu.signedIn
+          height: visible ? Math.round(96 * menu.u) : 0
+
+          Btn
+          {
+            id: onlineMediaSourcesButton
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: qsTr("Online Media Sources")
+            hint: qsTr("Open the Plex page for Discover and other online sources")
+            minW: 330
+            onClicked: menu.openOnlineMediaSources()
+          }
+        }
 
         Heading
         {

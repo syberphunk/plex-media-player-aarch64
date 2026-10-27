@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 360
     env:
       ARCH: aarch64
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

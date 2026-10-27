@@ -841,10 +841,18 @@ QVariantMap StorageConnector::itemKeys()
   return Envelope::ok(QVariant(m_data.keys()));
 }
 
+static const char* kAccountTokenKey = "myPlexAccessToken";
+static const char* kSkipSignInKey = "skipSignIn";
+
 QVariantMap StorageConnector::getItem(const QString& key)
 {
   trace("getItem", key);
-  return Envelope::ok(m_data.value(key));
+  const QVariant value = m_data.value(key);
+
+  if (key == QLatin1String(kSkipSignInKey))
+    SystemComponent::Get().setSignInSkipped(value.toBool());
+
+  return Envelope::ok(value);
 }
 
 QVariantMap StorageConnector::setItem(const QString& key, const QVariant& value)
@@ -852,6 +860,12 @@ QVariantMap StorageConnector::setItem(const QString& key, const QVariant& value)
   trace("setItem", key);
   m_data[key] = value;
   persist(m_data);
+
+  if (key == QLatin1String(kAccountTokenKey))
+    SystemComponent::Get().setSignedIn(!value.toString().isEmpty());
+  else if (key == QLatin1String(kSkipSignInKey))
+    SystemComponent::Get().setSignInSkipped(value.toBool());
+
   return Envelope::ok();
 }
 
@@ -860,6 +874,12 @@ QVariantMap StorageConnector::removeItem(const QString& key)
   trace("removeItem", key);
   m_data.remove(key);
   persist(m_data);
+
+  if (key == QLatin1String(kAccountTokenKey))
+    SystemComponent::Get().setSignedIn(false);
+  else if (key == QLatin1String(kSkipSignInKey))
+    SystemComponent::Get().setSignInSkipped(false);
+
   return Envelope::ok();
 }
 
@@ -868,6 +888,8 @@ QVariantMap StorageConnector::clear()
   trace("clear");
   m_data.clear();
   persist(m_data);
+  SystemComponent::Get().setSignedIn(false);
+  SystemComponent::Get().setSignInSkipped(false);
   return Envelope::ok();
 }
 

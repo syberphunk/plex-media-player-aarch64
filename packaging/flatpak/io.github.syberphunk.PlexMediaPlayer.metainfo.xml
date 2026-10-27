@@ -51,6 +51,26 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.20" date="2026-10-27">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>The app sends the client to the Plex sign-in page by itself when the client
+              reports ready and no Plex account session appears within twenty seconds. A
+              device whose session has lapsed otherwise sits on the Home screen with a
+              loading spinner and nothing to act on.</li>
+          <li>An Online Media Sources item in the settings menu, which opens the Plex
+              page of that name. Its Discover Source setting removes the Trending and
+              Activity tabs from Home, which report an error on this client. It is a Plex
+              account setting and applies to every Plex app the account signs in to.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>The Sign in to Plex item appears only when the client has no Plex account
+              session.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.19" date="2026-10-26">
       <description>
         <p>Added:</p>

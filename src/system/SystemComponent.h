@@ -16,6 +16,7 @@ public:
   Q_PROPERTY(bool isLinux READ platformIsLinux CONSTANT)
   Q_PROPERTY(bool cursorVisible READ cursorVisible NOTIFY cursorVisibilityChanged)
   Q_PROPERTY(qreal scale MEMBER m_scale CONSTANT)
+  Q_PROPERTY(bool signedIn READ signedIn NOTIFY signedInChanged)
 
   bool componentExport() override { return true; }
   const char* componentName() override { return "system"; }
@@ -47,6 +48,8 @@ public:
   Q_INVOKABLE QString getCapabilitiesString();
   Q_SIGNAL void capabilitiesChanged(const QString& capabilities);
   Q_SIGNAL void userInfoChanged();
+  Q_SIGNAL void signedInChanged();
+  Q_SIGNAL void webClientReady();
 
   // possible os types type enum
   enum PlatformType
@@ -74,6 +77,12 @@ public:
 
   inline QString authenticationToken() { return m_authenticationToken; }
   void setAuthenticationToken(const QString& token);
+
+  inline bool signedIn() const { return m_signedIn; }
+  void setSignedIn(bool signedIn);
+
+  inline bool signInSkipped() const { return m_signInSkipped; }
+  void setSignInSkipped(bool skipped) { m_signInSkipped = skipped; }
   inline bool cursorVisible() { return m_cursorVisible; }
 
   void updateScale(qreal scale);
@@ -98,6 +107,8 @@ private:
   PlatformArch m_platformArch;
   bool m_doLogMessages;
   QString m_authenticationToken;
+  bool m_signedIn = false;
+  bool m_signInSkipped = false;
   QString m_webClientVersion;
   bool m_cursorVisible;
   qreal m_scale;

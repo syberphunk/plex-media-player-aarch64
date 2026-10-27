@@ -163,8 +163,6 @@ if [ -z "$TAG" ]; then
   TAG="v$VERSION-aarch64.$next"
 fi
 
-# Checked here rather than in publish(), so a tag with no release entry fails
-# before the build instead of after it.
 NOTES_BODY=
 if [ "$PUBLISH" -eq 1 ] && [ -z "$NOTES_FILE" ]; then
   NOTES_BODY=$("$REPO_ROOT/scripts/release-notes.py" "${TAG#v}") || {

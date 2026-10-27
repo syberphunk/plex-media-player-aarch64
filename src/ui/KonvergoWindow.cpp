@@ -23,6 +23,8 @@
 #include <X11/Xlib.h>
 #endif
 
+#define SIGN_IN_PROBE_DELAY 20000
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 class ScopedDecrementer
 {
@@ -39,6 +41,7 @@ public:
 KonvergoWindow::KonvergoWindow(QWindow* parent) :
   QQuickWindow(parent),
   m_debugLayer(false),
+  m_signInProbeDone(false),
   m_ignoreFullscreenSettingsChange(0),
   m_forcedFullscreenCount(0),
   m_closing(false)
@@ -51,7 +54,19 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
 
   installEventFilter(new EventFilter(this));
 
+  m_signInProbe = new QTimer(this);
+  m_signInProbe->setSingleShot(true);
+  m_signInProbe->setInterval(SIGN_IN_PROBE_DELAY);
+
   connect(m_infoTimer, &QTimer::timeout, this, &KonvergoWindow::updateDebugInfo);
+  connect(m_signInProbe, &QTimer::timeout, this, &KonvergoWindow::checkSignInProbe);
+  connect(&SystemComponent::Get(), &SystemComponent::webClientReady,
+          this, &KonvergoWindow::armSignInProbe);
+  connect(&SystemComponent::Get(), &SystemComponent::signedInChanged, this, [this]
+  {
+    if (SystemComponent::Get().signedIn())
+      m_signInProbe->stop();
+  });
 
   InputComponent::Get().registerHostCommand("close", this, "close");
   InputComponent::Get().registerHostCommand("toggleDebug", this, "toggleDebug");
@@ -603,6 +618,49 @@ void KonvergoWindow::webClientNavigated(const QUrl& url)
     QLOG_DEBUG() << "Web client" << (onLogin ? "is on" : "has left") << "the sign-in page.";
     settings.setValue(SETTINGS_SECTION_MAIN, "signInPending", onLogin);
   }
+}
+
+void KonvergoWindow::armSignInProbe()
+{
+  if (m_signInProbeDone || SystemComponent::Get().signedIn())
+    return;
+
+  m_signInProbe->start();
+}
+
+void KonvergoWindow::checkSignInProbe()
+{
+  auto& system = SystemComponent::Get();
+
+  if (m_signInProbeDone || system.signedIn())
+    return;
+
+  m_signInProbeDone = true;
+
+  if (system.signInSkipped())
+  {
+    QLOG_INFO() << "No Plex account session, but the web client was told to skip sign-in.";
+    return;
+  }
+
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "signInPending").toBool())
+    return;
+
+  QLOG_INFO() << "No Plex account session" << SIGN_IN_PROBE_DELAY / 1000
+              << "seconds after the web client was ready. Sending it to the sign-in page.";
+  requestSignIn();
+}
+
+void KonvergoWindow::requestSignIn()
+{
+  auto& settings = SettingsComponent::Get();
+
+  m_signInProbeDone = true;
+  m_signInProbe->stop();
+
+  QLOG_INFO() << "Sending the web client to the sign-in page on request.";
+  settings.setValue(SETTINGS_SECTION_MAIN, "signInPending", true);
+  emit webUrlChanged();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
