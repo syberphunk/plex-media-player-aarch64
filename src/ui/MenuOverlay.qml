@@ -44,6 +44,7 @@ FocusScope
   property string customPath: ""
 
   property bool steamOffer: false
+  property bool steamOfferShown: false
   property string steamStatus: ""
 
   signal closed()
@@ -172,11 +173,18 @@ FocusScope
       steamOfferTimer.start()
   }
 
+  onSignedInChanged:
+  {
+    if (menu.steamOfferAllowed())
+      steamOfferTimer.restart()
+  }
+
   function raiseSteamOffer()
   {
     if (!menu.steamOfferAllowed())
       return;
 
+    menu.steamOfferShown = true
     menu.steamStatus = ""
     menu.steamOffer = true
 
@@ -186,7 +194,7 @@ FocusScope
 
   function steamOfferAllowed()
   {
-    if (!steam || !settings)
+    if (!steam || !settings || menu.steamOfferShown || !menu.signedIn)
       return false;
 
     return steam.shouldOffer && settings.value("main", "steamShortcutOffer")
