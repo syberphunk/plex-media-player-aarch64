@@ -10,6 +10,7 @@
 #include "player/PlayerComponent.h"
 #include "display/DisplayComponent.h"
 #include "system/MenuComponent.h"
+#include "system/SteamComponent.h"
 #include "system/SystemComponent.h"
 #include "system/UpdateManager.h"
 #include "settings/SettingsComponent.h"
@@ -69,6 +70,7 @@ void ComponentManager::initialize()
   registerComponent(&PlayerComponent::Get());
   registerComponent(&PowerComponent::Get());
   registerComponent(&UpdateManager::Get());
+  registerComponent(&SteamComponent::Get());
 
   for(ComponentBase* component : m_components.values())
     component->componentPostInitialize();

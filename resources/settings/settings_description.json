@@ -80,6 +80,11 @@
         "hidden": true
       },
       {
+        "value": "steamShortcutOffer",
+        "default": true,
+        "hidden": true
+      },
+      {
         "value": "disablemouse",
         "default": false
       },

@@ -437,6 +437,50 @@ QString SessionEnv::graphicsEnvReport()
   return g_graphicsEnvReport;
 }
 
+static const char* const g_steamLaunchVars[] = {
+  "SteamGameId", "SteamOverlayGameId", "SteamClientLaunch", "SteamAppId"
+};
+
+bool SessionEnv::launchedFromSteam()
+{
+  for (const char* var : g_steamLaunchVars)
+  {
+    const QString value = QString::fromLocal8Bit(qgetenv(var)).trimmed();
+    if (!value.isEmpty() && value != QLatin1String("0"))
+      return true;
+  }
+  return false;
+}
+
+QString SessionEnv::steamGameId()
+{
+  for (const char* var : {"SteamGameId", "SteamOverlayGameId"})
+  {
+    const QString value = QString::fromLocal8Bit(qgetenv(var)).trimmed();
+    if (!value.isEmpty() && value != QLatin1String("0"))
+      return value;
+  }
+  return QString();
+}
+
+QString SessionEnv::steamEnvReport()
+{
+  QStringList parts;
+  for (const char* var : g_steamLaunchVars)
+  {
+    if (qEnvironmentVariableIsSet(var))
+      parts << QString("%1=%2").arg(var, QString::fromLocal8Bit(qgetenv(var)));
+  }
+  for (const char* var : {"SteamEnv", "SteamStreamingHardwareEncodingNVIDIA",
+                          "STEAM_COMPAT_APP_ID", "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+                          "SDL_GAMECONTROLLERCONFIG"})
+  {
+    if (qEnvironmentVariableIsSet(var))
+      parts << QString("%1=set").arg(var);
+  }
+  return parts.join(" ");
+}
+
 QString SessionEnv::description()
 {
   QStringList parts;
@@ -445,5 +489,9 @@ QString SessionEnv::description()
   parts << QString("DISPLAY=%1").arg(QString::fromLocal8Bit(qgetenv("DISPLAY")));
   parts << QString("WAYLAND_DISPLAY=%1").arg(QString::fromLocal8Bit(qgetenv("WAYLAND_DISPLAY")));
   parts << QString("gamescope=%1").arg(insideGamescope() ? "yes" : "no");
+  parts << QString("steam-launch=%1").arg(launchedFromSteam() ? "yes" : "no");
+  const QString steam = steamEnvReport();
+  if (!steam.isEmpty())
+    parts << steam;
   return parts.join(" ");
 }

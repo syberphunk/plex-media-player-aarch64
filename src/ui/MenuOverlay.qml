@@ -8,6 +8,7 @@ FocusScope
   property var settings: (typeof components !== "undefined") ? components.settings : null
   property var updater: (typeof components !== "undefined") ? components.updater : null
   property var system: (typeof components !== "undefined") ? components.system : null
+  property var steam: (typeof components !== "undefined") ? components.steam : null
 
   readonly property bool signedIn: system ? system.signedIn : false
 
@@ -42,6 +43,9 @@ FocusScope
   property bool customPathOpen: false
   property string customPath: ""
 
+  property bool steamOffer: false
+  property string steamStatus: ""
+
   signal closed()
   signal signIn()
   signal onlineMediaSources()
@@ -61,18 +65,24 @@ FocusScope
 
     if (open)
     {
+      if (steam)
+        steam.refresh()
+
       customPathOpen = cfg && cfg.downloadPreset === "custom"
       customPath = cfg ? cfg.downloadDir : ""
       Qt.callLater(menu.takeFocus)
       return;
     }
 
+    menu.steamOffer = false
     menu.closed()
   }
 
   function takeFocus()
   {
-    if (pendingDownload)
+    if (steamOffer)
+      steamCreateButton.forceActiveFocus()
+    else if (pendingDownload)
       askSave.forceActiveFocus()
     else
       checkButton.forceActiveFocus()
@@ -146,6 +156,96 @@ FocusScope
       cfg.hide()
 
     menu.onlineMediaSources()
+  }
+
+  Timer
+  {
+    id: steamOfferTimer
+    interval: 6000
+    repeat: false
+    onTriggered: menu.raiseSteamOffer()
+  }
+
+  Component.onCompleted:
+  {
+    if (menu.steamOfferAllowed())
+      steamOfferTimer.start()
+  }
+
+  function raiseSteamOffer()
+  {
+    if (!menu.steamOfferAllowed())
+      return;
+
+    menu.steamStatus = ""
+    menu.steamOffer = true
+
+    if (cfg && !cfg.visible)
+      cfg.show()
+  }
+
+  function steamOfferAllowed()
+  {
+    if (!steam || !settings)
+      return false;
+
+    return steam.shouldOffer && settings.value("main", "steamShortcutOffer")
+  }
+
+  function createSteamShortcut()
+  {
+    if (!steam)
+      return;
+
+    if (steam.createShortcut())
+    {
+      menu.steamStatus = qsTr("Icon created. Steam reads its shortcut list when it "
+                              + "starts, so restart Steam and then open Plex from "
+                              + "your library.")
+    }
+    else
+    {
+      menu.steamStatus = steam.lastError.length > 0
+                           ? steam.lastError
+                           : qsTr("The Steam icon could not be created.")
+    }
+
+    menu.steamOffer = false
+  }
+
+  function relaunchViaSteam()
+  {
+    if (!steam)
+      return;
+
+    menu.steamOffer = false
+
+    if (!steam.relaunchThroughSteam())
+    {
+      menu.steamStatus = steam.lastError.length > 0
+                           ? steam.lastError
+                           : qsTr("Steam did not answer.")
+      return;
+    }
+
+    menu.steamStatus = qsTr("Asked Steam to start Plex.")
+
+    if (cfg)
+      cfg.hide()
+
+    if (system)
+      system.exit()
+  }
+
+  function dismissSteamOffer(forever)
+  {
+    menu.steamOffer = false
+
+    if (forever && settings)
+      settings.setValue("main", "steamShortcutOffer", false)
+
+    if (cfg)
+      cfg.hide()
   }
 
   function openReleaseNotes()
@@ -679,13 +779,85 @@ FocusScope
       }
     }
 
+    Card
+    {
+      id: steamBar
+
+      visible: menu.steamOffer
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: askBar.visible ? askBar.bottom : subtitle.bottom
+      anchors.leftMargin: Math.round(28 * menu.u)
+      anchors.rightMargin: Math.round(28 * menu.u)
+      anchors.topMargin: Math.round(18 * menu.u)
+      height: visible ? Math.round(214 * menu.u) : 0
+      color: menu.surface
+      border.color: menu.accentFill
+
+      Accessible.role: Accessible.Pane
+      Accessible.name: qsTr("Steam icon")
+
+      Text
+      {
+        id: steamOfferText
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: Math.round(24 * menu.u)
+        anchors.topMargin: Math.round(18 * menu.u)
+        width: parent.width - Math.round(48 * menu.u)
+        text: qsTr("Looks like you are on a Steam Frame. Plex runs better started "
+                   + "from Steam, which is what gives it the performance profile "
+                   + "the device reserves for games. Add a Steam icon for it?")
+        color: menu.textPri
+        font.pixelSize: menu.fontPx(26)
+        wrapMode: Text.WordWrap
+      }
+
+      Btn
+      {
+        id: steamCreateButton
+        anchors.left: steamOfferText.left
+        anchors.top: steamOfferText.bottom
+        anchors.topMargin: Math.round(14 * menu.u)
+        label: qsTr("Add icon")
+        hint: qsTr("Write a Plex entry into your Steam library")
+        primary: true
+        minW: 200
+        onClicked: menu.createSteamShortcut()
+      }
+
+      Btn
+      {
+        id: steamLaterButton
+        anchors.left: steamCreateButton.right
+        anchors.leftMargin: Math.round(16 * menu.u)
+        anchors.verticalCenter: steamCreateButton.verticalCenter
+        label: qsTr("Not now")
+        hint: qsTr("Leave Steam alone and ask again next time")
+        minW: 200
+        onClicked: menu.dismissSteamOffer(false)
+      }
+
+      Btn
+      {
+        anchors.left: steamLaterButton.right
+        anchors.leftMargin: Math.round(16 * menu.u)
+        anchors.verticalCenter: steamCreateButton.verticalCenter
+        label: qsTr("Never ask")
+        hint: qsTr("Stop offering this, the icon can still be added from this menu")
+        minW: 200
+        onClicked: menu.dismissSteamOffer(true)
+      }
+    }
+
     Flickable
     {
       id: flick
 
       anchors.left: parent.left
       anchors.right: parent.right
-      anchors.top: askBar.visible ? askBar.bottom : subtitle.bottom
+      anchors.top: steamBar.visible ? steamBar.bottom
+                                    : (askBar.visible ? askBar.bottom : subtitle.bottom)
       anchors.bottom: footer.top
       anchors.leftMargin: Math.round(28 * menu.u)
       anchors.rightMargin: Math.round(34 * menu.u)
@@ -1201,6 +1373,76 @@ FocusScope
               if (cfg)
                 cfg.restoreDefaults("keys")
             }
+          }
+        }
+
+        Heading
+        {
+          width: parent.width
+          visible: menu.steam !== null && menu.steam.steamPresent
+          text: qsTr("Steam")
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.steam !== null && menu.steam.steamPresent
+          text: menu.steam && menu.steam.launchedFromSteam
+                  ? qsTr("Steam started this session, so the device is running "
+                         + "Plex on its game performance profile.")
+                  : (menu.steam && menu.steam.shortcutPresent
+                       ? qsTr("Steam has an icon for Plex, but this session was not "
+                              + "started from it. Starting it from Steam gives the "
+                              + "device the performance profile it reserves for "
+                              + "games, which is what 4K playback needs.")
+                       : qsTr("Steam has no icon for Plex. Adding one lets the "
+                              + "device run Plex on the performance profile it "
+                              + "reserves for games, which is what 4K playback "
+                              + "needs."))
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.steamStatus.length > 0
+          text: menu.steamStatus
+        }
+
+        Item
+        {
+          width: parent.width
+          visible: menu.steam !== null && menu.steam.steamPresent
+          height: visible ? Math.round(96 * menu.u) : 0
+
+          Btn
+          {
+            id: steamShortcutButton
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: menu.steam && menu.steam.shortcutPresent
+                     ? qsTr("Rewrite Steam icon")
+                     : qsTr("Add Steam icon")
+            hint: menu.steam && menu.steam.shortcutPresent
+                    ? qsTr("Write the Plex entry again, for one that was changed "
+                           + "or deleted")
+                    : qsTr("Write a Plex entry into your Steam library")
+            minW: 330
+            onClicked: menu.createSteamShortcut()
+          }
+
+          Btn
+          {
+            anchors.left: steamShortcutButton.right
+            anchors.leftMargin: Math.round(16 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            visible: menu.steam !== null && menu.steam.shouldOfferRelaunch
+            label: qsTr("Restart through Steam")
+            hint: qsTr("Close Plex and ask Steam to start it again")
+            minW: 330
+            onClicked: menu.relaunchViaSteam()
           }
         }
 
