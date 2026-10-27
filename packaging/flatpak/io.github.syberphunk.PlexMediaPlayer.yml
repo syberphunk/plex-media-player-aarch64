@@ -23,6 +23,13 @@ finish-args:
   - --filesystem=xdg-music:ro
   - --filesystem=xdg-pictures:ro
   - --filesystem=xdg-download:create
+  - --filesystem=/opt/steamvr:ro
+  - --filesystem=xdg-config/openxr:ro
+  - --filesystem=xdg-config/openvr:ro
+  - --filesystem=~/.steam:ro
+  - --filesystem=xdg-data/Steam/userdata
+  - --filesystem=xdg-data/flatpak/exports/share/icons:ro
+  - --filesystem=/var/lib/flatpak/exports/share/icons:ro
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.freedesktop.login1
 
@@ -116,6 +123,23 @@ modules:
       - type: archive
         path: ../../vendor-deps/mpv-0.41.0.tar.gz
         sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+
+  - name: openxr-loader
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DDYNAMIC_LOADER=ON
+      - -DBUILD_TESTS=OFF
+      - -DBUILD_API_LAYERS=OFF
+      - -DBUILD_WITH_SYSTEM_JSONCPP=OFF
+      - -DBUILD_WITH_WAYLAND_HEADERS=OFF
+      - -DBUILD_WITH_XLIB_HEADERS=ON
+      - -DBUILD_WITH_XCB_HEADERS=OFF
+    sources:
+      - type: archive
+        path: ../../vendor-deps/openxr-sdk-1.1.65.tar.gz
+        sha256: 27aa797baf680c5f836b6138e78e59e2f72d6becfef6d4587ed9a57756d6d3b3
 
   - name: minizip
     buildsystem: autotools

@@ -30,6 +30,7 @@
 #include "UniqueApplication.h"
 #include "utils/Log.h"
 #include "shared/SessionEnv.h"
+#include "xr/XrSupport.h"
 
 #include "SignalManager.h"
 
@@ -180,6 +181,11 @@ int main(int argc, char *argv[])
     if (!SessionEnv::graphicsEnvReport().isEmpty())
     {
       QLOG_INFO() << "Graphics env:" << qPrintable(SessionEnv::graphicsEnvReport());
+    }
+
+    if (XrSupport::autoProbeAllowed())
+    {
+      QLOG_INFO() << "OpenXR:" << qPrintable(XrSupport::report());
     }
 
     detectOpenGLLate();

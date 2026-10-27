@@ -11,6 +11,18 @@ add_definitions(-DPREFIX="${CMAKE_INSTALL_PREFIX}")
 
 find_package(Breakpad)
 
+find_path(OPENXR_INCLUDE_DIR openxr/openxr.h)
+find_library(OPENXR_LIBRARY openxr_loader)
+if(OPENXR_INCLUDE_DIR AND OPENXR_LIBRARY)
+  message(STATUS "Using OpenXR: ${OPENXR_LIBRARY}")
+  include_directories(${OPENXR_INCLUDE_DIR})
+  add_definitions(-DHAVE_OPENXR)
+  set(OPENXR_LIBS ${OPENXR_LIBRARY})
+else()
+  message(STATUS "OpenXR loader not found, stereoscopic output disabled")
+  set(OPENXR_LIBS)
+endif()
+
 if(BREAKPAD_FOUND)
   include_directories(${BREAKPAD_INCLUDE_DIR})
   set(BREAKPAD_LIBRARIES ${BREAKPAD_LIBRARY})
@@ -34,6 +46,7 @@ add_subdirectory(settings)
 add_subdirectory(power)
 add_subdirectory(remote)
 add_subdirectory(connector)
+add_subdirectory(xr)
 
 get_property(ALL_SRCS GLOBAL PROPERTY SRCS_LIST)
 set(MAIN_SRCS main.cpp)
@@ -142,6 +155,7 @@ target_link_libraries(${MAIN_TARGET}
   ${ICU_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${MINIZIP_LIBS}
+  ${OPENXR_LIBS}
 )
 
 install(TARGETS ${MAIN_TARGET} DESTINATION ${INSTALL_BIN_DIR})
