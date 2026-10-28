@@ -5,6 +5,7 @@
 #include <QSize>
 #include <QString>
 
+#include <atomic>
 #include <stdint.h>
 
 class QProcess;
@@ -15,6 +16,7 @@ class XrPresenter : public QObject
 
 public:
   static XrPresenter& Get();
+  static bool exists();
 
   void request(const QSize& videoSize, uint32_t packing, bool swapped, float eyeAspect);
   void release();
@@ -32,18 +34,20 @@ public:
 
   Q_INVOKABLE void reportFailure(const QString& reason);
 
+private Q_SLOTS:
+  void shutdown();
+
 private:
   explicit XrPresenter(QObject* parent = nullptr);
 
   bool spawn();
-  void shutdown();
   void onFinished();
 
-  bool m_wanted = false;
-  uint32_t m_generation = 0;
-  uint32_t m_recentreCount = 0;
+  std::atomic<bool> m_wanted{false};
+  std::atomic<uint32_t> m_generation{0};
+  std::atomic<uint32_t> m_recentreCount{0};
 
-  int m_socket = -1;
+  std::atomic<int> m_socket{-1};
   QProcess* m_process = nullptr;
 
   QSize m_videoSize;

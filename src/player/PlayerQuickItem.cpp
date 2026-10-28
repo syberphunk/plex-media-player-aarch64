@@ -132,6 +132,12 @@ void PlayerRenderer::collectGraphicsInfo()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::syncStereo()
 {
+  if (!XrPresenter::exists())
+  {
+    m_stereoWanted = false;
+    return;
+  }
+
   XrPresenter& presenter = XrPresenter::Get();
 
   const bool wanted = presenter.wanted();

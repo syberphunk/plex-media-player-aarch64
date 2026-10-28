@@ -26,6 +26,7 @@ XrComponent::XrComponent(QObject* parent) : ComponentBase(parent)
 
 bool XrComponent::componentInitialize()
 {
+  XrPresenter::Get();
   return true;
 }
 

@@ -1,6 +1,7 @@
 #include "XrPresenter.h"
 
 #include <QProcess>
+#include <QThread>
 
 #include <errno.h>
 #include <string.h>
@@ -11,10 +12,18 @@
 #include "XrHost.h"
 #include "XrProtocol.h"
 
+static std::atomic<XrPresenter*> g_presenter{nullptr};
+
 XrPresenter& XrPresenter::Get()
 {
   static XrPresenter* instance = new XrPresenter();
+  g_presenter.store(instance, std::memory_order_release);
   return *instance;
+}
+
+bool XrPresenter::exists()
+{
+  return g_presenter.load(std::memory_order_acquire) != nullptr;
 }
 
 XrPresenter::XrPresenter(QObject* parent) : QObject(parent)
@@ -23,9 +32,7 @@ XrPresenter::XrPresenter(QObject* parent) : QObject(parent)
 
 int XrPresenter::takeSocket()
 {
-  const int fd = m_socket;
-  m_socket = -1;
-  return fd;
+  return m_socket.exchange(-1);
 }
 
 bool XrPresenter::spawn()
@@ -66,7 +73,7 @@ bool XrPresenter::spawn()
   });
 
   m_generation++;
-  QLOG_INFO() << "Stereoscopic: presenter started, generation" << m_generation;
+  QLOG_INFO() << "Stereoscopic: presenter started, generation" << m_generation.load();
   return true;
 }
 
@@ -122,14 +129,20 @@ void XrPresenter::reportFailure(const QString& reason)
 
 void XrPresenter::shutdown()
 {
+  if (QThread::currentThread() != thread())
+  {
+    m_wanted = false;
+    m_generation++;
+    QMetaObject::invokeMethod(this, "shutdown", Qt::QueuedConnection);
+    return;
+  }
+
   m_wanted = false;
   m_generation++;
 
-  if (m_socket >= 0)
-  {
-    close(m_socket);
-    m_socket = -1;
-  }
+  const int socket = m_socket.exchange(-1);
+  if (socket >= 0)
+    close(socket);
 
   if (m_process)
   {
