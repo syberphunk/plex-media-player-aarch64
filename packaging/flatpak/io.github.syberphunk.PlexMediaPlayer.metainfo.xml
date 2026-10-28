@@ -51,6 +51,23 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.28" date="2026-10-28">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>Starting a 3D file could leave the player painting nothing and refusing to
+              quit, after which it would close immediately on every launch until the
+              device was restarted. The headset presenter was being set up on the
+              drawing thread and shut down from the wrong one, which stalled drawing and
+              left the single-instance lock held.</li>
+          <li>Video is now drawn through EGL when the player is started from the Steam
+              shortcut. Launched that way the player was given an X11 session and drew
+              through GLX, which offers no way to share a frame with the headset helper
+              and no hardware decoding path. If EGL fails to draw a frame the player
+              falls back to GLX by itself and stops retrying.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.27" date="2026-10-28">
       <description>
         <p>Added:</p>
