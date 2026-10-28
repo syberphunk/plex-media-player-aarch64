@@ -16,6 +16,8 @@ namespace XrHost
 
   QString runtimePath();
 
+  QStringList helperCandidates();
+
   QString helperPath();
 
   QStringList libraryPath();

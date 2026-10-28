@@ -14,6 +14,18 @@ namespace
 {
   const char* kFlatpakInfo = "/.flatpak-info";
   const char* kPortalName = "org.freedesktop.Flatpak";
+  const char* kHelperName = "pmp-xr-host";
+
+  bool shellSafe(const QString& path)
+  {
+    for (const QChar c : path)
+    {
+      if (c == QLatin1Char('"') || c == QLatin1Char('\'') || c == QLatin1Char('$') ||
+          c == QLatin1Char('`') || c == QLatin1Char('\\') || c.unicode() < 0x20)
+        return false;
+    }
+    return !path.isEmpty();
+  }
 
   QString instanceValue(const QString& key)
   {
@@ -69,12 +81,22 @@ QString XrHost::runtimePath()
   return instanceValue(QStringLiteral("runtime-path"));
 }
 
-QString XrHost::helperPath()
+QStringList XrHost::helperCandidates()
 {
   const QString app = appPath();
   if (app.isEmpty())
-    return QString();
-  return app + QStringLiteral("/bin/pmp-xr-host");
+    return QStringList();
+
+  // app-path is the app's own files directory on some flatpak versions and its
+  // deploy directory on others, so both spellings are offered to the host.
+  return QStringList{app + QStringLiteral("/bin/") + QLatin1String(kHelperName),
+                     app + QStringLiteral("/files/bin/") + QLatin1String(kHelperName)};
+}
+
+QString XrHost::helperPath()
+{
+  const QStringList candidates = helperCandidates();
+  return candidates.isEmpty() ? QString() : candidates.first();
 }
 
 QStringList XrHost::libraryPath()
@@ -88,17 +110,25 @@ QStringList XrHost::libraryPath()
   {
     if (root.isEmpty())
       continue;
-    dirs << root + QStringLiteral("/lib");
-    if (!triplet.isEmpty())
-      dirs << root + QStringLiteral("/lib/") + triplet;
+    for (const QString& prefix : {QStringLiteral("/lib"), QStringLiteral("/files/lib")})
+    {
+      dirs << root + prefix;
+      if (!triplet.isEmpty())
+        dirs << root + prefix + QLatin1Char('/') + triplet;
+    }
   }
   return dirs;
 }
 
 QStringList XrHost::spawnCommand(const QString& subcommand)
 {
-  const QString helper = helperPath();
-  if (helper.isEmpty())
+  QStringList candidates;
+  for (const QString& path : helperCandidates())
+  {
+    if (shellSafe(path))
+      candidates << path;
+  }
+  if (candidates.isEmpty())
     return QStringList();
 
   QStringList args;
@@ -109,7 +139,16 @@ QStringList XrHost::spawnCommand(const QString& subcommand)
   if (!manifest.isEmpty())
     args << QStringLiteral("--env=XR_RUNTIME_JSON=") + manifest;
 
-  args << helper << subcommand;
+  QStringList quoted;
+  for (const QString& path : candidates)
+    quoted << QLatin1Char('"') + path + QLatin1Char('"');
+
+  const QString script = QStringLiteral("for p in %1; do [ -x \"$p\" ] && exec \"$p\" \"$1\"; "
+                                        "done; echo \"%2 is not on the host\" >&2; exit 3")
+                           .arg(quoted.join(QLatin1Char(' ')), QLatin1String(kHelperName));
+
+  args << QStringLiteral("/bin/sh") << QStringLiteral("-c") << script
+       << QLatin1String(kHelperName) << subcommand;
   return args;
 }
 
