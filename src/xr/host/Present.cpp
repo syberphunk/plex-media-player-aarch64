@@ -26,6 +26,7 @@ namespace
   const float kScreenWidth = 2.4f;
   const float kDefaultAspect = 16.0f / 9.0f;
   const uint32_t kSortOrder = 100;
+  const uint64_t kModifierInvalid = 0x00ffffffffffffffULL;
   const uint32_t kFrameSyncTimeoutMs = 100;
 
   char kOverlayKey[] = "io.github.syberphunk.PlexMediaPlayer.screen";
@@ -79,6 +80,8 @@ namespace
     bool createDevice();
     bool createOverlay();
     bool importBuffers(const XrProtocol::Message& message, const int* fds, int count);
+    bool checkRowPitch(VkImage image, uint32_t stride) const;
+    bool checkSize(int fd, VkDeviceSize needed, const XrProtocol::Message& message) const;
     bool ensureTarget();
     void teardown();
 
@@ -445,13 +448,7 @@ namespace
     ovl->SetOverlaySortOrder(m_overlay, kSortOrder);
     ovl->SetOverlayAlpha(m_overlay, 1.0f);
 
-    HmdMatrix34_t transform{};
-    transform.m[0][0] = 1.0f;
-    transform.m[1][1] = 1.0f;
-    transform.m[2][2] = 1.0f;
-    transform.m[2][3] = -kScreenDistance;
-    ovl->SetOverlayTransformAbsolute(
-      m_overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, &transform);
+    placeScreen();
 
     error = ovl->ShowOverlay(m_overlay);
     if (error != EVROverlayError_VROverlayError_None)
@@ -465,6 +462,41 @@ namespace
     return true;
   }
 
+  bool Presenter::checkRowPitch(VkImage image, uint32_t stride) const
+  {
+    VkImageSubresource subresource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
+    VkSubresourceLayout layout{};
+    vkGetImageSubresourceLayout(m_device, image, &subresource, &layout);
+
+    if (layout.rowPitch == stride)
+      return true;
+
+    note("pmp-xr-host: the shared buffer has %u bytes a row but this device wants %llu", stride,
+         static_cast<unsigned long long>(layout.rowPitch));
+    return false;
+  }
+
+  bool Presenter::checkSize(int fd, VkDeviceSize needed,
+                            const XrProtocol::Message& message) const
+  {
+    const off_t real = lseek(fd, 0, SEEK_END);
+    if (real < 0)
+    {
+      note("pmp-xr-host: the shared buffer has no measurable size (%s)", std::strerror(errno));
+      return true;
+    }
+    lseek(fd, 0, SEEK_SET);
+
+    if (static_cast<VkDeviceSize>(real) >= needed)
+      return true;
+
+    note("pmp-xr-host: the shared buffer is %lld bytes but a %ux%u image needs %llu, so the "
+         "layout this device picked does not match the one the buffer was made with",
+         static_cast<long long>(real), message.width, message.height,
+         static_cast<unsigned long long>(needed));
+    return false;
+  }
+
   bool Presenter::importBuffers(const XrProtocol::Message& message, const int* fds, int count)
   {
     if (count <= 0 || count > static_cast<int>(XrProtocol::kBufferCount))
@@ -475,6 +507,12 @@ namespace
 
     m_sourceWidth = message.width;
     m_sourceHeight = message.height;
+
+    const bool stated = message.modifier != kModifierInvalid;
+
+    note("pmp-xr-host: importing %ux%u stride %u offset %u modifier 0x%llx as %s",
+         message.width, message.height, message.stride, message.offset,
+         static_cast<unsigned long long>(message.modifier), stated ? "stated" : "linear");
 
     for (int i = 0; i < count; ++i)
     {
@@ -493,7 +531,7 @@ namespace
 
       VkExternalMemoryImageCreateInfo externalInfo{
         VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-      externalInfo.pNext = &modifierInfo;
+      externalInfo.pNext = stated ? &modifierInfo : nullptr;
       externalInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
 
       VkImageCreateInfo imageInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -504,7 +542,8 @@ namespace
       imageInfo.mipLevels = 1;
       imageInfo.arrayLayers = 1;
       imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-      imageInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+      imageInfo.tiling =
+        stated ? VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT : VK_IMAGE_TILING_LINEAR;
       imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
       imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
       imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -512,8 +551,14 @@ namespace
       if (!checkVk(vkCreateImage(m_device, &imageInfo, nullptr, &source.image), "import image"))
         return false;
 
+      if (!stated && !checkRowPitch(source.image, message.stride))
+        return false;
+
       VkMemoryRequirements requirements{};
       vkGetImageMemoryRequirements(m_device, source.image, &requirements);
+
+      if (!checkSize(source.fd, requirements.size, message))
+        return false;
 
       VkMemoryFdPropertiesKHR fdProperties{VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR};
       if (!checkVk(m_getMemoryFdProperties(m_device,
@@ -919,10 +964,6 @@ namespace
           }
           break;
 
-        case XrProtocol::Recentre:
-          m_screenPlaced = false;
-          break;
-
         case XrProtocol::Stop:
           note("pmp-xr-host: the app asked to stop");
           return false;
@@ -935,31 +976,27 @@ namespace
 
   void Presenter::placeScreen()
   {
-    HmdMatrix34_t head{};
-    if (!m_ovr.headPose(head))
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->SetOverlayTransformTrackedDeviceRelative)
       return;
 
-    const float forwardX = -head.m[0][2];
-    const float forwardZ = -head.m[2][2];
-    const float yaw = std::atan2(-forwardX, -forwardZ);
-    const float sine = std::sin(yaw);
-    const float cosine = std::cos(yaw);
-
     HmdMatrix34_t transform{};
-    transform.m[0][0] = cosine;
-    transform.m[0][2] = sine;
+    transform.m[0][0] = 1.0f;
     transform.m[1][1] = 1.0f;
-    transform.m[2][0] = -sine;
-    transform.m[2][2] = cosine;
-    transform.m[0][3] = head.m[0][3] - sine * kScreenDistance;
-    transform.m[1][3] = head.m[1][3];
-    transform.m[2][3] = head.m[2][3] - cosine * kScreenDistance;
+    transform.m[2][2] = 1.0f;
+    transform.m[2][3] = -kScreenDistance;
 
-    m_ovr.overlay->SetOverlayTransformAbsolute(
-      m_overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, &transform);
+    const EVROverlayError error = ovl->SetOverlayTransformTrackedDeviceRelative(
+      m_overlay, static_cast<TrackedDeviceIndex_t>(k_unTrackedDeviceIndex_Hmd), &transform);
+    if (error != EVROverlayError_VROverlayError_None)
+    {
+      note("pmp-xr-host: the screen would not attach to the headset (%d)",
+           static_cast<int>(error));
+      return;
+    }
+
     m_screenPlaced = true;
-    note("pmp-xr-host: screen placed at %.2f %.2f %.2f", transform.m[0][3], transform.m[1][3],
-         transform.m[2][3]);
+    note("pmp-xr-host: screen %.2f m ahead of the headset", kScreenDistance);
   }
 
   bool Presenter::blitEyes()

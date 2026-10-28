@@ -22,6 +22,13 @@ namespace
 
 XrComponent::XrComponent(QObject* parent) : ComponentBase(parent)
 {
+  connect(&XrPresenter::Get(), &XrPresenter::failed, this,
+          [this]() { emit stateChanged(); });
+}
+
+QString XrComponent::presentError() const
+{
+  return XrPresenter::Get().lastFailure();
 }
 
 bool XrComponent::componentInitialize()
@@ -268,11 +275,6 @@ void XrComponent::testOutput()
   if (!supported())
     return;
   probe(true);
-}
-
-void XrComponent::recentreScreen()
-{
-  XrPresenter::Get().recentre();
 }
 
 QString XrComponent::report() const

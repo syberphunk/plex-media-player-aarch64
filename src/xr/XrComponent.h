@@ -33,6 +33,7 @@ public:
   Q_PROPERTY(QString headsetName READ headsetName NOTIFY stateChanged)
   Q_PROPERTY(QString perEye READ perEye NOTIFY stateChanged)
   Q_PROPERTY(QString lastError READ lastError NOTIFY stateChanged)
+  Q_PROPERTY(QString presentError READ presentError NOTIFY stateChanged)
   Q_PROPERTY(QString formatOverride READ formatOverride WRITE setFormatOverride
                NOTIFY formatChanged)
   Q_PROPERTY(bool swapEyes READ swapEyes WRITE setSwapEyes NOTIFY formatChanged)
@@ -54,6 +55,7 @@ public:
   QString headsetName() const;
   QString perEye() const;
   QString lastError() const;
+  QString presentError() const;
   QString formatOverride() const;
   void setFormatOverride(const QString& value);
   bool swapEyes() const;
@@ -71,7 +73,6 @@ public:
 
   Q_INVOKABLE void testOutput();
 
-  Q_INVOKABLE void recentreScreen();
 
   Q_INVOKABLE QString report() const;
 

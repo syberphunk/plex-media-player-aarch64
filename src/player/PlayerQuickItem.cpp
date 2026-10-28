@@ -43,7 +43,7 @@ static void* get_proc_address(void* ctx, const char* name)
 PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereo(nullptr), m_stereoSocket(-1), m_stereoGeneration(0),
-  m_stereoRecentre(0), m_stereoRecentreSent(0), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
+  m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoEyeAspect(16.0f / 9.0f)
 {
   m_item->m_renderer = this;
@@ -165,7 +165,6 @@ void PlayerRenderer::syncStereo()
   m_stereoPacking = presenter.packing();
   m_stereoSwapped = presenter.swapped();
   m_stereoEyeAspect = presenter.eyeAspect();
-  m_stereoRecentre = presenter.recentreCount();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -194,12 +193,6 @@ bool PlayerRenderer::renderStereo()
 
   if (!m_stereo->poll())
     return giveUp();
-
-  if (m_stereoRecentre != m_stereoRecentreSent)
-  {
-    m_stereoRecentreSent = m_stereoRecentre;
-    m_stereo->recentre();
-  }
 
   const int index = m_stereo->acquire();
   if (index < 0)

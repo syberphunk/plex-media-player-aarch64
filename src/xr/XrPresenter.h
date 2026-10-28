@@ -20,7 +20,6 @@ public:
 
   void request(const QSize& videoSize, uint32_t packing, bool swapped, float eyeAspect);
   void release();
-  void recentre();
 
   bool wanted() const { return m_wanted; }
   uint32_t generation() const { return m_generation; }
@@ -30,9 +29,12 @@ public:
   uint32_t packing() const { return m_packing; }
   bool swapped() const { return m_swapped; }
   float eyeAspect() const { return m_eyeAspect; }
-  uint32_t recentreCount() const { return m_recentreCount; }
+
+  const QString& lastFailure() const { return m_lastFailure; }
 
   Q_INVOKABLE void reportFailure(const QString& reason);
+
+  Q_SIGNAL void failed();
 
 private Q_SLOTS:
   void shutdown();
@@ -45,11 +47,11 @@ private:
 
   std::atomic<bool> m_wanted{false};
   std::atomic<uint32_t> m_generation{0};
-  std::atomic<uint32_t> m_recentreCount{0};
 
   std::atomic<int> m_socket{-1};
   QProcess* m_process = nullptr;
 
+  QString m_lastFailure;
   QSize m_videoSize;
   uint32_t m_packing = 0;
   bool m_swapped = false;

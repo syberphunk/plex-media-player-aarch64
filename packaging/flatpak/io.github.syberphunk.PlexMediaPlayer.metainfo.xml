@@ -51,6 +51,35 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.30" date="2026-10-28">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>A 3D file played flat in the headset. The video frame is shared with the
+              headset helper as a buffer the graphics driver allocates, and the helper
+              was told the buffer's layout was unknown, because the allocation asked for
+              a linear buffer without asking for its layout to be stated. Given an
+              unknown layout this device assumes a tiled one, works out that the buffer
+              is too small for it and refuses to accept it, so no picture ever reached
+              the headset and playback carried on flat. The layout is now stated when
+              the buffer is allocated, and the helper treats an unstated layout as
+              linear rather than passing it on.</li>
+          <li>When 3D playback cannot start, the reason now appears in the 3D section of
+              the settings menu. Previously the file simply played flat with nothing
+              said.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>The 3D screen is fixed two metres ahead of the headset and moves with it,
+              so it is always where you are looking. The button that moved the screen to
+              where you were looking has been removed, because there is no longer
+              anywhere for the screen to be moved to.</li>
+          <li>The log records the size, row length and layout of each shared buffer, and
+              says so in words when a buffer is too small for the layout the driver
+              picked.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.29" date="2026-10-28">
       <description>
         <p>Changed:</p>

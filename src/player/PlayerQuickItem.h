@@ -42,8 +42,6 @@ private:
   XrSurface* m_stereo;
   int m_stereoSocket;
   uint32_t m_stereoGeneration;
-  uint32_t m_stereoRecentre;
-  uint32_t m_stereoRecentreSent;
   bool m_stereoWanted;
   QSize m_stereoSize;
   uint32_t m_stereoPacking;

@@ -34,7 +34,6 @@ namespace OpenVr
     std::string runtimePath() const;
     std::string deviceString(ETrackedDeviceProperty property) const;
     bool recommendedSize(uint32_t& width, uint32_t& height) const;
-    bool headPose(HmdMatrix34_t& pose) const;
 
     struct VR_IVRSystem_FnTable* system = nullptr;
     struct VR_IVROverlay_FnTable* overlay = nullptr;

@@ -16,7 +16,6 @@ namespace XrProtocol
     Frame = 2,
     Release = 3,
     Started = 4,
-    Recentre = 5,
     Stop = 6,
     Failed = 7
   };

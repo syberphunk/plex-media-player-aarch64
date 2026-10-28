@@ -103,6 +103,7 @@ void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped
   if (videoSize.width() < 2 || videoSize.height() < 2)
     return;
 
+  m_lastFailure.clear();
   m_wanted = spawn();
 }
 
@@ -115,15 +116,14 @@ void XrPresenter::release()
   shutdown();
 }
 
-void XrPresenter::recentre()
-{
-  m_recentreCount++;
-}
-
 void XrPresenter::reportFailure(const QString& reason)
 {
   if (!reason.isEmpty())
+  {
     QLOG_ERROR() << "Stereoscopic:" << qPrintable(reason);
+    m_lastFailure = reason;
+    emit failed();
+  }
   shutdown();
 }
 

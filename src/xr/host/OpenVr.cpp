@@ -181,19 +181,4 @@ namespace OpenVr
     system->GetRecommendedRenderTargetSize(&width, &height);
     return width > 0 && height > 0;
   }
-
-  bool Api::headPose(HmdMatrix34_t& pose) const
-  {
-    if (!system || !system->GetDeviceToAbsoluteTrackingPose)
-      return false;
-
-    TrackedDevicePose_t poses[1] = {};
-    system->GetDeviceToAbsoluteTrackingPose(
-      ETrackingUniverseOrigin_TrackingUniverseStanding, 0.0f, poses, 1);
-    if (!poses[0].bPoseIsValid)
-      return false;
-
-    std::memcpy(&pose, &poses[0].mDeviceToAbsoluteTracking, sizeof(pose));
-    return true;
-  }
 }

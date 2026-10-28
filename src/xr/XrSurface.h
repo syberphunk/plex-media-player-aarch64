@@ -23,7 +23,6 @@ public:
   int acquire();
   uint32_t framebuffer(int index) const;
   void submit(int index, uint32_t packing, bool swapped, float eyeAspect);
-  void recentre();
   bool poll();
 
   const QString& failure() const { return m_failure; }
@@ -40,7 +39,7 @@ private:
   };
 
   bool openDevice();
-  bool createBuffers();
+  bool createBuffers(bool withModifier);
   bool sendBuffers();
   void destroyBuffers();
 

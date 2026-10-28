@@ -10,6 +10,17 @@
 #include <EGL/eglext.h>
 #include <gbm.h>
 
+#if __has_include(<drm_fourcc.h>)
+#include <drm_fourcc.h>
+#endif
+
+#ifndef DRM_FORMAT_MOD_LINEAR
+#define DRM_FORMAT_MOD_LINEAR 0ULL
+#endif
+#ifndef DRM_FORMAT_MOD_INVALID
+#define DRM_FORMAT_MOD_INVALID 0x00ffffffffffffffULL
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
@@ -83,7 +94,7 @@ bool XrSurface::openDevice()
   return false;
 }
 
-bool XrSurface::createBuffers()
+bool XrSurface::createBuffers(bool withModifier)
 {
   QOpenGLFunctions* gl = QOpenGLContext::currentContext()->functions();
   struct gbm_device* device = static_cast<struct gbm_device*>(m_gbm);
@@ -93,9 +104,12 @@ bool XrSurface::createBuffers()
   {
     Buffer& buffer = m_buffers[i];
 
-    struct gbm_bo* bo = gbm_bo_create(device, m_size.width(), m_size.height(),
-                                      GBM_FORMAT_ABGR8888,
-                                      GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR);
+    const uint64_t wanted = DRM_FORMAT_MOD_LINEAR;
+    struct gbm_bo* bo =
+      withModifier ? gbm_bo_create_with_modifiers(device, m_size.width(), m_size.height(),
+                                                  GBM_FORMAT_ABGR8888, &wanted, 1)
+                   : gbm_bo_create(device, m_size.width(), m_size.height(), GBM_FORMAT_ABGR8888,
+                                   GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR);
     if (!bo)
     {
       m_failure = QStringLiteral("the driver would not allocate a %1x%2 linear buffer")
@@ -121,6 +135,12 @@ bool XrSurface::createBuffers()
       m_stride = stride;
       m_offset = offset;
       m_modifier = modifier;
+
+      if (withModifier && modifier == DRM_FORMAT_MOD_INVALID)
+      {
+        m_failure = QStringLiteral("the driver would not state the buffer's modifier");
+        return false;
+      }
     }
     else if (stride != m_stride || offset != m_offset || modifier != m_modifier)
     {
@@ -263,7 +283,20 @@ bool XrSurface::begin(int socket, const QSize& size)
     return false;
   }
 
-  if (!openDevice() || !createBuffers() || !sendBuffers())
+  if (!openDevice() || !createBuffers(true))
+  {
+    destroyBuffers();
+    QLOG_INFO() << "Stereoscopic: a buffer with a stated modifier was not usable ("
+                << qPrintable(m_failure) << "), asking for a plain linear one";
+    m_failure.clear();
+    if (!openDevice() || !createBuffers(false))
+    {
+      destroyBuffers();
+      return false;
+    }
+  }
+
+  if (!sendBuffers())
   {
     destroyBuffers();
     return false;
@@ -363,15 +396,6 @@ void XrSurface::submit(int index, uint32_t packing, bool swapped, float eyeAspec
   }
 }
 
-void XrSurface::recentre()
-{
-  if (!m_ready)
-    return;
-
-  const XrProtocol::Message message = XrProtocol::make(XrProtocol::Recentre);
-  if (send(m_socket, &message, sizeof(message), MSG_NOSIGNAL | MSG_DONTWAIT) < 0)
-    QLOG_INFO() << "Stereoscopic: the recentre request did not get through";
-}
 
 bool XrSurface::poll()
 {
@@ -449,9 +473,6 @@ void XrSurface::submit(int, uint32_t, bool, float)
 {
 }
 
-void XrSurface::recentre()
-{
-}
 
 bool XrSurface::poll()
 {
