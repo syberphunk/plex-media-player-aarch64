@@ -292,10 +292,11 @@ KonvergoWindow
     readonly property real u: Math.max(0.6, Math.min(2.0, mainWindow.height / 1080))
     readonly property bool lit: handleArea.containsMouse
 
-    anchors.left: parent.left
-    anchors.bottom: parent.bottom
-    anchors.leftMargin: Math.round(14 * u)
-    anchors.bottomMargin: Math.round(14 * u)
+    readonly property real edge: Math.round(14 * u)
+
+    x: parked ? parent.width - width - edge : edge
+    y: parked ? Math.round((parent.height - height) / 2)
+              : parent.height - height - edge
 
     width: Math.round(44 * u)
     height: width
@@ -304,11 +305,13 @@ KonvergoWindow
     border.color: lit ? "#E08B20" : "#767E8A"
     border.width: Math.max(1, Math.round(1.5 * u))
 
-    readonly property bool overVideo: components.player.videoWindowVisible
-                                      && !(components.xr && components.xr.detectedStereo)
+    readonly property bool parked: components.player.videoWindowVisible
+                                   && components.xr !== null
+                                   && components.xr.detectedStereo
+    readonly property bool overFlatVideo: components.player.videoWindowVisible && !parked
 
     visible: opacity > 0
-    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures && !overVideo) ? 1 : 0
+    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures && !overFlatVideo) ? 1 : 0
 
     Accessible.role: Accessible.Button
     Accessible.name: "Player settings"

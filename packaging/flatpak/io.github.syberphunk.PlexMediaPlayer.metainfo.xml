@@ -72,7 +72,8 @@
           <li>Stereoscopic 3D is now on by default. Probing the runtime happens in the
               background and does not delay startup.</li>
           <li>The settings button stays visible while a 3D file plays, so the packing can
-              be changed without stopping playback.</li>
+              be changed without stopping playback. It moves to the middle of the right
+              edge while it is showing over video, clear of the player's own controls.</li>
         </ul>
       </description>
     </release>
