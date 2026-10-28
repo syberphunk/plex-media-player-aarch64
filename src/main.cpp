@@ -182,6 +182,10 @@ int main(int argc, char *argv[])
     {
       QLOG_INFO() << "Graphics env:" << qPrintable(SessionEnv::graphicsEnvReport());
     }
+    if (!openGLReport().isEmpty())
+    {
+      QLOG_INFO() << "GL integration:" << qPrintable(openGLReport());
+    }
 
     if (XrSupport::autoProbeAllowed())
     {

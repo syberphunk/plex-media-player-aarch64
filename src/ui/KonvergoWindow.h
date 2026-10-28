@@ -140,6 +140,7 @@ private:
   int m_forcedFullscreenCount;
   bool m_webDesktopMode;
   bool m_closing;
+  int m_framesPresented = 0;
 
   QString m_currentScreenName;
 

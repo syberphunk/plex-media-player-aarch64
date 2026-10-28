@@ -9,6 +9,7 @@
 #include "settings/SettingsComponent.h"
 #include "settings/SettingsSection.h"
 #include "system/SystemComponent.h"
+#include "player/OpenGLDetect.h"
 #include "player/PlayerComponent.h"
 #include "player/PlayerQuickItem.h"
 #include "display/DisplayComponent.h"
@@ -55,6 +56,13 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   m_webDesktopMode = (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "webMode").toString() == "desktop");
 
   installEventFilter(new EventFilter(this));
+
+  connect(this, &QQuickWindow::frameSwapped, this, [this]() {
+    if (m_framesPresented++ > 0)
+      return;
+    confirmOpenGLSession();
+    QLOG_INFO() << "GL integration: the first frame was presented";
+  });
 
   m_signInProbe = new QTimer(this);
   m_signInProbe->setSingleShot(true);
