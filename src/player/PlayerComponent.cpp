@@ -1336,6 +1336,12 @@ void PlayerComponent::resolveStereoFormat()
   if (!m_mpv)
     return;
 
+  if (m_videoSize.width() <= 0 || m_videoSize.height() <= 0)
+  {
+    XrComponent::Get().clearDetected();
+    return;
+  }
+
   const QString stereoIn =
     mpv::qt::get_property(m_mpv, "video-params/stereo-in").toString();
   const QString path = mpv::qt::get_property(m_mpv, "path").toString();
