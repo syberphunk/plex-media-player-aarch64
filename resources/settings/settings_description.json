@@ -396,7 +396,7 @@
       },
       {
         "value": "stereoscopic",
-        "default": true,
+        "default": false,
         "hidden": true
       },
       {

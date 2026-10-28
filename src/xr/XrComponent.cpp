@@ -3,6 +3,7 @@
 #include <QProcess>
 #include <QTimer>
 
+#include "QsLog.h"
 #include "XrHost.h"
 #include "XrSupport.h"
 #include "settings/SettingsComponent.h"
@@ -27,9 +28,12 @@ bool XrComponent::componentInitialize()
   return true;
 }
 
-void XrComponent::componentPostInitialize()
+void XrComponent::ensureProbed()
 {
   if (!supported() || !enabled())
+    return;
+
+  if (m_checked || m_process)
     return;
 
   probe(false);
@@ -154,12 +158,18 @@ void XrComponent::probe(bool withSession)
   if (m_process)
     return;
 
+  QLOG_INFO() << "OpenXR probe starting:"
+              << qPrintable(QStringLiteral("route=%1 session=%2")
+                              .arg(XrSupport::hostRoute() ? "host" : "local",
+                                   withSession ? "yes" : "no"));
+
   if (!XrSupport::hostRoute())
   {
     XrSupport::refreshLocal();
     m_checked = true;
     if (withSession)
       m_sessionTested = true;
+    QLOG_INFO() << "OpenXR probe finished:" << qPrintable(XrSupport::report());
     emit stateChanged();
     return;
   }
@@ -171,6 +181,7 @@ void XrComponent::probe(bool withSession)
                             this, &error);
   if (!m_process)
   {
+    QLOG_WARN() << "OpenXR probe could not start:" << qPrintable(error);
     XrSupport::applyHostAnswer(QJsonObject(), error, withSession);
     m_checked = true;
     emit stateChanged();
@@ -233,6 +244,10 @@ void XrComponent::finish(const QString& startError)
   m_checked = true;
   if (m_withSession)
     m_sessionTested = true;
+
+  QLOG_INFO() << "OpenXR probe finished:"
+              << qPrintable(error.isEmpty() ? QStringLiteral("ok")
+                                            : QStringLiteral("error=%1").arg(error));
 
   emit stateChanged();
 }

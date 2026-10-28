@@ -1369,6 +1369,9 @@ void PlayerComponent::resolveStereoFormat()
                    .arg(m_videoSize.height())
                    .arg(StereoFormat::toSetting(detected), source,
                         StereoFormat::toSetting(active)));
+
+  if (active.isStereo())
+    XrComponent::Get().ensureProbed();
 }
 
 void PlayerComponent::updateVideoSettings()

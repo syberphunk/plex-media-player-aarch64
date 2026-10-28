@@ -51,6 +51,26 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.25" date="2026-10-28">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>Started from the Steam icon with 3D through the headset turned on, the app
+              showed a black screen and stopped before the Plex interface loaded. The
+              headset check was made while the window was still being built, and the
+              helper it starts on the host and the window itself were both asking the
+              compositor for a surface at the same time. The check is now made when the
+              settings menu is opened and when a 3D file starts playing, so it never
+              coincides with the window being built.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>3D through the headset is off by default again.</li>
+          <li>The log records when the headset check starts, which route it takes and how
+              it ended.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.24" date="2026-10-28">
       <description>
         <p>Added:</p>

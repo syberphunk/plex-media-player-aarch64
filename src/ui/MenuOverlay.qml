@@ -70,6 +70,9 @@ FocusScope
       if (steam)
         steam.refresh()
 
+      if (xr)
+        xr.ensureProbed()
+
       customPathOpen = cfg && cfg.downloadPreset === "custom"
       customPath = cfg ? cfg.downloadDir : ""
       Qt.callLater(menu.takeFocus)

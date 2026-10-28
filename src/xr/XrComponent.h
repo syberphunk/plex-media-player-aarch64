@@ -19,7 +19,6 @@ public:
   const char* componentName() override { return "xr"; }
   bool componentExport() override { return false; }
   bool componentInitialize() override;
-  void componentPostInitialize() override;
 
   Q_PROPERTY(bool supported READ supported CONSTANT)
   Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY stateChanged)
@@ -65,6 +64,8 @@ public:
 
   void setDetected(const QString& label, const QString& source, bool stereo);
   void clearDetected();
+
+  Q_INVOKABLE void ensureProbed();
 
   Q_INVOKABLE void refresh();
 
