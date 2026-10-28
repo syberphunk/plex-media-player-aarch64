@@ -179,6 +179,12 @@ bool PlayerComponent::componentInitialize()
   connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_VIDEO), &SettingsSection::valuesUpdated,
           this, &PlayerComponent::updateVideoSettings);
 
+  connect(&XrComponent::Get(), &XrComponent::overrideChanged, this, [this]()
+  {
+    if (m_inPlayback)
+      resolveStereoFormat();
+  });
+
   connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_SUBTITLES), &SettingsSection::valuesUpdated,
           this, &PlayerComponent::updateSubtitleSettings);
 

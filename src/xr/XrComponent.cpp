@@ -73,6 +73,7 @@ void XrComponent::setFormatOverride(const QString& value)
 
   SettingsComponent::Get().setValue(kSection, kFormatKey, value);
   emit formatChanged();
+  emit overrideChanged();
 }
 
 bool XrComponent::swapEyes() const
@@ -87,6 +88,7 @@ void XrComponent::setSwapEyes(bool value)
 
   SettingsComponent::Get().setValue(kSection, kSwapKey, value);
   emit formatChanged();
+  emit overrideChanged();
 }
 
 void XrComponent::setDetected(const QString& label, const QString& source, bool stereo)

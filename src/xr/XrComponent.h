@@ -77,6 +77,8 @@ public:
 
   Q_SIGNAL void formatChanged();
 
+  Q_SIGNAL void overrideChanged();
+
 private:
   explicit XrComponent(QObject* parent = nullptr);
 
