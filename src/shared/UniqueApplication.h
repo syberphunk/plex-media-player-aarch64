@@ -26,6 +26,14 @@ public:
   {
     m_server = new LocalJsonServer(m_socketName, this);
 
+    connect(m_server, &LocalJsonServer::clientConnected, [=](QLocalSocket* socket)
+    {
+      QVariantMap greeting;
+      greeting.insert("command", "hello");
+      LocalJsonServer::sendMessage(greeting, socket);
+      socket->flush();
+    });
+
     connect(m_server, &LocalJsonServer::messageReceived, [=](const QVariant& message)
     {
       QVariantMap map = message.toMap();
@@ -42,16 +50,15 @@ public:
     auto socket = new LocalJsonClient(m_socketName, this);
     socket->connectToServer();
 
-    // we will just assume that the app isn't running if we get a error here
     if (!socket->waitForConnected(1000))
     {
-      if (socket->error() != QLocalSocket::SocketTimeoutError)
-      {
-        // since we are unique we will start to listen and claim this socket.
-        listen();
-        return true;
-      }
+      socket->close();
+      socket->deleteLater();
+      listen();
+      return true;
     }
+
+    const bool answered = socket->waitForReadyRead(2000);
 
     QVariantMap m;
     m.insert("command", "appStart");
@@ -61,14 +68,22 @@ public:
     socket->close();
     socket->deleteLater();
 
-    return false;
+    if (answered)
+      return false;
+
+    m_note = QStringLiteral("another copy holds the socket but does not answer; starting anyway");
+    listen();
+    return true;
   }
+
+  QString note() const { return m_note; }
 
   Q_SIGNAL void otherApplicationStarted();
 
 private:
-  LocalJsonServer* m_server;
+  LocalJsonServer* m_server = nullptr;
   QString m_socketName;
+  QString m_note;
 };
 
 #endif //KONVERGO_UNIQUEAPPLICATION_H

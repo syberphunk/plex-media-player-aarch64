@@ -5,6 +5,7 @@
 #include "QsLog.h"
 #include "SignalManager.h"
 #include "settings/SettingsComponent.h"
+#include "shared/Watchdog.h"
 
 int SignalManager::g_sigtermFd[2];
 
@@ -81,6 +82,7 @@ void SignalManager::handleSignal()
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void SignalManager::closeApplication()
 {
+  Watchdog::armShutdown(8);
   if (m_app)
     m_app->quit();
 }

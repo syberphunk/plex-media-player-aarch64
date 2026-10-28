@@ -10,35 +10,72 @@
 
 #include "QtHelper.h"
 #include "OpenGLDetect.h"
+#include "core/Version.h"
 #include "shared/Paths.h"
 #include "shared/SessionEnv.h"
 
 static QString g_openGLReport;
 static bool g_eglAttempted = false;
+static int g_strikes = 0;
 
 static const int kEglAttemptLimit = 2;
 
-static QString markerPath()
+struct GLState
 {
-  return Paths::dataDir("xcb-egl-state");
+  QString version;
+  QString integration;
+  QString stall;
+  int strikes = 0;
+};
+
+static QString statePath()
+{
+  return Paths::dataDir("gl-state");
 }
 
-static QString readMarker()
+static GLState readState()
 {
-  QFile file(markerPath());
+  GLState state;
+
+  QFile file(statePath());
   if (!file.open(QIODevice::ReadOnly))
-    return QString();
-  const QString state = QString::fromLatin1(file.readAll()).trimmed();
+    return state;
+
+  const QStringList lines = QString::fromLatin1(file.readAll()).split(QLatin1Char('\n'));
   file.close();
+
+  for (const QString& line : lines)
+  {
+    const int split = line.indexOf(QLatin1Char('='));
+    if (split < 1)
+      continue;
+
+    const QString key = line.left(split).trimmed();
+    const QString value = line.mid(split + 1).trimmed();
+
+    if (key == QLatin1String("version"))
+      state.version = value;
+    else if (key == QLatin1String("integration"))
+      state.integration = value;
+    else if (key == QLatin1String("stall"))
+      state.stall = value;
+    else if (key == QLatin1String("strikes"))
+      state.strikes = value.toInt();
+  }
+
   return state;
 }
 
-static void writeMarker(const QString& state)
+static void writeState(const QString& integration, int strikes)
 {
-  QFile file(markerPath());
+  QFile file(statePath());
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     return;
-  file.write(state.toLatin1());
+
+  const QString text = QStringLiteral("version=%1\nintegration=%2\nstrikes=%3\n")
+                         .arg(Version::GetVersionString(), integration)
+                         .arg(strikes);
+  file.write(text.toLatin1());
   file.close();
 }
 
@@ -115,7 +152,7 @@ static void useEgl(int attempt)
   qputenv("QT_XCB_GL_INTEGRATION", "xcb_egl");
   if (attempt > 0)
   {
-    writeMarker(QStringLiteral("attempt:%1").arg(attempt));
+    writeState(QStringLiteral("xcb_egl"), g_strikes);
     g_openGLReport = QStringLiteral("QT_XCB_GL_INTEGRATION=xcb_egl (X11 under gamescope; GLX "
                                     "offers no EGL display; attempt %1 of %2)")
                        .arg(attempt).arg(kEglAttemptLimit);
@@ -128,40 +165,31 @@ static void useEgl(int attempt)
 
 static void chooseEglAutomatically()
 {
-  const QString state = readMarker();
+  const GLState state = readState();
+  const bool sameBuild = state.version == Version::GetVersionString();
 
-  if (state.startsWith(QLatin1String("off")))
+  if (sameBuild)
   {
-    g_openGLReport = QStringLiteral("xcb_egl is off (it failed %1 times; GLX instead)")
-                       .arg(kEglAttemptLimit);
-    return;
-  }
-
-  if (state.startsWith(QLatin1String("attempt:")))
-  {
-    const int failed = state.mid(8).toInt();
-    if (failed >= kEglAttemptLimit)
+    g_strikes = state.strikes;
+    if (!state.stall.isEmpty())
     {
-      writeMarker(QStringLiteral("off"));
-      g_openGLReport = QStringLiteral("xcb_egl turned off (%1 starts with it presented no frame)")
-                         .arg(failed);
+      if (state.integration == QLatin1String("xcb_egl"))
+        g_strikes++;
+      else
+        g_strikes = 0;
     }
-    else
-    {
-      writeMarker(QStringLiteral("failed:%1").arg(failed));
-      g_openGLReport = QStringLiteral("xcb_egl held back after attempt %1 presented no frame "
-                                      "(GLX now, retrying next start)").arg(failed);
-    }
-    return;
   }
 
-  if (state.startsWith(QLatin1String("failed:")))
+  if (g_strikes >= kEglAttemptLimit)
   {
-    useEgl(state.mid(7).toInt() + 1);
+    writeState(QStringLiteral("glx"), g_strikes);
+    g_openGLReport = QStringLiteral("xcb_egl is off for this build (%1 starts with it presented "
+                                    "no frame); GLX instead, so no 3D")
+                       .arg(g_strikes);
     return;
   }
 
-  useEgl(1);
+  useEgl(g_strikes + 1);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -202,8 +230,15 @@ void confirmOpenGLSession()
 {
   if (!g_eglAttempted)
     return;
-  if (QFile::exists(markerPath()))
-    QFile::remove(markerPath());
+
+  g_strikes = 0;
+  writeState(QStringLiteral("xcb_egl"), 0);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QString openGLStatePath()
+{
+  return statePath();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

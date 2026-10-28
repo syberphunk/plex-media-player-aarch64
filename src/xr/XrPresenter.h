@@ -41,7 +41,7 @@ public:
   QSize probeSize() const;
   int probeResult() const { return m_probeResult; }
 
-  Q_INVOKABLE void reportFailure(const QString& reason);
+  Q_INVOKABLE void reportFailure(const QString& reason, bool permanent);
   Q_INVOKABLE void reportProbe(int packing);
 
   Q_SIGNAL void failed();
@@ -60,6 +60,7 @@ private:
   std::atomic<bool> m_wanted{false};
   std::atomic<uint32_t> m_generation{0};
   std::atomic<bool> m_overlayVisible{true};
+  std::atomic<bool> m_impossible{false};
 
   std::atomic<bool> m_probeWanted{false};
   std::atomic<int> m_probeResult{-1};

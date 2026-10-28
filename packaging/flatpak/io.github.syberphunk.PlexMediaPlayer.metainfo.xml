@@ -51,6 +51,33 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.32" date="2026-10-28">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>A start that showed nothing stayed alive holding the full screen, so the
+              headset had to be restarted. A start that has presented no picture after
+              twenty seconds now ends itself and records whether it failed to build the
+              interface or failed to draw.</li>
+          <li>Starting Plex while such a copy was still there did nothing at all, because
+              the new copy found the running one and exited. A new copy now waits for the
+              old one to answer and takes over if it does not.</li>
+          <li>Two starts that never reached the interface turned the EGL window off for
+              the install, which also turns 3D off. That decision is now kept per build,
+              and a start that stopped before the interface was built is no longer counted
+              against EGL.</li>
+          <li>Closing Plex did not always finish. Closing is now limited to eight seconds,
+              after which the process ends, and the headset session is released on the way
+              out.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>3D is not tried again for the rest of a session once the window is known not
+              to be able to share pictures with the headset.</li>
+          <li>The log records the steps of starting and closing, and the process id.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.31" date="2026-10-28">
       <description>
         <p>Fixed:</p>

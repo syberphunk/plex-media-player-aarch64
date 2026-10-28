@@ -27,6 +27,7 @@ public:
   bool poll();
 
   const QString& failure() const { return m_failure; }
+  bool impossible() const { return m_impossible; }
 
 private:
   struct Buffer
@@ -56,6 +57,7 @@ private:
   uint64_t m_modifier = 0;
   Buffer m_buffers[XrProtocol::kBufferCount];
   QString m_failure;
+  bool m_impossible = false;
 };
 
 #endif

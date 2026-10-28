@@ -3,6 +3,7 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 add_library(shared STATIC
   Paths.cpp Paths.h
   SessionEnv.cpp SessionEnv.h
+  Watchdog.cpp Watchdog.h
   LocalJsonClient.cpp LocalJsonClient.h
   LocalJsonServer.cpp LocalJsonServer.h
   UniqueApplication.h

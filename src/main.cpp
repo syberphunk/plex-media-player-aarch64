@@ -30,6 +30,8 @@
 #include "UniqueApplication.h"
 #include "utils/Log.h"
 #include "shared/SessionEnv.h"
+#include "shared/Watchdog.h"
+#include "xr/XrPresenter.h"
 #include "xr/XrSupport.h"
 
 #include "SignalManager.h"
@@ -175,6 +177,10 @@ int main(int argc, char *argv[])
     if (parser.isSet("terminal"))
       Log::EnableTerminalOutput();
 
+    QLOG_INFO() << "Process:" << qPrintable(QStringLiteral("pid=%1").arg(QCoreApplication::applicationPid()));
+    if (!uniqueApp->note().isEmpty())
+      QLOG_INFO() << "Single instance:" << qPrintable(uniqueApp->note());
+
     QLOG_INFO() << "Session:" << qPrintable(SessionEnv::description());
     QLOG_INFO() << "Qt platform plugin:" << qPrintable(app.platformName())
                 << "scale-factor:" << qPrintable(scale);
@@ -193,6 +199,15 @@ int main(int argc, char *argv[])
     }
 
     detectOpenGLLate();
+
+    Watchdog::armStartup(20, openGLStatePath());
+
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, [] {
+      QLOG_INFO() << "Shutdown: the application is quitting";
+      Watchdog::armShutdown(8);
+      if (XrPresenter::exists())
+        XrPresenter::Get().release();
+    });
 
     Codecs::preinitCodecs();
 
@@ -222,6 +237,9 @@ int main(int argc, char *argv[])
       if (object == nullptr)
         throw FatalException(QObject::tr("Failed to parse application engine script."));
 
+      Watchdog::noteEngineLoaded();
+      QLOG_INFO() << "Startup: the interface was built";
+
       KonvergoWindow* window = Globals::MainWindow();
 
       QObject* webChannel = qvariant_cast<QObject*>(window->property("webChannel"));
@@ -233,6 +251,7 @@ int main(int argc, char *argv[])
 
       QObject::connect(uniqueApp, &UniqueApplication::otherApplicationStarted, window, &KonvergoWindow::otherAppFocus);
     });
+    QLOG_INFO() << "Startup: building the interface";
     engine->load(QUrl(QStringLiteral("qrc:/ui/webview.qml")));
 
     Log::UpdateLogLevel();
@@ -240,10 +259,13 @@ int main(int argc, char *argv[])
     // run our application
     int ret = app.exec();
 
+    QLOG_INFO() << "Shutdown: the event loop has ended";
+
     delete uniqueApp;
     Globals::EngineDestroy();
 
     Codecs::Uninit();
+    QLOG_INFO() << "Shutdown: done";
     Log::Uninit();
     return ret;
   }

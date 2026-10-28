@@ -261,10 +261,11 @@ bool PlayerRenderer::renderStereo()
 
   const auto giveUp = [this]() {
     const QString reason = m_stereo->failure();
+    const bool permanent = m_stereo->impossible();
     m_stereo->end();
     m_stereoWanted = false;
     QMetaObject::invokeMethod(&XrPresenter::Get(), "reportFailure", Qt::QueuedConnection,
-                              Q_ARG(QString, reason));
+                              Q_ARG(QString, reason), Q_ARG(bool, permanent));
     return false;
   };
 

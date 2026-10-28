@@ -273,6 +273,7 @@ bool XrSurface::begin(int socket, const QSize& size)
   if (display == EGL_NO_DISPLAY)
   {
     m_failure = QStringLiteral("the window is not on EGL, so buffers cannot be shared");
+    m_impossible = true;
     return false;
   }
   m_display = display;
@@ -280,6 +281,7 @@ bool XrSurface::begin(int socket, const QSize& size)
   if (!resolveExtensions())
   {
     m_failure = QStringLiteral("this driver has no dmabuf import for EGL");
+    m_impossible = true;
     return false;
   }
 

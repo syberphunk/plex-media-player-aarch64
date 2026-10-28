@@ -15,6 +15,7 @@
 #include "display/DisplayComponent.h"
 #include "QsLog.h"
 #include "shared/SessionEnv.h"
+#include "shared/Watchdog.h"
 #include "utils/Utils.h"
 #include "Globals.h"
 #include "EventFilter.h"
@@ -60,6 +61,7 @@ KonvergoWindow::KonvergoWindow(QWindow* parent) :
   connect(this, &QQuickWindow::frameSwapped, this, [this]() {
     if (m_framesPresented++ > 0)
       return;
+    Watchdog::noteFramePresented();
     confirmOpenGLSession();
     QLOG_INFO() << "GL integration: the first frame was presented";
   });
@@ -157,6 +159,9 @@ void KonvergoWindow::closingWindow()
     return;
 
   m_closing = true;
+
+  QLOG_INFO() << "Shutdown: the window is closing";
+  Watchdog::armShutdown(8);
 
   if (!SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "fullscreen").toBool())
     saveGeometry();

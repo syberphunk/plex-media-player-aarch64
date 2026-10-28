@@ -115,6 +115,12 @@ void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped
   const bool sizeChanged = videoSize != m_videoSize;
   m_videoSize = videoSize;
 
+  if (m_impossible)
+  {
+    m_wanted = false;
+    return;
+  }
+
   if (!XrHost::available())
   {
     if (m_wanted)
@@ -145,7 +151,7 @@ void XrPresenter::release()
   shutdown();
 }
 
-void XrPresenter::reportFailure(const QString& reason)
+void XrPresenter::reportFailure(const QString& reason, bool permanent)
 {
   if (!reason.isEmpty())
   {
@@ -153,6 +159,13 @@ void XrPresenter::reportFailure(const QString& reason)
     m_lastFailure = reason;
     emit failed();
   }
+
+  if (permanent)
+  {
+    m_impossible = true;
+    QLOG_INFO() << "Stereoscopic: nothing more will be tried in this session";
+  }
+
   shutdown();
 }
 
