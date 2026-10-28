@@ -51,6 +51,26 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.29" date="2026-10-28">
+      <description>
+        <p>Changed:</p>
+        <ul>
+          <li>3D files are now drawn through SteamVR's overlay interface instead of
+              OpenXR. On this device the flat screen you see in the headset is produced
+              by gamescope, which is itself a SteamVR overlay, and an OpenXR application
+              asks for the headset exclusively, which it cannot be given while gamescope
+              holds it. The helper creates one overlay instead, writes the two eyes side
+              by side into a single picture and hands that to SteamVR, which draws the
+              half belonging to each eye. Over-under files are repacked side by side
+              first.</li>
+          <li>The screen is placed two metres in front of wherever the headset is looking
+              when the first frame arrives, and the button in the 3D settings puts it
+              back there.</li>
+          <li>The log records which SteamVR interfaces answered, the size of the picture
+              being submitted and where the screen was placed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.28" date="2026-10-28">
       <description>
         <p>Fixed:</p>
