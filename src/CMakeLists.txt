@@ -23,6 +23,20 @@ else()
   set(OPENXR_LIBS)
 endif()
 
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(XRDMABUF QUIET gbm egl)
+endif()
+if(XRDMABUF_FOUND)
+  message(STATUS "Using gbm/EGL for shared video buffers: ${XRDMABUF_LIBRARIES}")
+  include_directories(${XRDMABUF_INCLUDE_DIRS})
+  add_definitions(-DHAVE_XR_DMABUF)
+  set(XRDMABUF_LIBS ${XRDMABUF_LIBRARIES})
+else()
+  message(STATUS "gbm/EGL development files not found, stereoscopic presentation disabled")
+  set(XRDMABUF_LIBS)
+endif()
+
 if(BREAKPAD_FOUND)
   include_directories(${BREAKPAD_INCLUDE_DIR})
   set(BREAKPAD_LIBRARIES ${BREAKPAD_LIBRARY})
@@ -156,6 +170,7 @@ target_link_libraries(${MAIN_TARGET}
   ${CMAKE_THREAD_LIBS_INIT}
   ${MINIZIP_LIBS}
   ${OPENXR_LIBS}
+  ${XRDMABUF_LIBS}
 )
 
 install(TARGETS ${MAIN_TARGET} DESTINATION ${INSTALL_BIN_DIR})

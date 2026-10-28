@@ -7,14 +7,19 @@
 #include <QtOpenGL/QOpenGLFramebufferObject>
 
 #include <QtQuick/QQuickWindow>
+#include <QOpenGLExtraFunctions>
 #include <QOpenGLFunctions>
 #include <QVector>
 #include <QStringList>
 
 #include <mpv/render_gl.h>
 
+#include <unistd.h>
+
 #include "QsLog.h"
 #include "utils/Utils.h"
+#include "xr/XrPresenter.h"
+#include "xr/XrSurface.h"
 
 #ifdef USE_X11EXTRAS
 #include <QGuiApplication>
@@ -37,7 +42,9 @@ static void* get_proc_address(void* ctx, const char* name)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
-  m_playbackActive(false)
+  m_playbackActive(false), m_stereo(nullptr), m_stereoSocket(-1), m_stereoGeneration(0),
+  m_stereoRecentre(0), m_stereoRecentreSent(0), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
+  m_stereoEyeAspect(16.0f / 9.0f)
 {
   m_item->m_renderer = this;
 }
@@ -47,6 +54,12 @@ PlayerRenderer::~PlayerRenderer()
 {
   if (m_item->m_renderer == this)
     m_item->m_renderer = nullptr;
+
+  delete m_stereo;
+  m_stereo = nullptr;
+  if (m_stereoSocket >= 0)
+    close(m_stereoSocket);
+  m_stereoSocket = -1;
 
   // Keep in mind that the m_mpv handle must be held until this is done.
   if (m_mpvGL)
@@ -117,6 +130,114 @@ void PlayerRenderer::collectGraphicsInfo()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::syncStereo()
+{
+  XrPresenter& presenter = XrPresenter::Get();
+
+  const bool wanted = presenter.wanted();
+  const uint32_t generation = presenter.generation();
+
+  if (generation != m_stereoGeneration || !wanted)
+  {
+    if (m_stereo)
+      m_stereo->end();
+    if (m_stereoSocket >= 0)
+      close(m_stereoSocket);
+    m_stereoSocket = -1;
+    m_stereoWanted = false;
+  }
+
+  if (generation != m_stereoGeneration)
+  {
+    m_stereoGeneration = generation;
+    if (wanted)
+      m_stereoSocket = presenter.takeSocket();
+  }
+
+  m_stereoWanted = wanted && m_stereoSocket >= 0;
+  m_stereoSize = presenter.videoSize();
+  m_stereoPacking = presenter.packing();
+  m_stereoSwapped = presenter.swapped();
+  m_stereoEyeAspect = presenter.eyeAspect();
+  m_stereoRecentre = presenter.recentreCount();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool PlayerRenderer::renderStereo()
+{
+  if (!m_stereoWanted || !m_mpvGL || m_stereoSize.width() < 2 || m_stereoSize.height() < 2)
+    return false;
+
+  if (!m_stereo)
+    m_stereo = new XrSurface();
+
+  const auto giveUp = [this]() {
+    const QString reason = m_stereo->failure();
+    m_stereo->end();
+    m_stereoWanted = false;
+    QMetaObject::invokeMethod(&XrPresenter::Get(), "reportFailure", Qt::QueuedConnection,
+                              Q_ARG(QString, reason));
+    return false;
+  };
+
+  if (!m_stereo->ready() || m_stereo->size() != m_stereoSize)
+  {
+    if (!m_stereo->begin(m_stereoSocket, m_stereoSize))
+      return giveUp();
+  }
+
+  if (!m_stereo->poll())
+    return giveUp();
+
+  if (m_stereoRecentre != m_stereoRecentreSent)
+  {
+    m_stereoRecentreSent = m_stereoRecentre;
+    m_stereo->recentre();
+  }
+
+  const int index = m_stereo->acquire();
+  if (index < 0)
+    return false;
+
+  const uint32_t surfaceFbo = m_stereo->framebuffer(index);
+  if (!surfaceFbo)
+    return false;
+
+  mpv_opengl_fbo mpv_fbo = {
+    .fbo = (int)surfaceFbo,
+    .w = m_stereoSize.width(),
+    .h = m_stereoSize.height(),
+  };
+  int mpv_flip = 1;
+  mpv_render_param params[] = {
+    {MPV_RENDER_PARAM_OPENGL_FBO, &mpv_fbo},
+    {MPV_RENDER_PARAM_FLIP_Y, &mpv_flip},
+    {MPV_RENDER_PARAM_INVALID}
+  };
+  mpv_render_context_render(m_mpvGL, params);
+
+  QOpenGLContext* context = QOpenGLContext::currentContext();
+  context->functions()->glFinish();
+
+  m_stereo->submit(index, m_stereoPacking, m_stereoSwapped, m_stereoEyeAspect);
+  if (!m_stereo->ready())
+    return giveUp();
+
+  QOpenGLFramebufferObject* target = framebufferObject();
+  if (target && target->isValid())
+  {
+    QOpenGLExtraFunctions* gl = context->extraFunctions();
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, surfaceFbo);
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->handle());
+    gl->glBlitFramebuffer(0, m_stereoSize.height(), m_stereoSize.width(), 0, 0, 0,
+                          target->width(), target->height(), GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, target->handle());
+  }
+
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::render()
 {
   if (!m_initialized && m_mpv)
@@ -126,6 +247,9 @@ void PlayerRenderer::render()
     if (!init())
       emit m_item->onFatalError(QObject::tr("Could not initialize OpenGL."));
   }
+
+  if (renderStereo())
+    return;
 
   QOpenGLFramebufferObject* fbo = framebufferObject();
   if (!m_mpvGL || !fbo || !fbo->isValid())
@@ -167,6 +291,8 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
   }
 
   m_playbackActive = player->m_playbackActive;
+
+  syncStereo();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

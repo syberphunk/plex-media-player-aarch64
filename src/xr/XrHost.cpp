@@ -8,13 +8,18 @@
 #include <QStandardPaths>
 #include <QSysInfo>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "QsLog.h"
+#include "XrProtocol.h"
 
 namespace
 {
   const char* kFlatpakInfo = "/.flatpak-info";
   const char* kPortalName = "org.freedesktop.Flatpak";
   const char* kHelperName = "pmp-xr-host";
+  const int kForwardFd = XrProtocol::kSocketFd;
 
   bool shellSafe(const QString& path)
   {
@@ -114,7 +119,7 @@ QStringList XrHost::libraryPath()
   return dirs;
 }
 
-QStringList XrHost::spawnCommand(const QString& subcommand)
+QStringList XrHost::spawnCommand(const QString& subcommand, int forwardFd)
 {
   QStringList candidates;
   for (const QString& path : helperCandidates())
@@ -127,6 +132,8 @@ QStringList XrHost::spawnCommand(const QString& subcommand)
 
   QStringList args;
   args << QStringLiteral("--host");
+  if (forwardFd >= 0)
+    args << QStringLiteral("--forward-fd=%1").arg(forwardFd);
   args << QStringLiteral("--env=LD_LIBRARY_PATH=") + libraryPath().join(QLatin1Char(':'));
 
   const QString manifest = runtimeManifest();
@@ -178,6 +185,45 @@ QProcess* XrHost::start(const QString& subcommand, QObject* parent, QString* err
   QProcess* process = new QProcess(parent);
   process->setProgram(spawn);
   process->setArguments(args);
+  process->start(QIODevice::ReadOnly);
+
+  if (error)
+    error->clear();
+  return process;
+}
+
+QProcess* XrHost::startWithFd(const QString& subcommand, int fd, QObject* parent, QString* error)
+{
+  const auto reportError = [error](const QString& text) -> QProcess* {
+    if (error)
+      *error = text;
+    return nullptr;
+  };
+
+  if (!inSandbox())
+    return reportError(QStringLiteral("not sandboxed"));
+
+  if (fd < 0)
+    return reportError(QStringLiteral("there is no channel to hand over"));
+
+  const QString spawn = QStandardPaths::findExecutable(QStringLiteral("flatpak-spawn"));
+  if (spawn.isEmpty())
+    return reportError(QStringLiteral("flatpak-spawn is missing from the runtime"));
+
+  const QStringList args = spawnCommand(subcommand, kForwardFd);
+  if (args.isEmpty())
+    return reportError(QStringLiteral("the app deploy path is unknown"));
+
+  QProcess* process = new QProcess(parent);
+  process->setProgram(spawn);
+  process->setArguments(args);
+  process->setChildProcessModifier([fd]() {
+    if (fd != kForwardFd && dup2(fd, kForwardFd) < 0)
+      _exit(127);
+    const int flags = fcntl(kForwardFd, F_GETFD);
+    if (flags >= 0)
+      fcntl(kForwardFd, F_SETFD, flags & ~FD_CLOEXEC);
+  });
   process->start(QIODevice::ReadOnly);
 
   if (error)

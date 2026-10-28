@@ -17,6 +17,8 @@
 #include "input/InputComponent.h"
 #include "xr/StereoFormat.h"
 #include "xr/XrComponent.h"
+#include "xr/XrPresenter.h"
+#include "xr/XrProtocol.h"
 
 #include "QsLog.h"
 
@@ -576,6 +578,7 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
       m_playbackCanceled = false;
       m_playbackError = "";
       XrComponent::Get().clearDetected();
+      XrPresenter::Get().release();
 
       switch (endFile->reason)
       {
@@ -1387,8 +1390,34 @@ void PlayerComponent::resolveStereoFormat()
                    .arg(StereoFormat::toSetting(detected), source,
                         StereoFormat::toSetting(active)));
 
-  if (active.isStereo())
-    XrComponent::Get().ensureProbed();
+  if (!active.isStereo() || !m_inPlayback || !XrComponent::Get().enabled() ||
+      !XrComponent::Get().supported())
+  {
+    XrPresenter::Get().release();
+    return;
+  }
+
+  XrComponent::Get().ensureProbed();
+
+  const float width = m_videoSize.width();
+  const float height = m_videoSize.height();
+  uint32_t packing = XrProtocol::Mono;
+  float eyeAspect = width / height;
+
+  if (active.packing == StereoFormat::Packing::SideBySide)
+  {
+    packing = XrProtocol::SideBySide;
+    if (!active.half)
+      eyeAspect = (width / 2.0f) / height;
+  }
+  else if (active.packing == StereoFormat::Packing::OverUnder)
+  {
+    packing = XrProtocol::OverUnder;
+    if (!active.half)
+      eyeAspect = width / (height / 2.0f);
+  }
+
+  XrPresenter::Get().request(m_videoSize, packing, active.swapped, eyeAspect);
 }
 
 void PlayerComponent::updateVideoSettings()

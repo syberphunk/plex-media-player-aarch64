@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "Present.h"
+#include "../XrProtocol.h"
+
 #ifdef PMP_XR_HOST_VULKAN
 #include <vulkan/vulkan.h>
 #define XR_USE_GRAPHICS_API_VULKAN
@@ -442,11 +445,14 @@ namespace
 int main(int argc, char** argv)
 {
   const std::string command = argc > 1 ? argv[1] : "probe";
-  if (command != "probe" && command != "session")
+  if (command != "probe" && command != "session" && command != "present")
   {
-    std::fprintf(stderr, "usage: %s [probe|session]\n", argv[0]);
+    std::fprintf(stderr, "usage: %s [probe|session|present]\n", argv[0]);
     return 2;
   }
+
+  if (command == "present")
+    return XrPresent::run(XrProtocol::kSocketFd);
 
   Result out;
   const bool ok = run(command == "session", out);

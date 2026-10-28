@@ -22,11 +22,13 @@ namespace XrHost
 
   QStringList libraryPath();
 
-  QStringList spawnCommand(const QString& subcommand);
+  QStringList spawnCommand(const QString& subcommand, int forwardFd = -1);
 
   bool available();
 
   QProcess* start(const QString& subcommand, QObject* parent, QString* error);
+
+  QProcess* startWithFd(const QString& subcommand, int fd, QObject* parent, QString* error);
 
   QJsonObject parseAnswer(const QByteArray& out, const QByteArray& err, int exitCode,
                           QString* error);

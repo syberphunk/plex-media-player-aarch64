@@ -71,6 +71,8 @@ public:
 
   Q_INVOKABLE void testOutput();
 
+  Q_INVOKABLE void recentreScreen();
+
   Q_INVOKABLE QString report() const;
 
   Q_SIGNAL void stateChanged();

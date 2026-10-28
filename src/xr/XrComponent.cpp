@@ -5,6 +5,7 @@
 
 #include "QsLog.h"
 #include "XrHost.h"
+#include "XrPresenter.h"
 #include "XrSupport.h"
 #include "settings/SettingsComponent.h"
 
@@ -266,6 +267,11 @@ void XrComponent::testOutput()
   if (!supported())
     return;
   probe(true);
+}
+
+void XrComponent::recentreScreen()
+{
+  XrPresenter::Get().recentre();
 }
 
 QString XrComponent::report() const

@@ -51,6 +51,20 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.27" date="2026-10-28">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>Side-by-side and over-under files are drawn to each eye separately. The
+              video frame is rendered into a buffer shared with the headset helper,
+              which cuts the half belonging to each eye and submits it as a quad layer
+              to the headset, one for the left eye and one for the right. The screen is
+              placed two metres in front of wherever the headset is looking when the
+              file starts.</li>
+          <li>A button in the 3D settings puts the screen back in front of you.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.26" date="2026-10-28">
       <description>
         <p>Fixed:</p>

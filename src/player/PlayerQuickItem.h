@@ -11,6 +11,7 @@
 #include "QtHelper.h"
 
 class PlayerQuickItem;
+class XrSurface;
 
 class PlayerRenderer : public QQuickFramebufferObject::Renderer
 {
@@ -28,12 +29,26 @@ private:
   bool init();
   void collectGraphicsInfo();
 
+  void syncStereo();
+  bool renderStereo();
+
   PlayerQuickItem* m_item;
   mpv::qt::Handle m_mpv;
   mpv_render_context* m_mpvGL;
   bool m_initialized;
   bool m_playbackActive;
   QString m_graphicsInfo;
+
+  XrSurface* m_stereo;
+  int m_stereoSocket;
+  uint32_t m_stereoGeneration;
+  uint32_t m_stereoRecentre;
+  uint32_t m_stereoRecentreSent;
+  bool m_stereoWanted;
+  QSize m_stereoSize;
+  uint32_t m_stereoPacking;
+  bool m_stereoSwapped;
+  float m_stereoEyeAspect;
 };
 
 class PlayerQuickItem : public QQuickFramebufferObject

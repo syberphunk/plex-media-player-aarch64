@@ -2,7 +2,7 @@ if(NOT OPENXR_INCLUDE_DIR OR NOT OPENXR_LIBRARY)
   return()
 endif()
 
-add_executable(pmp-xr-host main.cpp)
+add_executable(pmp-xr-host main.cpp Present.cpp)
 set_target_properties(pmp-xr-host PROPERTIES AUTOMOC OFF)
 target_include_directories(pmp-xr-host PRIVATE ${OPENXR_INCLUDE_DIR})
 target_link_libraries(pmp-xr-host ${OPENXR_LIBRARY})

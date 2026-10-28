@@ -1446,6 +1446,21 @@ FocusScope
                 menu.xr.testOutput()
             }
           }
+
+          Btn
+          {
+            anchors.right: parent.right
+            anchors.rightMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: qsTr("Put the screen in front of me")
+            hint: qsTr("Moves the 3D screen to wherever you are looking now")
+            minW: 330
+            onClicked:
+            {
+              if (menu.xr)
+                menu.xr.recentreScreen()
+            }
+          }
         }
 
         Heading
