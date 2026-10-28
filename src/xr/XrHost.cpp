@@ -87,8 +87,6 @@ QStringList XrHost::helperCandidates()
   if (app.isEmpty())
     return QStringList();
 
-  // app-path is the app's own files directory on some flatpak versions and its
-  // deploy directory on others, so both spellings are offered to the host.
   return QStringList{app + QStringLiteral("/bin/") + QLatin1String(kHelperName),
                      app + QStringLiteral("/files/bin/") + QLatin1String(kHelperName)};
 }
@@ -104,18 +102,14 @@ QStringList XrHost::libraryPath()
   QStringList dirs;
   const QString triplet = multiarchTriplet();
   const QString app = appPath();
-  const QString runtime = runtimePath();
+  if (app.isEmpty())
+    return dirs;
 
-  for (const QString& root : {app, runtime})
+  for (const QString& prefix : {QStringLiteral("/lib"), QStringLiteral("/files/lib")})
   {
-    if (root.isEmpty())
-      continue;
-    for (const QString& prefix : {QStringLiteral("/lib"), QStringLiteral("/files/lib")})
-    {
-      dirs << root + prefix;
-      if (!triplet.isEmpty())
-        dirs << root + prefix + QLatin1Char('/') + triplet;
-    }
+    dirs << app + prefix;
+    if (!triplet.isEmpty())
+      dirs << app + prefix + QLatin1Char('/') + triplet;
   }
   return dirs;
 }

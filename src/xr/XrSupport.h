@@ -35,9 +35,6 @@ namespace XrSupport
 
   bool autoProbeAllowed();
 
-  // Never blocks. Out of the sandbox it probes in process on first call; in it
-  // the answer arrives from the host helper, so until one does the info is
-  // empty and sessionReady is false.
   const Info& probe();
 
   bool hostRoute();

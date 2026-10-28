@@ -50,11 +50,8 @@ public:
   QString perEye() const;
   QString lastError() const;
 
-  // Asks the runtime what it has, without taking the headset over.
   Q_INVOKABLE void refresh();
 
-  // Takes the headset over for a moment to prove a session and both eye
-  // swapchains can actually be created.
   Q_INVOKABLE void testOutput();
 
   Q_INVOKABLE QString report() const;

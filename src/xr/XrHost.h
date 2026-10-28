@@ -26,11 +26,8 @@ namespace XrHost
 
   bool available();
 
-  // Starts the helper on the host. The caller owns the process and reads it
-  // when it finishes. Returns nullptr with error set when it cannot be run.
   QProcess* start(const QString& subcommand, QObject* parent, QString* error);
 
-  // Turns what the helper wrote into its answer, or leaves error set.
   QJsonObject parseAnswer(const QByteArray& out, const QByteArray& err, int exitCode,
                           QString* error);
 }
