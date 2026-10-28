@@ -9,8 +9,10 @@
 
 #include "PlayerComponent.h"
 #include "QtHelper.h"
+#include "xr/StereoProbe.h"
 
 class PlayerQuickItem;
+class QOpenGLFramebufferObject;
 class XrSurface;
 
 class PlayerRenderer : public QQuickFramebufferObject::Renderer
@@ -31,6 +33,7 @@ private:
 
   void syncStereo();
   bool renderStereo();
+  void probePicture(QOpenGLFramebufferObject* fbo);
 
   PlayerQuickItem* m_item;
   mpv::qt::Handle m_mpv;
@@ -47,6 +50,14 @@ private:
   uint32_t m_stereoPacking;
   bool m_stereoSwapped;
   float m_stereoEyeAspect;
+  bool m_stereoVisible;
+
+  StereoProbe::Detector m_probe;
+  QOpenGLFramebufferObject* m_probeTarget;
+  QSize m_probeSize;
+  bool m_probeWanted;
+  bool m_probeRunning;
+  int m_probeTick;
 };
 
 class PlayerQuickItem : public QQuickFramebufferObject

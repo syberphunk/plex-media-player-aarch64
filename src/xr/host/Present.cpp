@@ -25,6 +25,8 @@ namespace
   const float kScreenDistance = 2.0f;
   const float kScreenWidth = 2.4f;
   const float kDefaultAspect = 16.0f / 9.0f;
+  const float kDefaultEyeHeight = 1.6f;
+  const int kPlaceAttempts = 90;
   const uint32_t kSortOrder = 100;
   const uint64_t kModifierInvalid = 0x00ffffffffffffffULL;
   const uint32_t kFrameSyncTimeoutMs = 100;
@@ -92,8 +94,9 @@ namespace
     void frame();
     bool blitEyes();
     void placeScreen();
-    bool measureQuad(float& width, float& height);
-    void calibrateAspect();
+    bool headPose(float position[3], float forward[3]) const;
+    void describeNeighbours();
+    void setVisible(bool visible);
 
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags) const;
     std::vector<const char*> wantedInstanceExtensions();
@@ -104,6 +107,9 @@ namespace
     OpenVr::Api m_ovr;
     VROverlayHandle_t m_overlay = k_ulOverlayHandleInvalid;
     bool m_screenPlaced = false;
+    int m_placeAttempts = 0;
+    bool m_visible = true;
+    bool m_neighboursDescribed = false;
 
     VkInstance m_vkInstance = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical = VK_NULL_HANDLE;
@@ -126,8 +132,6 @@ namespace
     uint32_t m_targetWidth = 0;
     uint32_t m_targetHeight = 0;
     bool m_targetWritten = false;
-    bool m_calibrated = false;
-    float m_texelAspect = 1.0f;
 
     Source m_sources[XrProtocol::kBufferCount];
     uint32_t m_sourceWidth = 0;
@@ -444,7 +448,7 @@ namespace
     ovl->SetOverlayTextureColorSpace(m_overlay, EColorSpace_ColorSpace_Gamma);
     ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
     if (ovl->SetOverlayTexelAspect)
-      ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
+      ovl->SetOverlayTexelAspect(m_overlay, 1.0f);
     ovl->SetOverlaySortOrder(m_overlay, kSortOrder);
     ovl->SetOverlayAlpha(m_overlay, 1.0f);
 
@@ -651,8 +655,19 @@ namespace
     if (rectWidth < 2 || rectHeight < 2)
       return false;
 
-    uint32_t eyeWidth = rectWidth;
+    float aspect = m_eyeAspect;
+    if (!(aspect > 0.1f && aspect < 10.0f))
+      aspect = kDefaultAspect;
+
     uint32_t eyeHeight = rectHeight;
+    const long fromWidth = std::lround(rectWidth / aspect);
+    if (fromWidth > static_cast<long>(eyeHeight))
+      eyeHeight = static_cast<uint32_t>(fromWidth);
+
+    long fromHeight = std::lround(aspect * eyeHeight);
+    if (fromHeight < 2)
+      fromHeight = 2;
+    uint32_t eyeWidth = static_cast<uint32_t>(fromHeight);
 
     while ((eyeWidth * 2 > m_maxDimension || eyeHeight > m_maxDimension) && eyeHeight > 2)
     {
@@ -722,7 +737,6 @@ namespace
 
     m_targetWidth = width;
     m_targetHeight = height;
-    m_calibrated = false;
 
     if (m_ovr.overlay && m_ovr.overlay->SetOverlayMouseScale)
     {
@@ -732,146 +746,104 @@ namespace
       m_ovr.overlay->SetOverlayMouseScale(m_overlay, &scale);
     }
 
-    note("pmp-xr-host: overlay texture %ux%u, %ux%u per eye", width, height, eyeWidth, eyeHeight);
+    note("pmp-xr-host: overlay texture %ux%u, %ux%u per eye, aspect %.3f, %.2fx%.2f m",
+         width, height, eyeWidth, eyeHeight, aspect, kScreenWidth, kScreenWidth / aspect);
     return true;
   }
 
-  bool Presenter::measureQuad(float& width, float& height)
+  bool Presenter::headPose(float position[3], float forward[3]) const
   {
-    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->GetTransformForOverlayCoordinates)
+    if (!m_ovr.system || !m_ovr.system->GetDeviceToAbsoluteTrackingPose)
       return false;
 
-    const auto point = [&](float x, float y, float out[3]) {
-      HmdVector2_t at{};
-      at.v[0] = x;
-      at.v[1] = y;
-      HmdMatrix34_t transform{};
-      if (ovl->GetTransformForOverlayCoordinates(m_overlay,
-                                                 ETrackingUniverseOrigin_TrackingUniverseStanding,
-                                                 at, &transform) !=
-          EVROverlayError_VROverlayError_None)
-        return false;
-      out[0] = transform.m[0][3];
-      out[1] = transform.m[1][3];
-      out[2] = transform.m[2][3];
-      return true;
-    };
+    struct TrackedDevicePose_t poses[k_unTrackedDeviceIndex_Hmd + 1] = {};
+    m_ovr.system->GetDeviceToAbsoluteTrackingPose(
+      ETrackingUniverseOrigin_TrackingUniverseStanding, 0.0f, poses,
+      k_unTrackedDeviceIndex_Hmd + 1);
 
-    const auto span = [](const float a[3], const float b[3]) {
-      const float dx = b[0] - a[0];
-      const float dy = b[1] - a[1];
-      const float dz = b[2] - a[2];
-      return std::sqrt(dx * dx + dy * dy + dz * dz);
-    };
+    const struct TrackedDevicePose_t& pose = poses[k_unTrackedDeviceIndex_Hmd];
+    if (!pose.bPoseIsValid || !pose.bDeviceIsConnected)
+      return false;
 
-    float extent[2] = {static_cast<float>(m_targetWidth), static_cast<float>(m_targetHeight)};
-    if (ovl->GetOverlayMouseScale)
+    const HmdMatrix34_t& m = pose.mDeviceToAbsoluteTracking;
+    position[0] = m.m[0][3];
+    position[1] = m.m[1][3];
+    position[2] = m.m[2][3];
+
+    float look[3] = {-m.m[0][2], 0.0f, -m.m[2][2]};
+    const float length = std::sqrt(look[0] * look[0] + look[2] * look[2]);
+    if (length < 0.0001f)
     {
-      HmdVector2_t reported{};
-      if (ovl->GetOverlayMouseScale(m_overlay, &reported) ==
-            EVROverlayError_VROverlayError_None &&
-          reported.v[0] > 1.0f && reported.v[1] > 1.0f)
-      {
-        extent[0] = reported.v[0];
-        extent[1] = reported.v[1];
-      }
-    }
-
-    const float candidates[2][2] = {{extent[0], extent[1]}, {1.0f, 1.0f}};
-
-    for (int i = 0; i < 2; ++i)
-    {
-      float origin[3] = {0.0f, 0.0f, 0.0f};
-      float across[3] = {0.0f, 0.0f, 0.0f};
-      float up[3] = {0.0f, 0.0f, 0.0f};
-
-      if (!point(0.0f, 0.0f, origin) || !point(candidates[i][0], 0.0f, across) ||
-          !point(0.0f, candidates[i][1], up))
-        return false;
-
-      const float across0 = span(origin, across);
-      const float up0 = span(origin, up);
-      if (across0 < 0.001f || up0 < 0.001f)
-        continue;
-
-      if (std::fabs(across0 - kScreenWidth) > 0.2f * kScreenWidth)
-        continue;
-
-      width = across0;
-      height = up0;
+      forward[0] = 0.0f;
+      forward[1] = 0.0f;
+      forward[2] = -1.0f;
       return true;
     }
 
-    note("pmp-xr-host: overlay coordinates do not span %.2f m, not measuring the quad",
-         kScreenWidth);
-    return false;
+    forward[0] = look[0] / length;
+    forward[1] = 0.0f;
+    forward[2] = look[2] / length;
+    return true;
   }
 
-  void Presenter::calibrateAspect()
+  void Presenter::describeNeighbours()
   {
-    m_calibrated = true;
+    m_neighboursDescribed = true;
 
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->SetOverlayTexelAspect)
+    if (!ovl || !ovl->FindOverlay)
       return;
 
-    float wanted = m_eyeAspect;
-    if (!(wanted > 0.1f && wanted < 10.0f))
-      wanted = kDefaultAspect;
+    static char keys[][48] = {"valve.steam.gamescope",
+                              "valve.steam.gamescope.screen",
+                              "gamescope",
+                              "system.systemui",
+                              "system.vrdashboard",
+                              "valve.steamvr.desktop",
+                              "steam.overlay.screen",
+                              "valve.steamframe.screen",
+                              "openxr.overlay"};
 
-    float quadWidth = 0.0f;
-    float quadHeight = 0.0f;
-    if (!measureQuad(quadWidth, quadHeight))
+    for (char* key : keys)
     {
-      const float full = static_cast<float>(m_targetWidth) / static_cast<float>(m_targetHeight);
-      m_texelAspect = wanted / full;
-      ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
-      note("pmp-xr-host: quad not measurable, texel aspect %.3f for %.3f from %.3f",
-           m_texelAspect, wanted, full);
+      VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
+      if (ovl->FindOverlay(key, &handle) != EVROverlayError_VROverlayError_None ||
+          handle == k_ulOverlayHandleInvalid)
+        continue;
+
+      float wide = 0.0f;
+      if (ovl->GetOverlayWidthInMeters)
+        ovl->GetOverlayWidthInMeters(handle, &wide);
+
+      ETrackingUniverseOrigin origin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+      HmdMatrix34_t transform{};
+      const bool placed = ovl->GetOverlayTransformAbsolute &&
+                          ovl->GetOverlayTransformAbsolute(handle, &origin, &transform) ==
+                            EVROverlayError_VROverlayError_None;
+
+      note("pmp-xr-host: neighbour \"%s\" %llu, %.2f m wide, origin %d, at %.2f %.2f %.2f%s",
+           key, static_cast<unsigned long long>(handle), wide, static_cast<int>(origin),
+           transform.m[0][3], transform.m[1][3], transform.m[2][3],
+           placed ? "" : " (no transform)");
+    }
+  }
+
+  void Presenter::setVisible(bool visible)
+  {
+    if (visible == m_visible)
       return;
-    }
 
-    const float measured = quadWidth / quadHeight;
-    if (std::fabs(measured - wanted) < 0.01f * wanted)
-    {
-      note("pmp-xr-host: quad %.3fx%.3f m, aspect %.3f, wanted %.3f", quadWidth, quadHeight,
-           measured, wanted);
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || m_overlay == k_ulOverlayHandleInvalid)
       return;
-    }
 
-    m_texelAspect *= wanted / measured;
-    if (!(m_texelAspect > 0.01f && m_texelAspect < 100.0f))
-    {
-      note("pmp-xr-host: refusing texel aspect %.3f", m_texelAspect);
-      m_texelAspect = 1.0f;
-      return;
-    }
+    m_visible = visible;
+    if (visible)
+      ovl->ShowOverlay(m_overlay);
+    else if (ovl->HideOverlay)
+      ovl->HideOverlay(m_overlay);
 
-    ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
-    ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
-
-    float checkWidth = 0.0f;
-    float checkHeight = 0.0f;
-    if (!measureQuad(checkWidth, checkHeight))
-    {
-      note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f, not re-measurable",
-           measured, wanted, m_texelAspect);
-      return;
-    }
-
-    const float corrected = checkWidth / checkHeight;
-    note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f, now %.3fx%.3f m "
-         "aspect %.3f",
-         measured, wanted, m_texelAspect, checkWidth, checkHeight, corrected);
-
-    if (std::fabs(corrected - wanted) >= std::fabs(measured - wanted))
-    {
-      m_texelAspect = 1.0f;
-      ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
-      ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
-      note("pmp-xr-host: the texel aspect did not improve the quad, back to 1.0");
-    }
+    note("pmp-xr-host: the screen is now %s", visible ? "showing" : "out of the way");
   }
 
   void Presenter::send(XrProtocol::Type type, uint32_t index)
@@ -964,6 +936,14 @@ namespace
           }
           break;
 
+        case XrProtocol::Show:
+          setVisible(true);
+          break;
+
+        case XrProtocol::Hide:
+          setVisible(false);
+          break;
+
         case XrProtocol::Stop:
           note("pmp-xr-host: the app asked to stop");
           return false;
@@ -977,26 +957,46 @@ namespace
   void Presenter::placeScreen()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->SetOverlayTransformTrackedDeviceRelative)
+    if (!ovl || !ovl->SetOverlayTransformAbsolute)
+      return;
+
+    ++m_placeAttempts;
+
+    float position[3] = {0.0f, kDefaultEyeHeight, 0.0f};
+    float forward[3] = {0.0f, 0.0f, -1.0f};
+    const bool tracked = headPose(position, forward);
+    if (!tracked && m_placeAttempts < kPlaceAttempts)
       return;
 
     HmdMatrix34_t transform{};
-    transform.m[0][0] = 1.0f;
-    transform.m[1][1] = 1.0f;
-    transform.m[2][2] = 1.0f;
-    transform.m[2][3] = -kScreenDistance;
+    const float up[3] = {0.0f, 1.0f, 0.0f};
+    const float back[3] = {-forward[0], 0.0f, -forward[2]};
+    const float right[3] = {back[2], 0.0f, -back[0]};
 
-    const EVROverlayError error = ovl->SetOverlayTransformTrackedDeviceRelative(
-      m_overlay, static_cast<TrackedDeviceIndex_t>(k_unTrackedDeviceIndex_Hmd), &transform);
+    for (int row = 0; row < 3; ++row)
+    {
+      transform.m[row][0] = right[row];
+      transform.m[row][1] = up[row];
+      transform.m[row][2] = back[row];
+      transform.m[row][3] = position[row] + forward[row] * kScreenDistance;
+    }
+
+    const EVROverlayError error = ovl->SetOverlayTransformAbsolute(
+      m_overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, &transform);
     if (error != EVROverlayError_VROverlayError_None)
     {
-      note("pmp-xr-host: the screen would not attach to the headset (%d)",
-           static_cast<int>(error));
+      note("pmp-xr-host: the screen would not stay put (%d)", static_cast<int>(error));
       return;
     }
 
     m_screenPlaced = true;
-    note("pmp-xr-host: screen %.2f m ahead of the headset", kScreenDistance);
+    note("pmp-xr-host: screen fixed at %.2f %.2f %.2f, %.2f m from where the headset was "
+         "looking%s",
+         transform.m[0][3], transform.m[1][3], transform.m[2][3], kScreenDistance,
+         tracked ? "" : " (no pose, placed ahead of the standing origin)");
+
+    if (!m_neighboursDescribed)
+      describeNeighbours();
   }
 
   bool Presenter::blitEyes()
@@ -1034,8 +1034,8 @@ namespace
       regions[eye].srcOffsets[0] = {x0, y0, 0};
       regions[eye].srcOffsets[1] = {x1, y1, 1};
       regions[eye].dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-      regions[eye].dstOffsets[0] = {eye == 0 ? 0 : eyeWidth, 0, 0};
-      regions[eye].dstOffsets[1] = {eye == 0 ? eyeWidth : eyeWidth * 2, eyeHeight, 1};
+      regions[eye].dstOffsets[0] = {eye == 0 ? 0 : eyeWidth, eyeHeight, 0};
+      regions[eye].dstOffsets[1] = {eye == 0 ? eyeWidth : eyeWidth * 2, 0, 1};
     }
 
     VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -1162,9 +1162,6 @@ namespace
       note("pmp-xr-host: presenting %ux%u side by side", m_targetWidth, m_targetHeight);
       m_presented = 1;
     }
-
-    if (!m_calibrated)
-      calibrateAspect();
   }
 
   void Presenter::pollEvents(bool& exit)

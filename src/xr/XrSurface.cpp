@@ -303,6 +303,7 @@ bool XrSurface::begin(int socket, const QSize& size)
   }
 
   m_ready = true;
+  m_visible = true;
   QLOG_INFO() << "Stereoscopic: sharing" << XrProtocol::kBufferCount << "buffers of"
               << size.width() << "x" << size.height() << "stride" << m_stride << "modifier"
               << QString::number(m_modifier, 16);
@@ -396,6 +397,19 @@ void XrSurface::submit(int index, uint32_t packing, bool swapped, float eyeAspec
   }
 }
 
+void XrSurface::setVisible(bool visible)
+{
+  if (!m_ready || visible == m_visible)
+    return;
+
+  XrProtocol::Message message =
+    XrProtocol::make(visible ? XrProtocol::Show : XrProtocol::Hide);
+
+  if (send(m_socket, &message, sizeof(message), MSG_NOSIGNAL | MSG_DONTWAIT) < 0)
+    return;
+
+  m_visible = visible;
+}
 
 bool XrSurface::poll()
 {
@@ -470,6 +484,10 @@ uint32_t XrSurface::framebuffer(int) const
 }
 
 void XrSurface::submit(int, uint32_t, bool, float)
+{
+}
+
+void XrSurface::setVisible(bool)
 {
 }
 

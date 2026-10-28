@@ -32,9 +32,21 @@ public:
 
   const QString& lastFailure() const { return m_lastFailure; }
 
+  void setOverlayVisible(bool visible) { m_overlayVisible = visible; }
+  bool overlayVisible() const { return m_overlayVisible; }
+
+  void wantProbe(const QSize& videoSize);
+  void resetProbe();
+  bool probeWanted() const { return m_probeWanted; }
+  QSize probeSize() const;
+  int probeResult() const { return m_probeResult; }
+
   Q_INVOKABLE void reportFailure(const QString& reason);
+  Q_INVOKABLE void reportProbe(int packing);
 
   Q_SIGNAL void failed();
+
+  Q_SIGNAL void probed();
 
 private Q_SLOTS:
   void shutdown();
@@ -47,6 +59,12 @@ private:
 
   std::atomic<bool> m_wanted{false};
   std::atomic<uint32_t> m_generation{0};
+  std::atomic<bool> m_overlayVisible{true};
+
+  std::atomic<bool> m_probeWanted{false};
+  std::atomic<int> m_probeResult{-1};
+  std::atomic<int> m_probeWidth{0};
+  std::atomic<int> m_probeHeight{0};
 
   std::atomic<int> m_socket{-1};
   QProcess* m_process = nullptr;

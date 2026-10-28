@@ -5,6 +5,7 @@
 
 #include "QsLog.h"
 #include "XrHost.h"
+#include "input/InputComponent.h"
 #include "XrPresenter.h"
 #include "XrSupport.h"
 #include "settings/SettingsComponent.h"
@@ -18,6 +19,7 @@ namespace
 
   const int kProbeTimeoutMs = 8000;
   const int kSessionTimeoutMs = 20000;
+  const int kIdleMs = 4000;
 }
 
 XrComponent::XrComponent(QObject* parent) : ComponentBase(parent)
@@ -34,7 +36,24 @@ QString XrComponent::presentError() const
 bool XrComponent::componentInitialize()
 {
   XrPresenter::Get();
+
+  m_idle = new QTimer(this);
+  m_idle->setSingleShot(true);
+  m_idle->setInterval(kIdleMs);
+  connect(m_idle, &QTimer::timeout, this,
+          []() { XrPresenter::Get().setOverlayVisible(true); });
+
+  connect(&InputComponent::Get(), &InputComponent::receivedInput, this,
+          &XrComponent::noteActivity);
+
   return true;
+}
+
+void XrComponent::noteActivity()
+{
+  XrPresenter::Get().setOverlayVisible(false);
+  if (m_idle)
+    m_idle->start();
 }
 
 void XrComponent::ensureProbed()

@@ -187,6 +187,12 @@ bool PlayerComponent::componentInitialize()
       resolveStereoFormat();
   });
 
+  connect(&XrPresenter::Get(), &XrPresenter::probed, this, [this]()
+  {
+    if (m_inPlayback)
+      resolveStereoFormat();
+  });
+
   connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_SUBTITLES), &SettingsSection::valuesUpdated,
           this, &PlayerComponent::updateSubtitleSettings);
 
@@ -568,6 +574,7 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
     case MPV_EVENT_START_FILE:
     {
       m_inPlayback = true;
+      XrPresenter::Get().resetProbe();
       break;
     }
     case MPV_EVENT_END_FILE:
@@ -1370,11 +1377,35 @@ void PlayerComponent::resolveStereoFormat()
   StereoFormat::Layout detected =
     StereoFormat::resolve(stereoIn, path, m_videoSize, &source);
 
+  if (!detected.isStereo() && detected.packing != StereoFormat::Packing::Unsupported)
+  {
+    const int reading = XrPresenter::Get().probeResult();
+    if (reading >= 0)
+    {
+      StereoFormat::Packing packing = StereoFormat::Packing::Mono;
+      if (reading == int(XrProtocol::SideBySide))
+        packing = StereoFormat::Packing::SideBySide;
+      else if (reading == int(XrProtocol::OverUnder))
+        packing = StereoFormat::Packing::OverUnder;
+
+      const StereoFormat::Layout picture = StereoFormat::fromPacking(packing, m_videoSize);
+      if (picture.isStereo() || detected.packing == StereoFormat::Packing::Unknown)
+      {
+        detected = picture;
+        source = QStringLiteral("picture");
+      }
+    }
+    else if (m_inPlayback && XrComponent::Get().enabled() && XrComponent::Get().supported())
+    {
+      XrPresenter::Get().wantProbe(m_videoSize);
+    }
+  }
+
   const QString chosen = XrComponent::Get().formatOverride();
   StereoFormat::Layout active = detected;
   if (chosen != QLatin1String("auto"))
   {
-    active = StereoFormat::fromSetting(chosen);
+    active = StereoFormat::fromSetting(chosen, m_videoSize);
     source = QStringLiteral("override");
   }
   if (XrComponent::Get().swapEyes())

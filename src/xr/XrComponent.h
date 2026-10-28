@@ -87,9 +87,11 @@ private:
 
   void probe(bool withSession);
   void finish(const QString& error);
+  void noteActivity();
 
   QProcess* m_process = nullptr;
   QTimer* m_timeout = nullptr;
+  QTimer* m_idle = nullptr;
   bool m_withSession = false;
   bool m_checked = false;
   bool m_sessionTested = false;

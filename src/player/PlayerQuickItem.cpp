@@ -44,7 +44,8 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereo(nullptr), m_stereoSocket(-1), m_stereoGeneration(0),
   m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
-  m_stereoEyeAspect(16.0f / 9.0f)
+  m_stereoEyeAspect(16.0f / 9.0f), m_stereoVisible(true), m_probeTarget(nullptr),
+  m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
 {
   m_item->m_renderer = this;
 }
@@ -57,6 +58,8 @@ PlayerRenderer::~PlayerRenderer()
 
   delete m_stereo;
   m_stereo = nullptr;
+  delete m_probeTarget;
+  m_probeTarget = nullptr;
   if (m_stereoSocket >= 0)
     close(m_stereoSocket);
   m_stereoSocket = -1;
@@ -135,10 +138,20 @@ void PlayerRenderer::syncStereo()
   if (!XrPresenter::exists())
   {
     m_stereoWanted = false;
+    m_probeWanted = false;
     return;
   }
 
   XrPresenter& presenter = XrPresenter::Get();
+
+  m_probeWanted = presenter.probeWanted();
+  m_probeSize = presenter.probeSize();
+  if (m_probeWanted && !m_probeRunning)
+  {
+    m_probe.reset();
+    m_probeTick = 0;
+  }
+  m_probeRunning = m_probeWanted;
 
   const bool wanted = presenter.wanted();
   const uint32_t generation = presenter.generation();
@@ -165,6 +178,76 @@ void PlayerRenderer::syncStereo()
   m_stereoPacking = presenter.packing();
   m_stereoSwapped = presenter.swapped();
   m_stereoEyeAspect = presenter.eyeAspect();
+  m_stereoVisible = presenter.overlayVisible();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::probePicture(QOpenGLFramebufferObject* fbo)
+{
+  if (!m_probeWanted || !m_playbackActive || !fbo || !fbo->isValid())
+    return;
+  if (m_probeSize.width() < 2 || m_probeSize.height() < 2)
+    return;
+  if (m_probe.decided())
+    return;
+  if (++m_probeTick % 8 != 0)
+    return;
+
+  QOpenGLContext* context = QOpenGLContext::currentContext();
+  if (!context)
+    return;
+
+  if (!m_probeTarget)
+    m_probeTarget = new QOpenGLFramebufferObject(StereoProbe::kGridWidth,
+                                                 StereoProbe::kGridHeight);
+  if (!m_probeTarget->isValid())
+    return;
+
+  const double aspect = double(m_probeSize.width()) / double(m_probeSize.height());
+  int pictureWidth = fbo->width();
+  int pictureHeight = fbo->height();
+  if (double(pictureWidth) / double(pictureHeight) > aspect)
+    pictureWidth = int(qRound(pictureHeight * aspect));
+  else
+    pictureHeight = int(qRound(pictureWidth / aspect));
+
+  const int left = (fbo->width() - pictureWidth) / 2;
+  const int bottom = (fbo->height() - pictureHeight) / 2;
+
+  QOpenGLExtraFunctions* gl = context->extraFunctions();
+  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo->handle());
+  gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_probeTarget->handle());
+  gl->glBlitFramebuffer(left, bottom, left + pictureWidth, bottom + pictureHeight, 0, 0,
+                        m_probeTarget->width(), m_probeTarget->height(), GL_COLOR_BUFFER_BIT,
+                        GL_LINEAR);
+
+  QVector<uint8_t> pixels(m_probeTarget->width() * m_probeTarget->height() * 4, 0);
+  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_probeTarget->handle());
+  gl->glReadPixels(0, 0, m_probeTarget->width(), m_probeTarget->height(), GL_RGBA,
+                   GL_UNSIGNED_BYTE, pixels.data());
+  gl->glBindFramebuffer(GL_FRAMEBUFFER, fbo->handle());
+
+  if (!m_probe.add(pixels.constData(), m_probeTarget->width(), m_probeTarget->height()))
+    return;
+
+  if (!m_probe.decided())
+    return;
+
+  uint32_t packing = XrProtocol::Mono;
+  if (m_probe.verdict() == StereoProbe::Verdict::SideBySide)
+    packing = XrProtocol::SideBySide;
+  else if (m_probe.verdict() == StereoProbe::Verdict::OverUnder)
+    packing = XrProtocol::OverUnder;
+
+  QLOG_INFO() << "Stereoscopic: the picture reads as"
+              << (packing == XrProtocol::SideBySide
+                    ? "side by side"
+                    : (packing == XrProtocol::OverUnder ? "over-under" : "flat"))
+              << "-" << qPrintable(m_probe.reading());
+
+  m_probeWanted = false;
+  QMetaObject::invokeMethod(&XrPresenter::Get(), "reportProbe", Qt::QueuedConnection,
+                            Q_ARG(int, int(packing)));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -193,6 +276,8 @@ bool PlayerRenderer::renderStereo()
 
   if (!m_stereo->poll())
     return giveUp();
+
+  m_stereo->setVisible(m_stereoVisible);
 
   const int index = m_stereo->acquire();
   if (index < 0)
@@ -226,11 +311,39 @@ bool PlayerRenderer::renderStereo()
   if (target && target->isValid())
   {
     QOpenGLExtraFunctions* gl = context->extraFunctions();
-    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, surfaceFbo);
-    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->handle());
-    gl->glBlitFramebuffer(0, m_stereoSize.height(), m_stereoSize.width(), 0, 0, 0,
-                          target->width(), target->height(), GL_COLOR_BUFFER_BIT, GL_LINEAR);
     gl->glBindFramebuffer(GL_FRAMEBUFFER, target->handle());
+
+    if (m_stereoVisible)
+    {
+      gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+      gl->glClear(GL_COLOR_BUFFER_BIT);
+    }
+    else
+    {
+      int x0 = 0;
+      int y0 = 0;
+      int x1 = m_stereoSize.width();
+      int y1 = m_stereoSize.height();
+
+      if (m_stereoPacking == XrProtocol::SideBySide)
+      {
+        const int half = x1 / 2;
+        x0 = m_stereoSwapped ? half : 0;
+        x1 = x0 + half;
+      }
+      else if (m_stereoPacking == XrProtocol::OverUnder)
+      {
+        const int half = y1 / 2;
+        y0 = m_stereoSwapped ? half : 0;
+        y1 = y0 + half;
+      }
+
+      gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, surfaceFbo);
+      gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->handle());
+      gl->glBlitFramebuffer(x0, y1, x1, y0, 0, 0, target->width(), target->height(),
+                            GL_COLOR_BUFFER_BIT, GL_LINEAR);
+      gl->glBindFramebuffer(GL_FRAMEBUFFER, target->handle());
+    }
   }
 
   return true;
@@ -266,6 +379,8 @@ void PlayerRenderer::render()
     {MPV_RENDER_PARAM_INVALID}
   };
   mpv_render_context_render(m_mpvGL, params);
+
+  probePicture(fbo);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

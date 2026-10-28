@@ -166,6 +166,20 @@ StereoFormat::Layout StereoFormat::fromAspect(const QSize& display)
   return layout;
 }
 
+StereoFormat::Layout StereoFormat::fromPacking(Packing packing, const QSize& display)
+{
+  Layout layout;
+  if (packing != Packing::SideBySide && packing != Packing::OverUnder)
+  {
+    layout.packing = packing;
+    return layout;
+  }
+
+  layout.packing = packing;
+  layout.half = halfFromAspect(packing, display);
+  return layout;
+}
+
 StereoFormat::Layout StereoFormat::resolve(const QString& mpvName, const QString& path,
                                            const QSize& display, QString* source)
 {
@@ -199,7 +213,7 @@ StereoFormat::Layout StereoFormat::resolve(const QString& mpvName, const QString
   return answer(Layout(), "none");
 }
 
-StereoFormat::Layout StereoFormat::fromSetting(const QString& setting)
+StereoFormat::Layout StereoFormat::fromSetting(const QString& setting, const QSize& display)
 {
   Layout layout;
   const QString value = setting.trimmed().toLower();
@@ -209,28 +223,28 @@ StereoFormat::Layout StereoFormat::fromSetting(const QString& setting)
     layout.packing = Packing::Mono;
     return layout;
   }
-  if (value == QLatin1String("sbs"))
+  if (value == QLatin1String("sbs") || value == QLatin1String("sbs_half") ||
+      value == QLatin1String("sbs_full"))
   {
     layout.packing = Packing::SideBySide;
-    layout.half = false;
+    if (value == QLatin1String("sbs_half"))
+      layout.half = true;
+    else if (value == QLatin1String("sbs_full"))
+      layout.half = false;
+    else
+      layout.half = halfFromAspect(layout.packing, display);
     return layout;
   }
-  if (value == QLatin1String("sbs_half"))
-  {
-    layout.packing = Packing::SideBySide;
-    layout.half = true;
-    return layout;
-  }
-  if (value == QLatin1String("ou"))
-  {
-    layout.packing = Packing::OverUnder;
-    layout.half = false;
-    return layout;
-  }
-  if (value == QLatin1String("ou_half"))
+  if (value == QLatin1String("ou") || value == QLatin1String("ou_half") ||
+      value == QLatin1String("ou_full"))
   {
     layout.packing = Packing::OverUnder;
-    layout.half = true;
+    if (value == QLatin1String("ou_half"))
+      layout.half = true;
+    else if (value == QLatin1String("ou_full"))
+      layout.half = false;
+    else
+      layout.half = halfFromAspect(layout.packing, display);
     return layout;
   }
 
@@ -244,9 +258,9 @@ QString StereoFormat::toSetting(const Layout& layout)
     case Packing::Mono:
       return QStringLiteral("mono");
     case Packing::SideBySide:
-      return layout.half ? QStringLiteral("sbs_half") : QStringLiteral("sbs");
+      return QStringLiteral("sbs");
     case Packing::OverUnder:
-      return layout.half ? QStringLiteral("ou_half") : QStringLiteral("ou");
+      return QStringLiteral("ou");
     case Packing::Unsupported:
     case Packing::Unknown:
       break;

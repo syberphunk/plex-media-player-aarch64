@@ -282,14 +282,10 @@ FocusScope
 
   function packingLabel(value)
   {
-    if (value === "sbs_half")
-      return qsTr("Side-by-side, half width")
-    if (value === "sbs")
-      return qsTr("Side-by-side, full width")
-    if (value === "ou_half")
-      return qsTr("Over-under, half height")
-    if (value === "ou")
-      return qsTr("Over-under, full height")
+    if (value === "sbs" || value === "sbs_half" || value === "sbs_full")
+      return qsTr("Side by side")
+    if (value === "ou" || value === "ou_half" || value === "ou_full")
+      return qsTr("Over and under")
     if (value === "mono")
       return qsTr("Treat everything as 2D")
     return qsTr("Work it out per file")
@@ -312,6 +308,9 @@ FocusScope
     if (from === "aspect")
       return qsTr("Playing: %1, worked out from the picture shape. Set it here if "
                   + "that is wrong.").arg(menu.xr.detectedLabel)
+    if (from === "picture")
+      return qsTr("Playing: %1, worked out by comparing the two halves of the "
+                  + "picture. Set it here if that is wrong.").arg(menu.xr.detectedLabel)
     if (from === "unclear")
       return qsTr("The name says this file is 3D but not how it is packed, and it "
                   + "carries no 3D tag. Set it here: half width is the usual one.")
@@ -1379,10 +1378,8 @@ FocusScope
           hint: qsTr("Left as worked out, unless a file is wrong and needs saying")
           options: [
             { value: "auto", label: qsTr("Work it out per file") },
-            { value: "sbs_half", label: qsTr("Side-by-side, half width") },
-            { value: "sbs", label: qsTr("Side-by-side, full width") },
-            { value: "ou_half", label: qsTr("Over-under, half height") },
-            { value: "ou", label: qsTr("Over-under, full height") },
+            { value: "sbs", label: qsTr("Side by side") },
+            { value: "ou", label: qsTr("Over and under") },
             { value: "mono", label: qsTr("Treat everything as 2D") }
           ]
           current: menu.xr ? menu.xr.formatOverride : "auto"

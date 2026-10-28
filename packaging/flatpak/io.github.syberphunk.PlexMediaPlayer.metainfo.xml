@@ -51,6 +51,40 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.31" date="2026-10-28">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>The 3D picture was upside down. The frame handed to the headset is rendered
+              with its rows reversed; the copy into the shared surface now reverses them
+              back.</li>
+          <li>The 3D screen was pinned in front of the face and turned with the head. It
+              is now placed once, two metres ahead of where the headset was looking when
+              playback started, and stays there.</li>
+          <li>The video played twice: once in the headset and once flat on the Plex
+              window. The Plex window is now cleared while the 3D screen is up.</li>
+          <li>The 3D screen was the wrong shape, showing a widescreen film as though it
+              were nearly square. The shared surface is now sized so that each eye's half
+              of it has the shape of the picture, which is the shape the headset uses for
+              the screen.</li>
+          <li>A side-by-side file was not recognised. Recognition used the file name,
+              which is not available during library playback, where the player is given a
+              library key instead of a file. The two halves of the picture are now
+              compared to each other over a dozen frames, and a file whose halves match
+              is treated as 3D.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>The 3D screen goes out of the way for four seconds when a button is pressed,
+              and the Plex window shows one eye of the picture flat, so the menus and the
+              rest of the interface can be used during playback.</li>
+          <li>The 3D packing setting lists side by side and over and under once each.
+              Whether a file carries two full pictures or two squeezed ones is worked out
+              from the shape of the picture, which removes a wrong pairing that squeezed
+              the picture further.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.30" date="2026-10-28">
       <description>
         <p>Fixed:</p>

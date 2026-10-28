@@ -77,8 +77,37 @@ bool XrPresenter::spawn()
   return true;
 }
 
+void XrPresenter::wantProbe(const QSize& videoSize)
+{
+  if (videoSize.width() < 2 || videoSize.height() < 2)
+    return;
+
+  m_probeWidth = videoSize.width();
+  m_probeHeight = videoSize.height();
+  m_probeWanted = true;
+}
+
+void XrPresenter::resetProbe()
+{
+  m_probeWanted = false;
+  m_probeResult = -1;
+}
+
+QSize XrPresenter::probeSize() const
+{
+  return QSize(m_probeWidth, m_probeHeight);
+}
+
+void XrPresenter::reportProbe(int packing)
+{
+  m_probeWanted = false;
+  m_probeResult = packing;
+  emit probed();
+}
+
 void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped, float eyeAspect)
 {
+  m_overlayVisible = true;
   m_packing = packing;
   m_swapped = swapped;
   m_eyeAspect = eyeAspect > 0.1f && eyeAspect < 10.0f ? eyeAspect : 16.0f / 9.0f;

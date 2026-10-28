@@ -40,12 +40,14 @@ namespace StereoFormat
 
   Layout fromAspect(const QSize& display);
 
+  Layout fromPacking(Packing packing, const QSize& display);
+
   bool namedThreeD(const QString& path);
 
   Layout resolve(const QString& mpvName, const QString& path, const QSize& display,
                  QString* source);
 
-  Layout fromSetting(const QString& setting);
+  Layout fromSetting(const QString& setting, const QSize& display);
 
   QString toSetting(const Layout& layout);
 

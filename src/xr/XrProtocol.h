@@ -16,8 +16,10 @@ namespace XrProtocol
     Frame = 2,
     Release = 3,
     Started = 4,
+    Show = 5,
     Stop = 6,
-    Failed = 7
+    Failed = 7,
+    Hide = 8
   };
 
   enum Packing : uint32_t

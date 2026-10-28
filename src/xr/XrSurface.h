@@ -23,6 +23,7 @@ public:
   int acquire();
   uint32_t framebuffer(int index) const;
   void submit(int index, uint32_t packing, bool swapped, float eyeAspect);
+  void setVisible(bool visible);
   bool poll();
 
   const QString& failure() const { return m_failure; }
@@ -48,6 +49,7 @@ private:
   void* m_gbm = nullptr;
   void* m_display = nullptr;
   bool m_ready = false;
+  bool m_visible = true;
   QSize m_size;
   uint32_t m_stride = 0;
   uint32_t m_offset = 0;
