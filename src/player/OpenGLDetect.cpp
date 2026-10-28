@@ -171,7 +171,7 @@ static void chooseEglAutomatically()
   if (sameBuild)
   {
     g_strikes = state.strikes;
-    if (!state.stall.isEmpty())
+    if (state.stall == QLatin1String("frame"))
     {
       if (state.integration == QLatin1String("xcb_egl"))
         g_strikes++;
