@@ -261,7 +261,7 @@ QJsonObject XrHost::parseAnswer(const QByteArray& out, const QByteArray& err, in
                          .arg(parseError.errorString()));
 
   if (!err.isEmpty())
-    QLOG_DEBUG() << "OpenXR host helper stderr:" << QString::fromUtf8(err).trimmed();
+    QLOG_DEBUG() << "Stereoscopic: host helper stderr:" << QString::fromUtf8(err).trimmed();
 
   if (error)
     error->clear();

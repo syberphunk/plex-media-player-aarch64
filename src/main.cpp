@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
 
     if (XrSupport::autoProbeAllowed())
     {
-      QLOG_INFO() << "OpenXR:" << qPrintable(XrSupport::report());
+      QLOG_INFO() << "Stereoscopic:" << qPrintable(XrSupport::report());
     }
 
     detectOpenGLLate();

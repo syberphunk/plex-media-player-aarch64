@@ -111,7 +111,7 @@ bool XrSupport::ensureRuntimeJson()
     return false;
 
   qputenv("XR_RUNTIME_JSON", manifest.toLocal8Bit());
-  QLOG_INFO() << "OpenXR: no active runtime configured, using" << qPrintable(manifest);
+  QLOG_INFO() << "Stereoscopic: no active OpenXR runtime configured, using" << qPrintable(manifest);
   return true;
 }
 
@@ -159,7 +159,7 @@ bool XrSupport::ensurePathRegistry()
     return false;
 
   qputenv("VR_PATHREG_OVERRIDE", path.toLocal8Bit());
-  QLOG_INFO() << "OpenXR: path registry written to" << qPrintable(path)
+  QLOG_INFO() << "Stereoscopic: path registry written to" << qPrintable(path)
               << "pointing at" << qPrintable(runtimeDir);
   return true;
 }
@@ -356,7 +356,7 @@ void XrSupport::applyHostAnswer(const QJsonObject& answer, const QString& error,
       g_info.error = reported;
   }
 
-  QLOG_INFO() << "OpenXR:" << qPrintable(report());
+  QLOG_INFO() << "Stereoscopic:" << qPrintable(report());
 }
 
 void XrSupport::refreshLocal()
@@ -365,7 +365,7 @@ void XrSupport::refreshLocal()
   g_probed = true;
   g_sessionTried = false;
   localProbe();
-  QLOG_INFO() << "OpenXR:" << qPrintable(report());
+  QLOG_INFO() << "Stereoscopic:" << qPrintable(report());
 }
 
 const XrSupport::Info& XrSupport::probe()
@@ -408,16 +408,24 @@ QString XrSupport::report()
       parts << QString("per-eye=%1x%2").arg(info.recommendedPerEye.width())
                                        .arg(info.recommendedPerEye.height());
     }
-    parts << QString("opengl=%1").arg(info.openglSupported ? "yes" : "no");
-    parts << QString("extensions=%1").arg(info.extensions.size());
+    if (info.viaHost)
+    {
+      if (!info.extensions.isEmpty())
+        parts << QString("interfaces=%1").arg(info.extensions.join(","));
+    }
+    else
+    {
+      parts << QString("opengl=%1").arg(info.openglSupported ? "yes" : "no");
+      parts << QString("extensions=%1").arg(info.extensions.size());
+    }
     if (!info.blendModes.isEmpty())
       parts << QString("blend=%1").arg(info.blendModes.join(","));
     if (info.viaHost)
     {
       if (info.sessionReady)
-        parts << QString("session=yes swapchains=%1").arg(info.swapchains);
+        parts << QStringLiteral("overlay=ready");
       else
-        parts << QString("session=%1").arg(g_sessionTried ? "no" : "untested");
+        parts << QString("overlay=%1").arg(g_sessionTried ? "no" : "untested");
     }
   }
   if (!info.error.isEmpty())

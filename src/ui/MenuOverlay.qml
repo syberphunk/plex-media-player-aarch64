@@ -272,10 +272,10 @@ FocusScope
                                             : menu.xr.runtimeName)
                                      .arg(menu.xr.perEye)
     if (menu.xr.sessionReady)
-      return text + qsTr(". Both eyes were drawn to.")
+      return text + qsTr(". The headset accepted a screen.")
     if (menu.xr.lastError.length > 0)
       return text + qsTr(". The last check failed: %1").arg(menu.xr.lastError)
-    return text + qsTr(". Not drawn to yet.")
+    return text + qsTr(". No screen has been put up yet.")
   }
 
   function packingLabel(value)
@@ -1437,8 +1437,8 @@ FocusScope
             label: menu.xr && menu.xr.busy
                      ? qsTr("Checking...")
                      : qsTr("Check the headset")
-            hint: qsTr("Takes the headset over for a moment to prove both eyes "
-                       + "can be drawn to")
+            hint: qsTr("Puts a screen up in the headset for a moment to prove "
+                       + "it can be drawn to")
             minW: 330
             onClicked:
             {

@@ -4,9 +4,7 @@
 
 #include <vulkan/vulkan.h>
 
-#define XR_USE_GRAPHICS_API_VULKAN
-#include <openxr/openxr.h>
-#include <openxr/openxr_platform.h>
+#include "OpenVr.h"
 
 #include <cmath>
 #include <cstdarg>
@@ -17,7 +15,6 @@
 #include <vector>
 
 #include <errno.h>
-#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -25,11 +22,14 @@
 
 namespace
 {
-  const uint32_t kDrmFormatAbgr8888 = 0x34324241;
-  const uint64_t kDrmModifierLinear = 0;
-
   const float kScreenDistance = 2.0f;
   const float kScreenWidth = 2.4f;
+  const float kDefaultAspect = 16.0f / 9.0f;
+  const uint32_t kSortOrder = 100;
+  const uint32_t kFrameSyncTimeoutMs = 100;
+
+  char kOverlayKey[] = "io.github.syberphunk.PlexMediaPlayer.screen";
+  char kOverlayName[] = "Plex Media Player";
 
   void note(const char* format, ...) __attribute__((format(printf, 1, 2)));
 
@@ -49,18 +49,20 @@ namespace
     nanosleep(&request, nullptr);
   }
 
+  bool checkVk(VkResult result, const char* stage)
+  {
+    if (result == VK_SUCCESS)
+      return true;
+    note("pmp-xr-host: %s failed (%d)", stage, static_cast<int>(result));
+    return false;
+  }
+
   struct Source
   {
     int fd = -1;
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     bool ready = false;
-  };
-
-  struct Eye
-  {
-    XrSwapchain swapchain = XR_NULL_HANDLE;
-    std::vector<VkImage> images;
   };
 
   class Presenter
@@ -73,11 +75,11 @@ namespace
     int run();
 
   private:
-    bool createInstance();
+    bool startRuntime();
     bool createDevice();
-    bool createSession();
-    bool createSwapchains();
+    bool createOverlay();
     bool importBuffers(const XrProtocol::Message& message, const int* fds, int count);
+    bool ensureTarget();
     void teardown();
 
     bool readSocket();
@@ -85,23 +87,18 @@ namespace
 
     void pollEvents(bool& exit);
     void frame();
-    bool blit(int eye, uint32_t imageIndex);
-    void placeScreen(XrTime time);
+    bool blitEyes();
+    void placeScreen();
 
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags) const;
+    std::vector<const char*> wantedInstanceExtensions();
+    std::vector<const char*> wantedDeviceExtensions();
 
     int m_socket = -1;
 
-    XrInstance m_instance = XR_NULL_HANDLE;
-    XrSystemId m_system = XR_NULL_SYSTEM_ID;
-    XrSession m_session = XR_NULL_HANDLE;
-    XrSpace m_localSpace = XR_NULL_HANDLE;
-    XrSpace m_viewSpace = XR_NULL_HANDLE;
-    XrSessionState m_state = XR_SESSION_STATE_UNKNOWN;
-    bool m_running = false;
-    XrPosef m_screenPose{};
+    OpenVr::Api m_ovr;
+    VROverlayHandle_t m_overlay = k_ulOverlayHandleInvalid;
     bool m_screenPlaced = false;
-    XrExtent2Df m_screenSize{kScreenWidth, kScreenWidth * 9.0f / 16.0f};
 
     VkInstance m_vkInstance = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical = VK_NULL_HANDLE;
@@ -113,12 +110,17 @@ namespace
     VkFence m_fence = VK_NULL_HANDLE;
     VkPhysicalDeviceMemoryProperties m_memory{};
     PFN_vkGetMemoryFdPropertiesKHR m_getMemoryFdProperties = nullptr;
+    uint32_t m_maxDimension = 4096;
 
-    int64_t m_swapchainFormat = 0;
+    std::string m_runtimeExtensions;
+    std::string m_runtimeDeviceExtensions;
+
     VkFormat m_sourceFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    uint32_t m_eyeWidth = 0;
-    uint32_t m_eyeHeight = 0;
-    Eye m_eyes[2];
+    VkImage m_target = VK_NULL_HANDLE;
+    VkDeviceMemory m_targetMemory = VK_NULL_HANDLE;
+    uint32_t m_targetWidth = 0;
+    uint32_t m_targetHeight = 0;
+    bool m_targetWritten = false;
 
     Source m_sources[XrProtocol::kBufferCount];
     uint32_t m_sourceWidth = 0;
@@ -128,23 +130,9 @@ namespace
     uint32_t m_packing = XrProtocol::Mono;
     uint32_t m_swapped = 0;
     uint32_t m_presented = 0;
+    float m_eyeAspect = kDefaultAspect;
+    int m_submitFailures = 0;
   };
-
-  bool check(XrResult result, const char* stage)
-  {
-    if (XR_SUCCEEDED(result))
-      return true;
-    note("pmp-xr-host: %s failed (%d)", stage, static_cast<int>(result));
-    return false;
-  }
-
-  bool checkVk(VkResult result, const char* stage)
-  {
-    if (result == VK_SUCCESS)
-      return true;
-    note("pmp-xr-host: %s failed (%d)", stage, static_cast<int>(result));
-    return false;
-  }
 
   uint32_t Presenter::memoryType(uint32_t bits, VkMemoryPropertyFlags flags) const
   {
@@ -158,74 +146,123 @@ namespace
     return UINT32_MAX;
   }
 
-  bool Presenter::createInstance()
+  bool Presenter::startRuntime()
   {
-    const char* extensions[] = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
-
-    XrInstanceCreateInfo createInfo{XR_TYPE_INSTANCE_CREATE_INFO};
-    createInfo.applicationInfo.apiVersion = XR_API_VERSION_1_0;
-    std::strncpy(createInfo.applicationInfo.applicationName, "Plex Media Player",
-                 XR_MAX_APPLICATION_NAME_SIZE - 1);
-    std::strncpy(createInfo.applicationInfo.engineName, "pmp-xr-host",
-                 XR_MAX_ENGINE_NAME_SIZE - 1);
-    createInfo.applicationInfo.applicationVersion = 1;
-    createInfo.applicationInfo.engineVersion = 1;
-    createInfo.enabledExtensionCount = 1;
-    createInfo.enabledExtensionNames = extensions;
-
-    if (!check(xrCreateInstance(&createInfo, &m_instance), "instance"))
+    if (!m_ovr.start(EVRApplicationType_VRApplication_Overlay))
+    {
+      note("pmp-xr-host: %s", m_ovr.error().c_str());
       return false;
+    }
 
-    XrSystemGetInfo systemInfo{XR_TYPE_SYSTEM_GET_INFO};
-    systemInfo.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
-    if (!check(xrGetSystem(m_instance, &systemInfo, &m_system), "system"))
+    if (!m_ovr.overlay)
+    {
+      note("pmp-xr-host: the runtime does not serve %s", IVROverlay_Version);
       return false;
+    }
 
-    uint32_t viewCount = 0;
-    if (!check(xrEnumerateViewConfigurationViews(m_instance, m_system,
-                                                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0,
-                                                 &viewCount, nullptr),
-               "view count") ||
-        viewCount < 2)
-      return false;
-
-    std::vector<XrViewConfigurationView> views(
-      viewCount, XrViewConfigurationView{XR_TYPE_VIEW_CONFIGURATION_VIEW});
-    if (!check(xrEnumerateViewConfigurationViews(m_instance, m_system,
-                                                 XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
-                                                 viewCount, &viewCount, views.data()),
-               "views"))
-      return false;
-
-    m_eyeWidth = views[0].recommendedImageRectWidth;
-    m_eyeHeight = views[0].recommendedImageRectHeight;
-    note("pmp-xr-host: per eye %ux%u", m_eyeWidth, m_eyeHeight);
+    note("pmp-xr-host: runtime %s, overlay application", m_ovr.libraryPath().c_str());
     return true;
+  }
+
+  std::vector<const char*> Presenter::wantedInstanceExtensions()
+  {
+    std::vector<const char*> wanted;
+
+    if (m_ovr.compositor && m_ovr.compositor->GetVulkanInstanceExtensionsRequired)
+    {
+      const uint32_t size = m_ovr.compositor->GetVulkanInstanceExtensionsRequired(nullptr, 0);
+      if (size > 1)
+      {
+        m_runtimeExtensions.assign(size, '\0');
+        m_ovr.compositor->GetVulkanInstanceExtensionsRequired(&m_runtimeExtensions[0], size);
+        m_runtimeExtensions.resize(std::strlen(m_runtimeExtensions.c_str()));
+        note("pmp-xr-host: the compositor wants instance extensions %s",
+             m_runtimeExtensions.c_str());
+
+        for (char& c : m_runtimeExtensions)
+          if (c == ' ')
+            c = '\0';
+
+        const char* p = m_runtimeExtensions.c_str();
+        const char* end = p + m_runtimeExtensions.size();
+        while (p < end)
+        {
+          if (*p)
+            wanted.push_back(p);
+          p += std::strlen(p) + 1;
+        }
+      }
+    }
+    else
+    {
+      note("pmp-xr-host: the compositor interface is unavailable, using the dmabuf set alone");
+    }
+
+    return wanted;
+  }
+
+  std::vector<const char*> Presenter::wantedDeviceExtensions()
+  {
+    std::vector<const char*> wanted = {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+                                       VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
+                                       VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
+                                       VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,
+                                       VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME};
+
+    if (m_ovr.compositor && m_ovr.compositor->GetVulkanDeviceExtensionsRequired)
+    {
+      const uint32_t size = m_ovr.compositor->GetVulkanDeviceExtensionsRequired(
+        reinterpret_cast<struct VkPhysicalDevice_T*>(m_physical), nullptr, 0);
+      if (size > 1)
+      {
+        m_runtimeDeviceExtensions.assign(size, '\0');
+        m_ovr.compositor->GetVulkanDeviceExtensionsRequired(
+          reinterpret_cast<struct VkPhysicalDevice_T*>(m_physical), &m_runtimeDeviceExtensions[0],
+          size);
+        m_runtimeDeviceExtensions.resize(std::strlen(m_runtimeDeviceExtensions.c_str()));
+        note("pmp-xr-host: the compositor wants device extensions %s",
+             m_runtimeDeviceExtensions.c_str());
+
+        for (char& c : m_runtimeDeviceExtensions)
+          if (c == ' ')
+            c = '\0';
+
+        const char* p = m_runtimeDeviceExtensions.c_str();
+        const char* end = p + m_runtimeDeviceExtensions.size();
+        while (p < end)
+        {
+          if (*p)
+            wanted.push_back(p);
+          p += std::strlen(p) + 1;
+        }
+      }
+    }
+
+    return wanted;
   }
 
   bool Presenter::createDevice()
   {
-    PFN_xrGetVulkanGraphicsRequirements2KHR getRequirements = nullptr;
-    PFN_xrCreateVulkanInstanceKHR createVulkanInstance = nullptr;
-    PFN_xrGetVulkanGraphicsDevice2KHR getGraphicsDevice = nullptr;
-    PFN_xrCreateVulkanDeviceKHR createVulkanDevice = nullptr;
+    std::vector<const char*> instanceWanted = wantedInstanceExtensions();
 
-    if (XR_FAILED(xrGetInstanceProcAddr(m_instance, "xrGetVulkanGraphicsRequirements2KHR",
-                                        reinterpret_cast<PFN_xrVoidFunction*>(&getRequirements))) ||
-        XR_FAILED(xrGetInstanceProcAddr(m_instance, "xrCreateVulkanInstanceKHR",
-                                        reinterpret_cast<PFN_xrVoidFunction*>(&createVulkanInstance))) ||
-        XR_FAILED(xrGetInstanceProcAddr(m_instance, "xrGetVulkanGraphicsDevice2KHR",
-                                        reinterpret_cast<PFN_xrVoidFunction*>(&getGraphicsDevice))) ||
-        XR_FAILED(xrGetInstanceProcAddr(m_instance, "xrCreateVulkanDeviceKHR",
-                                        reinterpret_cast<PFN_xrVoidFunction*>(&createVulkanDevice))))
+    uint32_t availableCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, nullptr);
+    std::vector<VkExtensionProperties> available(availableCount);
+    if (availableCount > 0)
+      vkEnumerateInstanceExtensionProperties(nullptr, &availableCount, available.data());
+
+    std::vector<const char*> instanceExtensions;
+    for (const char* name : instanceWanted)
     {
-      note("pmp-xr-host: vulkan-enable2 entry points missing");
-      return false;
+      bool found = false;
+      for (const VkExtensionProperties& property : available)
+        if (std::strcmp(property.extensionName, name) == 0)
+          found = true;
+      if (found)
+        instanceExtensions.push_back(name);
+      else
+        note("pmp-xr-host: instance extension %s is not offered, going on without it", name);
     }
-
-    XrGraphicsRequirementsVulkan2KHR requirements{XR_TYPE_GRAPHICS_REQUIREMENTS_VULKAN2_KHR};
-    if (!check(getRequirements(m_instance, m_system, &requirements), "graphics requirements"))
-      return false;
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -236,23 +273,45 @@ namespace
     VkInstanceCreateInfo instanceInfo{};
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pApplicationInfo = &appInfo;
+    instanceInfo.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size());
+    instanceInfo.ppEnabledExtensionNames =
+      instanceExtensions.empty() ? nullptr : instanceExtensions.data();
 
-    XrVulkanInstanceCreateInfoKHR xrInstanceInfo{XR_TYPE_VULKAN_INSTANCE_CREATE_INFO_KHR};
-    xrInstanceInfo.systemId = m_system;
-    xrInstanceInfo.pfnGetInstanceProcAddr = &vkGetInstanceProcAddr;
-    xrInstanceInfo.vulkanCreateInfo = &instanceInfo;
-
-    VkResult vkResult = VK_SUCCESS;
-    if (!check(createVulkanInstance(m_instance, &xrInstanceInfo, &m_vkInstance, &vkResult),
-               "vulkan instance") ||
-        !checkVk(vkResult, "vulkan instance"))
+    if (!checkVk(vkCreateInstance(&instanceInfo, nullptr, &m_vkInstance), "vulkan instance"))
       return false;
 
-    XrVulkanGraphicsDeviceGetInfoKHR deviceGetInfo{XR_TYPE_VULKAN_GRAPHICS_DEVICE_GET_INFO_KHR};
-    deviceGetInfo.systemId = m_system;
-    deviceGetInfo.vulkanInstance = m_vkInstance;
-    if (!check(getGraphicsDevice(m_instance, &deviceGetInfo, &m_physical), "graphics device"))
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(m_vkInstance, &deviceCount, nullptr);
+    if (deviceCount == 0)
+    {
+      note("pmp-xr-host: no vulkan device");
       return false;
+    }
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(m_vkInstance, &deviceCount, devices.data());
+
+    uint64_t wantedDevice = 0;
+    if (m_ovr.system && m_ovr.system->GetOutputDevice)
+      m_ovr.system->GetOutputDevice(&wantedDevice, ETextureType_TextureType_Vulkan,
+                                    reinterpret_cast<struct VkInstance_T*>(m_vkInstance));
+
+    m_physical = devices[0];
+    if (wantedDevice != 0)
+    {
+      for (VkPhysicalDevice device : devices)
+      {
+        if (reinterpret_cast<uint64_t>(device) == wantedDevice)
+        {
+          m_physical = device;
+          break;
+        }
+      }
+    }
+
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(m_physical, &properties);
+    m_maxDimension = properties.limits.maxImageDimension2D;
+    note("pmp-xr-host: vulkan device %s, images up to %u", properties.deviceName, m_maxDimension);
 
     uint32_t familyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(m_physical, &familyCount, nullptr);
@@ -275,11 +334,34 @@ namespace
       return false;
     }
 
-    const char* deviceExtensions[] = {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
-                                      VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
-                                      VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
-                                      VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,
-                                      VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME};
+    std::vector<const char*> deviceWanted = wantedDeviceExtensions();
+
+    uint32_t deviceAvailableCount = 0;
+    vkEnumerateDeviceExtensionProperties(m_physical, nullptr, &deviceAvailableCount, nullptr);
+    std::vector<VkExtensionProperties> deviceAvailable(deviceAvailableCount);
+    if (deviceAvailableCount > 0)
+      vkEnumerateDeviceExtensionProperties(m_physical, nullptr, &deviceAvailableCount,
+                                           deviceAvailable.data());
+
+    std::vector<const char*> deviceExtensions;
+    for (const char* name : deviceWanted)
+    {
+      bool already = false;
+      for (const char* kept : deviceExtensions)
+        if (std::strcmp(kept, name) == 0)
+          already = true;
+      if (already)
+        continue;
+
+      bool found = false;
+      for (const VkExtensionProperties& property : deviceAvailable)
+        if (std::strcmp(property.extensionName, name) == 0)
+          found = true;
+      if (found)
+        deviceExtensions.push_back(name);
+      else
+        note("pmp-xr-host: device extension %s is not offered, going on without it", name);
+    }
 
     const float priority = 1.0f;
     VkDeviceQueueCreateInfo queueInfo{};
@@ -292,18 +374,11 @@ namespace
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.queueCreateInfoCount = 1;
     deviceInfo.pQueueCreateInfos = &queueInfo;
-    deviceInfo.enabledExtensionCount = sizeof(deviceExtensions) / sizeof(deviceExtensions[0]);
-    deviceInfo.ppEnabledExtensionNames = deviceExtensions;
+    deviceInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    deviceInfo.ppEnabledExtensionNames =
+      deviceExtensions.empty() ? nullptr : deviceExtensions.data();
 
-    XrVulkanDeviceCreateInfoKHR xrDeviceInfo{XR_TYPE_VULKAN_DEVICE_CREATE_INFO_KHR};
-    xrDeviceInfo.systemId = m_system;
-    xrDeviceInfo.pfnGetInstanceProcAddr = &vkGetInstanceProcAddr;
-    xrDeviceInfo.vulkanPhysicalDevice = m_physical;
-    xrDeviceInfo.vulkanCreateInfo = &deviceInfo;
-
-    if (!check(createVulkanDevice(m_instance, &xrDeviceInfo, &m_device, &vkResult),
-               "vulkan device") ||
-        !checkVk(vkResult, "vulkan device"))
+    if (!checkVk(vkCreateDevice(m_physical, &deviceInfo, nullptr, &m_device), "vulkan device"))
       return false;
 
     vkGetDeviceQueue(m_device, m_queueFamily, 0, &m_queue);
@@ -337,98 +412,50 @@ namespace
     return true;
   }
 
-  bool Presenter::createSession()
+  bool Presenter::createOverlay()
   {
-    XrGraphicsBindingVulkan2KHR binding{XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR};
-    binding.instance = m_vkInstance;
-    binding.physicalDevice = m_physical;
-    binding.device = m_device;
-    binding.queueFamilyIndex = m_queueFamily;
-    binding.queueIndex = 0;
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
 
-    XrSessionCreateInfo sessionInfo{XR_TYPE_SESSION_CREATE_INFO};
-    sessionInfo.next = &binding;
-    sessionInfo.systemId = m_system;
-    if (!check(xrCreateSession(m_instance, &sessionInfo, &m_session), "session"))
-      return false;
-
-    XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
-    spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
-    spaceInfo.poseInReferenceSpace.orientation.w = 1.0f;
-    if (!check(xrCreateReferenceSpace(m_session, &spaceInfo, &m_localSpace), "local space"))
-      return false;
-
-    spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
-    if (!check(xrCreateReferenceSpace(m_session, &spaceInfo, &m_viewSpace), "view space"))
-      return false;
-
-    m_screenPose.orientation.w = 1.0f;
-    m_screenPose.position.z = -kScreenDistance;
-    return true;
-  }
-
-  bool Presenter::createSwapchains()
-  {
-    uint32_t formatCount = 0;
-    xrEnumerateSwapchainFormats(m_session, 0, &formatCount, nullptr);
-    std::vector<int64_t> formats(formatCount);
-    if (formatCount > 0)
-      xrEnumerateSwapchainFormats(m_session, formatCount, &formatCount, formats.data());
-
-    const int64_t preferred[] = {VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB,
-                                 VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM};
-    m_swapchainFormat = formats.empty() ? 0 : formats[0];
-    for (int64_t want : preferred)
+    EVROverlayError error = ovl->CreateOverlay(kOverlayKey, kOverlayName, &m_overlay);
+    if (error != EVROverlayError_VROverlayError_None || m_overlay == k_ulOverlayHandleInvalid)
     {
-      bool found = false;
-      for (int64_t have : formats)
-        if (have == want)
-          found = true;
-      if (found)
+      if (error == EVROverlayError_VROverlayError_KeyInUse)
       {
-        m_swapchainFormat = want;
-        break;
+        ovl->FindOverlay(kOverlayKey, &m_overlay);
+        note("pmp-xr-host: an overlay with our key already existed, reusing it");
+      }
+      if (m_overlay == k_ulOverlayHandleInvalid)
+      {
+        note("pmp-xr-host: the overlay was refused (%d)", static_cast<int>(error));
+        return false;
       }
     }
 
-    m_sourceFormat = (m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB ||
-                      m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB)
-                       ? VK_FORMAT_R8G8B8A8_SRGB
-                       : VK_FORMAT_R8G8B8A8_UNORM;
+    ovl->SetOverlayFlag(m_overlay, VROverlayFlags_SideBySide_Parallel, true);
+    ovl->SetOverlayFlag(m_overlay, VROverlayFlags_IgnoreTextureAlpha, true);
+    ovl->SetOverlayFlag(m_overlay, VROverlayFlags_SortWithNonSceneOverlays, true);
+    ovl->SetOverlayTextureColorSpace(m_overlay, EColorSpace_ColorSpace_Gamma);
+    ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
+    ovl->SetOverlaySortOrder(m_overlay, kSortOrder);
+    ovl->SetOverlayAlpha(m_overlay, 1.0f);
 
-    for (int eye = 0; eye < 2; ++eye)
+    HmdMatrix34_t transform{};
+    transform.m[0][0] = 1.0f;
+    transform.m[1][1] = 1.0f;
+    transform.m[2][2] = 1.0f;
+    transform.m[2][3] = -kScreenDistance;
+    ovl->SetOverlayTransformAbsolute(
+      m_overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, &transform);
+
+    error = ovl->ShowOverlay(m_overlay);
+    if (error != EVROverlayError_VROverlayError_None)
     {
-      XrSwapchainCreateInfo swapchainInfo{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-      swapchainInfo.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT |
-                                 XR_SWAPCHAIN_USAGE_SAMPLED_BIT |
-                                 XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
-      swapchainInfo.format = m_swapchainFormat;
-      swapchainInfo.sampleCount = 1;
-      swapchainInfo.width = m_eyeWidth;
-      swapchainInfo.height = m_eyeHeight;
-      swapchainInfo.faceCount = 1;
-      swapchainInfo.arraySize = 1;
-      swapchainInfo.mipCount = 1;
-
-      if (!check(xrCreateSwapchain(m_session, &swapchainInfo, &m_eyes[eye].swapchain),
-                 "swapchain"))
-        return false;
-
-      uint32_t imageCount = 0;
-      xrEnumerateSwapchainImages(m_eyes[eye].swapchain, 0, &imageCount, nullptr);
-      std::vector<XrSwapchainImageVulkanKHR> images(
-        imageCount, XrSwapchainImageVulkanKHR{XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR});
-      if (!check(xrEnumerateSwapchainImages(
-                   m_eyes[eye].swapchain, imageCount, &imageCount,
-                   reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data())),
-                 "swapchain images"))
-        return false;
-
-      for (const XrSwapchainImageVulkanKHR& image : images)
-        m_eyes[eye].images.push_back(image.image);
+      note("pmp-xr-host: the overlay would not show (%d)", static_cast<int>(error));
+      return false;
     }
 
-    note("pmp-xr-host: swapchains ready, format %lld", static_cast<long long>(m_swapchainFormat));
+    note("pmp-xr-host: overlay %llu ready, side by side, %.2f m wide",
+         static_cast<unsigned long long>(m_overlay), kScreenWidth);
     return true;
   }
 
@@ -561,6 +588,97 @@ namespace
     return true;
   }
 
+  bool Presenter::ensureTarget()
+  {
+    uint32_t rectWidth = m_sourceWidth;
+    uint32_t rectHeight = m_sourceHeight;
+    if (m_packing == XrProtocol::SideBySide)
+      rectWidth /= 2;
+    else if (m_packing == XrProtocol::OverUnder)
+      rectHeight /= 2;
+
+    if (rectWidth < 2 || rectHeight < 2)
+      return false;
+
+    float aspect = m_eyeAspect;
+    if (!(aspect > 0.1f && aspect < 10.0f))
+      aspect = static_cast<float>(rectWidth) / static_cast<float>(rectHeight);
+
+    uint32_t eyeHeight = rectHeight;
+    uint32_t eyeWidth = static_cast<uint32_t>(std::lround(eyeHeight * aspect));
+
+    while ((eyeWidth * 2 > m_maxDimension || eyeHeight > m_maxDimension) && eyeHeight > 2)
+    {
+      eyeWidth /= 2;
+      eyeHeight /= 2;
+    }
+
+    eyeWidth &= ~1u;
+    eyeHeight &= ~1u;
+    if (eyeWidth < 2 || eyeHeight < 2)
+      return false;
+
+    const uint32_t width = eyeWidth * 2;
+    const uint32_t height = eyeHeight;
+
+    if (m_target != VK_NULL_HANDLE && width == m_targetWidth && height == m_targetHeight)
+      return true;
+
+    if (m_target != VK_NULL_HANDLE)
+    {
+      vkDeviceWaitIdle(m_device);
+      if (m_overlay != k_ulOverlayHandleInvalid && m_ovr.overlay)
+        m_ovr.overlay->ClearOverlayTexture(m_overlay);
+      vkDestroyImage(m_device, m_target, nullptr);
+      vkFreeMemory(m_device, m_targetMemory, nullptr);
+      m_target = VK_NULL_HANDLE;
+      m_targetMemory = VK_NULL_HANDLE;
+      m_targetWritten = false;
+    }
+
+    VkImageCreateInfo imageInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = m_sourceFormat;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    if (!checkVk(vkCreateImage(m_device, &imageInfo, nullptr, &m_target), "overlay image"))
+      return false;
+
+    VkMemoryRequirements requirements{};
+    vkGetImageMemoryRequirements(m_device, m_target, &requirements);
+
+    const uint32_t chosen =
+      memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (chosen == UINT32_MAX)
+    {
+      note("pmp-xr-host: no device memory for the overlay image");
+      return false;
+    }
+
+    VkMemoryAllocateInfo allocateInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocateInfo.allocationSize = requirements.size;
+    allocateInfo.memoryTypeIndex = chosen;
+    if (!checkVk(vkAllocateMemory(m_device, &allocateInfo, nullptr, &m_targetMemory),
+                 "overlay memory"))
+      return false;
+
+    if (!checkVk(vkBindImageMemory(m_device, m_target, m_targetMemory, 0), "bind overlay"))
+      return false;
+
+    m_targetWidth = width;
+    m_targetHeight = height;
+    note("pmp-xr-host: overlay texture %ux%u, %ux%u per eye", width, height, eyeWidth, eyeHeight);
+    return true;
+  }
+
   void Presenter::send(XrProtocol::Type type, uint32_t index)
   {
     if (m_socket < 0)
@@ -647,7 +765,7 @@ namespace
             m_packing = message.packing;
             m_swapped = message.swapped;
             if (message.eyeAspect > 0.1f && message.eyeAspect < 10.0f)
-              m_screenSize = {kScreenWidth, kScreenWidth / message.eyeAspect};
+              m_eyeAspect = message.eyeAspect;
           }
           break;
 
@@ -665,52 +783,72 @@ namespace
     }
   }
 
-  void Presenter::placeScreen(XrTime time)
+  void Presenter::placeScreen()
   {
-    XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
-    if (XR_FAILED(xrLocateSpace(m_viewSpace, m_localSpace, time, &location)))
-      return;
-    if (!(location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) ||
-        !(location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT))
+    HmdMatrix34_t head{};
+    if (!m_ovr.headPose(head))
       return;
 
-    const XrQuaternionf& q = location.pose.orientation;
-    const float yaw = std::atan2(2.0f * (q.w * q.y + q.x * q.z),
-                                 1.0f - 2.0f * (q.y * q.y + q.x * q.x));
+    const float forwardX = -head.m[0][2];
+    const float forwardZ = -head.m[2][2];
+    const float yaw = std::atan2(-forwardX, -forwardZ);
+    const float sine = std::sin(yaw);
+    const float cosine = std::cos(yaw);
 
-    m_screenPose.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
-    m_screenPose.position = {location.pose.position.x - std::sin(yaw) * kScreenDistance,
-                             location.pose.position.y,
-                             location.pose.position.z - std::cos(yaw) * kScreenDistance};
+    HmdMatrix34_t transform{};
+    transform.m[0][0] = cosine;
+    transform.m[0][2] = sine;
+    transform.m[1][1] = 1.0f;
+    transform.m[2][0] = -sine;
+    transform.m[2][2] = cosine;
+    transform.m[0][3] = head.m[0][3] - sine * kScreenDistance;
+    transform.m[1][3] = head.m[1][3];
+    transform.m[2][3] = head.m[2][3] - cosine * kScreenDistance;
+
+    m_ovr.overlay->SetOverlayTransformAbsolute(
+      m_overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, &transform);
     m_screenPlaced = true;
-    note("pmp-xr-host: screen placed at %.2f %.2f %.2f", m_screenPose.position.x,
-         m_screenPose.position.y, m_screenPose.position.z);
+    note("pmp-xr-host: screen placed at %.2f %.2f %.2f", transform.m[0][3], transform.m[1][3],
+         transform.m[2][3]);
   }
 
-  bool Presenter::blit(int eye, uint32_t imageIndex)
+  bool Presenter::blitEyes()
   {
     const Source& source = m_sources[m_current];
+    const int32_t eyeWidth = static_cast<int32_t>(m_targetWidth / 2);
+    const int32_t eyeHeight = static_cast<int32_t>(m_targetHeight);
 
-    int32_t x0 = 0;
-    int32_t y0 = 0;
-    int32_t x1 = static_cast<int32_t>(m_sourceWidth);
-    int32_t y1 = static_cast<int32_t>(m_sourceHeight);
-
-    int which = eye;
-    if (m_swapped)
-      which = 1 - which;
-
-    if (m_packing == XrProtocol::SideBySide)
+    VkImageBlit regions[2] = {};
+    for (int eye = 0; eye < 2; ++eye)
     {
-      const int32_t half = x1 / 2;
-      x0 = which == 0 ? 0 : half;
-      x1 = which == 0 ? half : static_cast<int32_t>(m_sourceWidth);
-    }
-    else if (m_packing == XrProtocol::OverUnder)
-    {
-      const int32_t half = y1 / 2;
-      y0 = which == 0 ? 0 : half;
-      y1 = which == 0 ? half : static_cast<int32_t>(m_sourceHeight);
+      int32_t x0 = 0;
+      int32_t y0 = 0;
+      int32_t x1 = static_cast<int32_t>(m_sourceWidth);
+      int32_t y1 = static_cast<int32_t>(m_sourceHeight);
+
+      int which = eye;
+      if (m_swapped)
+        which = 1 - which;
+
+      if (m_packing == XrProtocol::SideBySide)
+      {
+        const int32_t half = x1 / 2;
+        x0 = which == 0 ? 0 : half;
+        x1 = which == 0 ? half : static_cast<int32_t>(m_sourceWidth);
+      }
+      else if (m_packing == XrProtocol::OverUnder)
+      {
+        const int32_t half = y1 / 2;
+        y0 = which == 0 ? 0 : half;
+        y1 = which == 0 ? half : static_cast<int32_t>(m_sourceHeight);
+      }
+
+      regions[eye].srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      regions[eye].srcOffsets[0] = {x0, y0, 0};
+      regions[eye].srcOffsets[1] = {x1, y1, 1};
+      regions[eye].dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      regions[eye].dstOffsets[0] = {eye == 0 ? 0 : eyeWidth, 0, 0};
+      regions[eye].dstOffsets[1] = {eye == 0 ? eyeWidth : eyeWidth * 2, eyeHeight, 1};
     }
 
     VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -727,30 +865,22 @@ namespace
     acquire.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
     VkImageMemoryBarrier target{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    target.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    target.oldLayout = m_targetWritten ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+                                       : VK_IMAGE_LAYOUT_UNDEFINED;
     target.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     target.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     target.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    target.image = m_eyes[eye].images[imageIndex];
+    target.image = m_target;
     target.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    target.srcAccessMask = m_targetWritten ? VK_ACCESS_COLOR_ATTACHMENT_READ_BIT : 0;
     target.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
     VkImageMemoryBarrier before[2] = {acquire, target};
-    vkCmdPipelineBarrier(m_command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+    vkCmdPipelineBarrier(m_command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, before);
 
-    VkImageBlit region{};
-    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.srcOffsets[0] = {x0, y0, 0};
-    region.srcOffsets[1] = {x1, y1, 1};
-    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.dstOffsets[0] = {0, 0, 0};
-    region.dstOffsets[1] = {static_cast<int32_t>(m_eyeWidth), static_cast<int32_t>(m_eyeHeight),
-                            1};
-
-    vkCmdBlitImage(m_command, source.image, VK_IMAGE_LAYOUT_GENERAL,
-                   m_eyes[eye].images[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                   &region, VK_FILTER_LINEAR);
+    vkCmdBlitImage(m_command, source.image, VK_IMAGE_LAYOUT_GENERAL, m_target,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2, regions, VK_FILTER_LINEAR);
 
     VkImageMemoryBarrier release{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     release.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -766,7 +896,7 @@ namespace
     present.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     present.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     present.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    present.image = m_eyes[eye].images[imageIndex];
+    present.image = m_target;
     present.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     present.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     present.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
@@ -785,121 +915,90 @@ namespace
     if (!checkVk(vkQueueSubmit(m_queue, 1, &submit, m_fence), "blit submit"))
       return false;
     vkWaitForFences(m_device, 1, &m_fence, VK_TRUE, UINT64_MAX);
+    m_targetWritten = true;
     return true;
   }
 
   void Presenter::frame()
   {
-    XrFrameWaitInfo waitInfo{XR_TYPE_FRAME_WAIT_INFO};
-    XrFrameState frameState{XR_TYPE_FRAME_STATE};
-    if (XR_FAILED(xrWaitFrame(m_session, &waitInfo, &frameState)))
-      return;
+    if (m_ovr.overlay->WaitFrameSync)
+      m_ovr.overlay->WaitFrameSync(kFrameSyncTimeoutMs);
+    else
+      sleepMs(11);
 
-    XrFrameBeginInfo beginInfo{XR_TYPE_FRAME_BEGIN_INFO};
-    if (XR_FAILED(xrBeginFrame(m_session, &beginInfo)))
-      return;
-
-    std::vector<XrCompositionLayerBaseHeader*> layers;
-    XrCompositionLayerQuad quads[2];
-
-    const bool draw = frameState.shouldRender && m_current >= 0 && m_sources[m_current].ready;
-
-    if (draw)
+    if (m_current < 0 || !m_sources[m_current].ready)
     {
-      if (!m_screenPlaced)
-        placeScreen(frameState.predictedDisplayTime);
-
-      for (int eye = 0; eye < 2; ++eye)
-      {
-        uint32_t imageIndex = 0;
-        XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-        if (XR_FAILED(xrAcquireSwapchainImage(m_eyes[eye].swapchain, &acquireInfo, &imageIndex)))
-          break;
-
-        XrSwapchainImageWaitInfo waitImage{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-        waitImage.timeout = XR_INFINITE_DURATION;
-        if (XR_FAILED(xrWaitSwapchainImage(m_eyes[eye].swapchain, &waitImage)))
-          break;
-
-        blit(eye, imageIndex);
-
-        XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        xrReleaseSwapchainImage(m_eyes[eye].swapchain, &releaseInfo);
-
-        quads[eye] = XrCompositionLayerQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
-        quads[eye].layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-        quads[eye].space = m_localSpace;
-        quads[eye].eyeVisibility = eye == 0 ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_RIGHT;
-        quads[eye].subImage.swapchain = m_eyes[eye].swapchain;
-        quads[eye].subImage.imageRect = {
-          {0, 0}, {static_cast<int32_t>(m_eyeWidth), static_cast<int32_t>(m_eyeHeight)}};
-        quads[eye].subImage.imageArrayIndex = 0;
-        quads[eye].pose = m_screenPose;
-        quads[eye].size = m_screenSize;
-
-        layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&quads[eye]));
-      }
-
-      if (layers.size() == 2 && m_presented == 0)
-      {
-        note("pmp-xr-host: presenting");
-        m_presented = 1;
-      }
+      sleepMs(5);
+      return;
     }
 
-    XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
-    endInfo.displayTime = frameState.predictedDisplayTime;
-    endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    endInfo.layerCount = static_cast<uint32_t>(layers.size());
-    endInfo.layers = layers.empty() ? nullptr : layers.data();
-    xrEndFrame(m_session, &endInfo);
+    if (!ensureTarget())
+    {
+      sleepMs(10);
+      return;
+    }
+
+    if (!m_screenPlaced)
+      placeScreen();
+
+    if (!blitEyes())
+      return;
+
+    VRVulkanTextureData_t data{};
+    data.m_nImage = reinterpret_cast<uint64_t>(m_target);
+    data.m_pDevice = reinterpret_cast<struct VkDevice_T*>(m_device);
+    data.m_pPhysicalDevice = reinterpret_cast<struct VkPhysicalDevice_T*>(m_physical);
+    data.m_pInstance = reinterpret_cast<struct VkInstance_T*>(m_vkInstance);
+    data.m_pQueue = reinterpret_cast<struct VkQueue_T*>(m_queue);
+    data.m_nQueueFamilyIndex = m_queueFamily;
+    data.m_nWidth = m_targetWidth;
+    data.m_nHeight = m_targetHeight;
+    data.m_nFormat = m_sourceFormat;
+    data.m_nSampleCount = 1;
+
+    Texture_t texture{};
+    texture.handle = &data;
+    texture.eType = ETextureType_TextureType_Vulkan;
+    texture.eColorSpace = EColorSpace_ColorSpace_Gamma;
+
+    const EVROverlayError error = m_ovr.overlay->SetOverlayTexture(m_overlay, &texture);
+    if (error != EVROverlayError_VROverlayError_None)
+    {
+      if (m_submitFailures < 3)
+        note("pmp-xr-host: the overlay texture was refused (%d)", static_cast<int>(error));
+      ++m_submitFailures;
+      return;
+    }
+
+    if (m_presented == 0)
+    {
+      note("pmp-xr-host: presenting %ux%u side by side", m_targetWidth, m_targetHeight);
+      m_presented = 1;
+    }
   }
 
   void Presenter::pollEvents(bool& exit)
   {
-    while (true)
+    if (!m_ovr.system || !m_ovr.system->PollNextEvent)
+      return;
+
+    struct VREvent_t event = {};
+    while (m_ovr.system->PollNextEvent(&event, sizeof(event)))
     {
-      XrEventDataBuffer event{XR_TYPE_EVENT_DATA_BUFFER};
-      const XrResult result = xrPollEvent(m_instance, &event);
-      if (result != XR_SUCCESS)
-        return;
-
-      if (event.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED)
+      if (event.eventType == EVREventType_VREvent_Quit)
       {
-        const auto* changed = reinterpret_cast<XrEventDataSessionStateChanged*>(&event);
-        m_state = changed->state;
-
-        if (m_state == XR_SESSION_STATE_READY)
-        {
-          XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
-          beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-          if (check(xrBeginSession(m_session, &beginInfo), "begin session"))
-          {
-            m_running = true;
-            note("pmp-xr-host: session running");
-          }
-        }
-        else if (m_state == XR_SESSION_STATE_STOPPING)
-        {
-          m_running = false;
-          xrEndSession(m_session);
-        }
-        else if (m_state == XR_SESSION_STATE_EXITING ||
-                 m_state == XR_SESSION_STATE_LOSS_PENDING)
-        {
-          exit = true;
-        }
-      }
-      else if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING)
-      {
+        note("pmp-xr-host: the runtime asked us to quit");
+        if (m_ovr.system->AcknowledgeQuit_Exiting)
+          m_ovr.system->AcknowledgeQuit_Exiting();
         exit = true;
+        return;
       }
     }
   }
 
   bool Presenter::setup()
   {
-    return createInstance() && createDevice() && createSession() && createSwapchains();
+    return startRuntime() && createDevice() && createOverlay();
   }
 
   int Presenter::run()
@@ -914,12 +1013,6 @@ namespace
       if (exit)
         break;
 
-      if (!m_running)
-      {
-        sleepMs(10);
-        continue;
-      }
-
       frame();
     }
 
@@ -932,11 +1025,19 @@ namespace
     if (m_device != VK_NULL_HANDLE)
       vkDeviceWaitIdle(m_device);
 
-    for (int eye = 0; eye < 2; ++eye)
+    if (m_overlay != k_ulOverlayHandleInvalid && m_ovr.overlay)
     {
-      if (m_eyes[eye].swapchain != XR_NULL_HANDLE)
-        xrDestroySwapchain(m_eyes[eye].swapchain);
+      m_ovr.overlay->ClearOverlayTexture(m_overlay);
+      m_ovr.overlay->DestroyOverlay(m_overlay);
+      m_overlay = k_ulOverlayHandleInvalid;
     }
+
+    if (m_target != VK_NULL_HANDLE)
+      vkDestroyImage(m_device, m_target, nullptr);
+    if (m_targetMemory != VK_NULL_HANDLE)
+      vkFreeMemory(m_device, m_targetMemory, nullptr);
+    m_target = VK_NULL_HANDLE;
+    m_targetMemory = VK_NULL_HANDLE;
 
     for (Source& source : m_sources)
     {
@@ -949,13 +1050,6 @@ namespace
       source = Source();
     }
 
-    if (m_localSpace != XR_NULL_HANDLE)
-      xrDestroySpace(m_localSpace);
-    if (m_viewSpace != XR_NULL_HANDLE)
-      xrDestroySpace(m_viewSpace);
-    if (m_session != XR_NULL_HANDLE)
-      xrDestroySession(m_session);
-
     if (m_fence != VK_NULL_HANDLE)
       vkDestroyFence(m_device, m_fence, nullptr);
     if (m_pool != VK_NULL_HANDLE)
@@ -964,12 +1058,13 @@ namespace
       vkDestroyDevice(m_device, nullptr);
     if (m_vkInstance != VK_NULL_HANDLE)
       vkDestroyInstance(m_vkInstance, nullptr);
-    if (m_instance != XR_NULL_HANDLE)
-      xrDestroyInstance(m_instance);
 
+    m_fence = VK_NULL_HANDLE;
+    m_pool = VK_NULL_HANDLE;
     m_device = VK_NULL_HANDLE;
     m_vkInstance = VK_NULL_HANDLE;
-    m_instance = XR_NULL_HANDLE;
+
+    m_ovr.stop();
   }
 }
 

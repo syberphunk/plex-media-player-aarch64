@@ -162,7 +162,7 @@ void XrComponent::probe(bool withSession)
   if (m_process)
     return;
 
-  QLOG_INFO() << "OpenXR probe starting:"
+  QLOG_INFO() << "Stereoscopic: probe starting:"
               << qPrintable(QStringLiteral("route=%1 session=%2")
                               .arg(XrSupport::hostRoute() ? "host" : "local",
                                    withSession ? "yes" : "no"));
@@ -173,7 +173,7 @@ void XrComponent::probe(bool withSession)
     m_checked = true;
     if (withSession)
       m_sessionTested = true;
-    QLOG_INFO() << "OpenXR probe finished:" << qPrintable(XrSupport::report());
+    QLOG_INFO() << "Stereoscopic: probe finished:" << qPrintable(XrSupport::report());
     emit stateChanged();
     return;
   }
@@ -185,7 +185,7 @@ void XrComponent::probe(bool withSession)
                             this, &error);
   if (!m_process)
   {
-    QLOG_WARN() << "OpenXR probe could not start:" << qPrintable(error);
+    QLOG_WARN() << "Stereoscopic: probe could not start:" << qPrintable(error);
     XrSupport::applyHostAnswer(QJsonObject(), error, withSession);
     m_checked = true;
     emit stateChanged();
@@ -249,7 +249,7 @@ void XrComponent::finish(const QString& startError)
   if (m_withSession)
     m_sessionTested = true;
 
-  QLOG_INFO() << "OpenXR probe finished:"
+  QLOG_INFO() << "Stereoscopic: probe finished:"
               << qPrintable(error.isEmpty() ? QStringLiteral("ok")
                                             : QStringLiteral("error=%1").arg(error));
 
