@@ -33,6 +33,7 @@ finish-args:
   - --filesystem=/var/lib/flatpak/exports/share/icons:ro
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.freedesktop.login1
+  - --talk-name=org.freedesktop.Flatpak
 
 cleanup:
   - /include

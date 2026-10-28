@@ -393,6 +393,11 @@
           [ "noscaling", "video.aspect.noscale" ],
           [ "custom", "video.aspect.custom" ]
         ]
+      },
+      {
+        "value": "stereoscopic",
+        "default": false,
+        "hidden": true
       }
     ]
   },

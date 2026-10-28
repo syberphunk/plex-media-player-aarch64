@@ -1,4 +1,5 @@
 #include "XrSupport.h"
+#include "XrHost.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -23,6 +24,7 @@ namespace
 {
   XrSupport::Info g_info;
   bool g_probed = false;
+  bool g_sessionTried = false;
 
   QString runtimeManifestCandidate()
   {
@@ -183,15 +185,14 @@ namespace
   }
 }
 
-const XrSupport::Info& XrSupport::probe()
+namespace
 {
-  if (g_probed)
-    return g_info;
-  g_probed = true;
+  void localProbe()
+{
   g_info.compiledIn = true;
 
-  ensureRuntimeJson();
-  ensurePathRegistry();
+  XrSupport::ensureRuntimeJson();
+  XrSupport::ensurePathRegistry();
   g_info.manifest = QString::fromLocal8Bit(qgetenv("XR_RUNTIME_JSON"));
   g_info.pathRegistry = qEnvironmentVariableIsSet("VR_PATHREG_OVERRIDE")
                           ? QString::fromLocal8Bit(qgetenv("VR_PATHREG_OVERRIDE"))
@@ -203,7 +204,7 @@ const XrSupport::Info& XrSupport::probe()
   {
     g_info.error = QString("the runtime did not answer: %1")
                      .arg(resultString(XR_NULL_HANDLE, result));
-    return g_info;
+    return;
   }
 
   std::vector<XrExtensionProperties> properties(
@@ -216,7 +217,7 @@ const XrSupport::Info& XrSupport::probe()
     {
       g_info.error = QString("the extension list could not be read: %1")
                        .arg(resultString(XR_NULL_HANDLE, result));
-      return g_info;
+      return;
     }
   }
 
@@ -240,7 +241,7 @@ const XrSupport::Info& XrSupport::probe()
   if (XR_FAILED(result))
   {
     g_info.error = QString("no instance: %1").arg(resultString(XR_NULL_HANDLE, result));
-    return g_info;
+    return;
   }
   g_info.runtimeFound = true;
 
@@ -259,7 +260,7 @@ const XrSupport::Info& XrSupport::probe()
   {
     g_info.error = QString("no headset: %1").arg(resultString(instance, result));
     xrDestroyInstance(instance);
-    return g_info;
+    return;
   }
 
   XrSystemProperties systemProperties{XR_TYPE_SYSTEM_PROPERTIES};
@@ -291,22 +292,97 @@ const XrSupport::Info& XrSupport::probe()
 
   g_info.headsetPresent = g_info.viewCount >= 2;
   xrDestroyInstance(instance);
-  return g_info;
+  return;
+}
 }
 
 #else
 
-const XrSupport::Info& XrSupport::probe()
+namespace
 {
-  if (!g_probed)
+  void localProbe()
   {
-    g_probed = true;
     g_info.error = QStringLiteral("built without OpenXR");
   }
-  return g_info;
 }
 
 #endif
+
+bool XrSupport::hostRoute()
+{
+  return XrHost::available();
+}
+
+void XrSupport::applyHostAnswer(const QJsonObject& answer, const QString& error, bool sessionTried)
+{
+  g_info = Info();
+  g_probed = true;
+  g_sessionTried = sessionTried;
+
+  g_info.compiledIn = true;
+  g_info.viaHost = true;
+
+  if (answer.isEmpty())
+  {
+    g_info.error = error.isEmpty() ? QStringLiteral("the host helper did not answer") : error;
+  }
+  else
+  {
+    g_info.manifest = runtimeManifestCandidate();
+    g_info.runtimeFound = answer.value(QStringLiteral("instance")).toBool();
+    g_info.runtimeName = answer.value(QStringLiteral("runtimeName")).toString();
+    g_info.runtimeVersion = answer.value(QStringLiteral("runtimeVersion")).toString();
+    g_info.systemName = answer.value(QStringLiteral("systemName")).toString();
+    g_info.viewCount = answer.value(QStringLiteral("viewCount")).toInt();
+    g_info.recommendedPerEye = QSize(answer.value(QStringLiteral("width")).toInt(),
+                                     answer.value(QStringLiteral("height")).toInt());
+    g_info.sessionReady = answer.value(QStringLiteral("session")).toBool();
+    g_info.swapchains = answer.value(QStringLiteral("swapchains")).toInt();
+
+    const QJsonArray extensions = answer.value(QStringLiteral("extensions")).toArray();
+    for (const QJsonValue& value : extensions)
+      g_info.extensions << value.toString();
+    g_info.openglSupported = g_info.extensions.contains(QLatin1String("XR_KHR_opengl_enable"));
+
+    const QJsonArray modes = answer.value(QStringLiteral("blendModes")).toArray();
+    for (const QJsonValue& value : modes)
+      g_info.blendModes << value.toString();
+
+    g_info.headsetPresent =
+      answer.value(QStringLiteral("system")).toBool() && g_info.viewCount >= 2;
+
+    const QString reported = answer.value(QStringLiteral("error")).toString();
+    if (!reported.isEmpty())
+      g_info.error = reported;
+  }
+
+  QLOG_INFO() << "OpenXR:" << qPrintable(report());
+}
+
+void XrSupport::refreshLocal()
+{
+  g_info = Info();
+  g_probed = true;
+  g_sessionTried = false;
+  localProbe();
+  QLOG_INFO() << "OpenXR:" << qPrintable(report());
+}
+
+const XrSupport::Info& XrSupport::probe()
+{
+  if (g_probed)
+    return g_info;
+
+  if (hostRoute())
+  {
+    g_info.compiledIn = true;
+    g_info.viaHost = true;
+    return g_info;
+  }
+
+  refreshLocal();
+  return g_info;
+}
 
 QString XrSupport::report()
 {
@@ -315,6 +391,7 @@ QString XrSupport::report()
   if (!info.compiledIn)
     return QStringLiteral("not built in");
 
+  parts << QString("route=%1").arg(info.viaHost ? "host" : "in-process");
   parts << QString("manifest=%1").arg(info.manifest.isEmpty() ? QString("(discovered)")
                                                               : info.manifest);
   parts << QString("pathreg=%1").arg(info.pathRegistry.isEmpty() ? QString("none")
@@ -333,6 +410,15 @@ QString XrSupport::report()
     }
     parts << QString("opengl=%1").arg(info.openglSupported ? "yes" : "no");
     parts << QString("extensions=%1").arg(info.extensions.size());
+    if (!info.blendModes.isEmpty())
+      parts << QString("blend=%1").arg(info.blendModes.join(","));
+    if (info.viaHost)
+    {
+      if (info.sessionReady)
+        parts << QString("session=yes swapchains=%1").arg(info.swapchains);
+      else
+        parts << QString("session=%1").arg(g_sessionTried ? "no" : "untested");
+    }
   }
   if (!info.error.isEmpty())
     parts << QString("error=\"%1\"").arg(info.error);

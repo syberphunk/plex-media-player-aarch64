@@ -51,6 +51,28 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.23" date="2026-10-28">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>A Stereoscopic 3D section in the settings menu, off by default. With it on,
+              the app reports which OpenXR runtime answered, which headset it names and
+              the resolution it recommends per eye, and a button draws to both eyes once
+              to prove a session can be created. Stereoscopic playback is not implemented
+              yet; this is the part it needs.</li>
+          <li>A separate program, pmp-xr-host, that does the headset work outside the
+              sandbox. Flatpak always puts the app in its own process namespace and
+              SteamVR's OpenXR runtime will not create a session inside one, so the
+              runtime is reached through a program started on the host instead. The app
+              reads its answer and nothing else changes.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>The app may now talk to org.freedesktop.Flatpak, which is what starting
+              that program requires.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.22" date="2026-10-27">
       <description>
         <p>Added:</p>

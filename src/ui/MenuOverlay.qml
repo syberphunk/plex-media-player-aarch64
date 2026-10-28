@@ -9,6 +9,7 @@ FocusScope
   property var updater: (typeof components !== "undefined") ? components.updater : null
   property var system: (typeof components !== "undefined") ? components.system : null
   property var steam: (typeof components !== "undefined") ? components.steam : null
+  property var xr: (typeof components !== "undefined") ? components.xr : null
 
   readonly property bool signedIn: system ? system.signedIn : false
 
@@ -243,6 +244,32 @@ FocusScope
 
     if (system)
       system.exit()
+  }
+
+  function xrStatusText()
+  {
+    if (!menu.xr)
+      return ""
+    if (menu.xr.busy)
+      return qsTr("Asking the headset runtime...")
+    if (!menu.xr.checked)
+      return qsTr("Not checked yet.")
+    if (!menu.xr.runtimeFound)
+      return menu.xr.lastError.length > 0
+               ? qsTr("No headset runtime: %1").arg(menu.xr.lastError)
+               : qsTr("No headset runtime answered.")
+    if (!menu.xr.headsetPresent)
+      return qsTr("%1 is running but reports no headset. Put the headset on and "
+                  + "check again.").arg(menu.xr.runtimeName)
+    var text = qsTr("%1, %2 per eye").arg(menu.xr.headsetName.length > 0
+                                            ? menu.xr.headsetName
+                                            : menu.xr.runtimeName)
+                                     .arg(menu.xr.perEye)
+    if (menu.xr.sessionReady)
+      return text + qsTr(". Both eyes were drawn to.")
+    if (menu.xr.lastError.length > 0)
+      return text + qsTr(". The last check failed: %1").arg(menu.xr.lastError)
+    return text + qsTr(". Not drawn to yet.")
   }
 
   function dismissSteamOffer(forever)
@@ -1451,6 +1478,72 @@ FocusScope
             hint: qsTr("Close Plex and ask Steam to start it again")
             minW: 330
             onClicked: menu.relaunchViaSteam()
+          }
+        }
+
+        Heading
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported
+          text: qsTr("Stereoscopic 3D")
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.xr !== null && menu.xr.supported
+          text: qsTr("Side-by-side and over-under files can be shown with real "
+                     + "depth through the headset. The headset is driven by a "
+                     + "helper outside the sandbox, which Plex starts only while "
+                     + "this is on.")
+        }
+
+        Toggle
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported
+          label: qsTr("Play 3D files through the headset")
+          hint: qsTr("Off plays them flat, as a doubled image")
+          checked: menu.xr !== null && menu.xr.enabled
+          onToggled: function(value)
+          {
+            if (menu.xr)
+              menu.xr.enabled = value
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          text: menu.xrStatusText()
+        }
+
+        Item
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          height: visible ? Math.round(96 * menu.u) : 0
+
+          Btn
+          {
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            enabled: menu.xr !== null && !menu.xr.busy
+            label: menu.xr && menu.xr.busy
+                     ? qsTr("Checking...")
+                     : qsTr("Check the headset")
+            hint: qsTr("Takes the headset over for a moment to prove both eyes "
+                       + "can be drawn to")
+            minW: 330
+            onClicked:
+            {
+              if (menu.xr)
+                menu.xr.testOutput()
+            }
           }
         }
 

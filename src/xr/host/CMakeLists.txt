@@ -1,0 +1,20 @@
+if(NOT OPENXR_INCLUDE_DIR OR NOT OPENXR_LIBRARY)
+  return()
+endif()
+
+add_executable(pmp-xr-host main.cpp)
+set_target_properties(pmp-xr-host PROPERTIES AUTOMOC OFF)
+target_include_directories(pmp-xr-host PRIVATE ${OPENXR_INCLUDE_DIR})
+target_link_libraries(pmp-xr-host ${OPENXR_LIBRARY})
+
+find_package(Vulkan QUIET)
+if(Vulkan_FOUND)
+  target_compile_definitions(pmp-xr-host PRIVATE PMP_XR_HOST_VULKAN)
+  target_include_directories(pmp-xr-host PRIVATE ${Vulkan_INCLUDE_DIRS})
+  target_link_libraries(pmp-xr-host ${Vulkan_LIBRARIES})
+  message(STATUS "pmp-xr-host: Vulkan session support enabled")
+else()
+  message(STATUS "pmp-xr-host: Vulkan not found, probe only")
+endif()
+
+install(TARGETS pmp-xr-host DESTINATION ${INSTALL_BIN_DIR})

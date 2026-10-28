@@ -11,6 +11,7 @@
 #include "display/DisplayComponent.h"
 #include "system/MenuComponent.h"
 #include "system/SteamComponent.h"
+#include "xr/XrComponent.h"
 #include "system/SystemComponent.h"
 #include "system/UpdateManager.h"
 #include "settings/SettingsComponent.h"
@@ -71,6 +72,7 @@ void ComponentManager::initialize()
   registerComponent(&PowerComponent::Get());
   registerComponent(&UpdateManager::Get());
   registerComponent(&SteamComponent::Get());
+  registerComponent(&XrComponent::Get());
 
   for(ComponentBase* component : m_components.values())
     component->componentPostInitialize();
