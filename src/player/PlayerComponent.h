@@ -211,6 +211,7 @@ private:
   void setQtQuickWindow(QQuickWindow* window);
   void updatePlaybackState();
   void handleMpvEvent(mpv_event *event);
+  void resolveStereoFormat();
   // Potentially switch the display refresh rate, and return true if the refresh rate
   // was actually changed.
   bool switchDisplayFrameRate();

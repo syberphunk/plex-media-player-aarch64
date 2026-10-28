@@ -51,6 +51,31 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.24" date="2026-10-28">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>The packing of a 3D file is now worked out when playback starts. The file's
+              own 3D tag is used when it carries one, otherwise the file name is read for
+              the usual markings, otherwise the shape of the picture is used. Half and
+              full width are told apart by the display aspect, because the tag does not
+              record which it is. The result is written to the log on every file.</li>
+          <li>A setting that says which packing to use, for files that carry no tag or
+              are marked wrongly: left as worked out, side-by-side half or full width,
+              over-under half or full height, or 2D. The settings menu shows what was
+              worked out and where that came from.</li>
+          <li>A setting that swaps the left and right eye, for files packed the other way
+              round.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>Stereoscopic 3D is now on by default. Probing the runtime happens in the
+              background and does not delay startup.</li>
+          <li>The settings button stays visible while a 3D file plays, so the packing can
+              be changed without stopping playback.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.23" date="2026-10-28">
       <description>
         <p>Added:</p>

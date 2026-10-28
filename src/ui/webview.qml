@@ -304,8 +304,11 @@ KonvergoWindow
     border.color: lit ? "#E08B20" : "#767E8A"
     border.width: Math.max(1, Math.round(1.5 * u))
 
+    readonly property bool overVideo: components.player.videoWindowVisible
+                                      && !(components.xr && components.xr.detectedStereo)
+
     visible: opacity > 0
-    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures && !components.player.videoWindowVisible) ? 1 : 0
+    opacity: (components.system.cursorVisible && !menuOverlay.open && !updateOverlay.captures && !overVideo) ? 1 : 0
 
     Accessible.role: Accessible.Button
     Accessible.name: "Player settings"

@@ -15,6 +15,8 @@
 
 #include "PlayerQuickItem.h"
 #include "input/InputComponent.h"
+#include "xr/StereoFormat.h"
+#include "xr/XrComponent.h"
 
 #include "QsLog.h"
 
@@ -567,6 +569,7 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
       m_inPlayback = false;
       m_playbackCanceled = false;
       m_playbackError = "";
+      XrComponent::Get().clearDetected();
 
       switch (endFile->reason)
       {
@@ -642,6 +645,7 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
         if (size != m_videoSize)
         {
           m_videoSize = size;
+          resolveStereoFormat();
           emit videoSizeChanged(size.width(), size.height());
         }
       }
@@ -1327,6 +1331,40 @@ void PlayerComponent::updateVideoAspectSettings()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::resolveStereoFormat()
+{
+  if (!m_mpv)
+    return;
+
+  const QString stereoIn =
+    mpv::qt::get_property(m_mpv, "video-params/stereo-in").toString();
+  const QString path = mpv::qt::get_property(m_mpv, "path").toString();
+
+  QString source;
+  StereoFormat::Layout detected =
+    StereoFormat::resolve(stereoIn, path, m_videoSize, &source);
+
+  const QString chosen = XrComponent::Get().formatOverride();
+  StereoFormat::Layout active = detected;
+  if (chosen != QLatin1String("auto"))
+  {
+    active = StereoFormat::fromSetting(chosen);
+    source = QStringLiteral("override");
+  }
+  if (XrComponent::Get().swapEyes())
+    active.swapped = !active.swapped;
+
+  XrComponent::Get().setDetected(StereoFormat::label(active), source, active.isStereo());
+
+  QLOG_INFO() << "Stereoscopic:" << qPrintable(QStringLiteral(
+                   "stereo-in=%1 size=%2x%3 detected=%4 from=%5 active=%6")
+                   .arg(stereoIn.isEmpty() ? QStringLiteral("(none)") : stereoIn)
+                   .arg(m_videoSize.width())
+                   .arg(m_videoSize.height())
+                   .arg(StereoFormat::toSetting(detected), source,
+                        StereoFormat::toSetting(active)));
+}
+
 void PlayerComponent::updateVideoSettings()
 {
   if (!m_mpv)

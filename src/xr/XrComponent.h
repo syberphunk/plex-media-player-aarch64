@@ -34,6 +34,12 @@ public:
   Q_PROPERTY(QString headsetName READ headsetName NOTIFY stateChanged)
   Q_PROPERTY(QString perEye READ perEye NOTIFY stateChanged)
   Q_PROPERTY(QString lastError READ lastError NOTIFY stateChanged)
+  Q_PROPERTY(QString formatOverride READ formatOverride WRITE setFormatOverride
+               NOTIFY formatChanged)
+  Q_PROPERTY(bool swapEyes READ swapEyes WRITE setSwapEyes NOTIFY formatChanged)
+  Q_PROPERTY(QString detectedLabel READ detectedLabel NOTIFY formatChanged)
+  Q_PROPERTY(QString detectedSource READ detectedSource NOTIFY formatChanged)
+  Q_PROPERTY(bool detectedStereo READ detectedStereo NOTIFY formatChanged)
 
   bool supported() const;
   bool enabled() const;
@@ -49,6 +55,16 @@ public:
   QString headsetName() const;
   QString perEye() const;
   QString lastError() const;
+  QString formatOverride() const;
+  void setFormatOverride(const QString& value);
+  bool swapEyes() const;
+  void setSwapEyes(bool value);
+  QString detectedLabel() const { return m_detectedLabel; }
+  QString detectedSource() const { return m_detectedSource; }
+  bool detectedStereo() const { return m_detectedStereo; }
+
+  void setDetected(const QString& label, const QString& source, bool stereo);
+  void clearDetected();
 
   Q_INVOKABLE void refresh();
 
@@ -57,6 +73,8 @@ public:
   Q_INVOKABLE QString report() const;
 
   Q_SIGNAL void stateChanged();
+
+  Q_SIGNAL void formatChanged();
 
 private:
   explicit XrComponent(QObject* parent = nullptr);
@@ -71,6 +89,9 @@ private:
   bool m_sessionTested = false;
   bool m_timedOut = false;
   int m_timeoutMs = 0;
+  QString m_detectedLabel;
+  QString m_detectedSource;
+  bool m_detectedStereo = false;
 };
 
 #endif

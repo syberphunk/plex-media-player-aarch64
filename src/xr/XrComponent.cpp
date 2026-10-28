@@ -11,6 +11,8 @@ namespace
 {
   const char* const kSection = "video";
   const char* const kKey = "stereoscopic";
+  const char* const kFormatKey = "stereoscopic_format";
+  const char* const kSwapKey = "stereoscopic_swap";
 
   const int kProbeTimeoutMs = 8000;
   const int kSessionTimeoutMs = 20000;
@@ -52,6 +54,51 @@ void XrComponent::setEnabled(bool value)
   if (value)
     probe(false);
   emit stateChanged();
+}
+
+QString XrComponent::formatOverride() const
+{
+  const QString value = SettingsComponent::Get().value(kSection, kFormatKey).toString();
+  return value.isEmpty() ? QStringLiteral("auto") : value;
+}
+
+void XrComponent::setFormatOverride(const QString& value)
+{
+  if (formatOverride() == value)
+    return;
+
+  SettingsComponent::Get().setValue(kSection, kFormatKey, value);
+  emit formatChanged();
+}
+
+bool XrComponent::swapEyes() const
+{
+  return SettingsComponent::Get().value(kSection, kSwapKey).toBool();
+}
+
+void XrComponent::setSwapEyes(bool value)
+{
+  if (swapEyes() == value)
+    return;
+
+  SettingsComponent::Get().setValue(kSection, kSwapKey, value);
+  emit formatChanged();
+}
+
+void XrComponent::setDetected(const QString& label, const QString& source, bool stereo)
+{
+  if (m_detectedLabel == label && m_detectedSource == source && m_detectedStereo == stereo)
+    return;
+
+  m_detectedLabel = label;
+  m_detectedSource = source;
+  m_detectedStereo = stereo;
+  emit formatChanged();
+}
+
+void XrComponent::clearDetected()
+{
+  setDetected(QString(), QString(), false);
 }
 
 bool XrComponent::runtimeFound() const

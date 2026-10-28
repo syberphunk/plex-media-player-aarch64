@@ -272,6 +272,45 @@ FocusScope
     return text + qsTr(". Not drawn to yet.")
   }
 
+  function packingLabel(value)
+  {
+    if (value === "sbs_half")
+      return qsTr("Side-by-side, half width")
+    if (value === "sbs")
+      return qsTr("Side-by-side, full width")
+    if (value === "ou_half")
+      return qsTr("Over-under, half height")
+    if (value === "ou")
+      return qsTr("Over-under, full height")
+    if (value === "mono")
+      return qsTr("Treat everything as 2D")
+    return qsTr("Work it out per file")
+  }
+
+  function packingStatusText()
+  {
+    if (!menu.xr)
+      return ""
+    if (menu.xr.detectedLabel.length === 0)
+      return qsTr("Nothing is playing.")
+
+    var from = menu.xr.detectedSource
+    if (from === "override")
+      return qsTr("Playing: %1, because this menu says so.").arg(menu.xr.detectedLabel)
+    if (from === "metadata")
+      return qsTr("Playing: %1, from the file's own 3D tag.").arg(menu.xr.detectedLabel)
+    if (from === "name")
+      return qsTr("Playing: %1, worked out from the file name.").arg(menu.xr.detectedLabel)
+    if (from === "aspect")
+      return qsTr("Playing: %1, worked out from the picture shape. Set it here if "
+                  + "that is wrong.").arg(menu.xr.detectedLabel)
+    if (from === "unclear")
+      return qsTr("The name says this file is 3D but not how it is packed, and it "
+                  + "carries no 3D tag. Set it here: half width is the usual one.")
+    return qsTr("Playing: %1. No 3D tag, nothing in the name, and the shape looks "
+                + "ordinary. Set it here if this file is 3D.").arg(menu.xr.detectedLabel)
+  }
+
   function dismissSteamOffer(forever)
   {
     menu.steamOffer = false
@@ -1510,6 +1549,51 @@ FocusScope
           {
             if (menu.xr)
               menu.xr.enabled = value
+          }
+        }
+
+        Picker
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          label: qsTr("How 3D files are packed")
+          hint: qsTr("Left as worked out, unless a file is wrong and needs saying")
+          options: [
+            { value: "auto", label: qsTr("Work it out per file") },
+            { value: "sbs_half", label: qsTr("Side-by-side, half width") },
+            { value: "sbs", label: qsTr("Side-by-side, full width") },
+            { value: "ou_half", label: qsTr("Over-under, half height") },
+            { value: "ou", label: qsTr("Over-under, full height") },
+            { value: "mono", label: qsTr("Treat everything as 2D") }
+          ]
+          current: menu.xr ? menu.xr.formatOverride : "auto"
+          currentLabel: menu.packingLabel(menu.xr ? menu.xr.formatOverride : "auto")
+          onPicked: function(value)
+          {
+            if (menu.xr)
+              menu.xr.formatOverride = value
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          text: menu.packingStatusText()
+        }
+
+        Toggle
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          label: qsTr("Swap left and right eye")
+          hint: qsTr("For a file whose eyes are the other way round")
+          checked: menu.xr !== null && menu.xr.swapEyes
+          onToggled: function(value)
+          {
+            if (menu.xr)
+              menu.xr.swapEyes = value
           }
         }
 

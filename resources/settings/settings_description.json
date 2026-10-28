@@ -396,6 +396,16 @@
       },
       {
         "value": "stereoscopic",
+        "default": true,
+        "hidden": true
+      },
+      {
+        "value": "stereoscopic_format",
+        "default": "auto",
+        "hidden": true
+      },
+      {
+        "value": "stereoscopic_swap",
         "default": false,
         "hidden": true
       }
