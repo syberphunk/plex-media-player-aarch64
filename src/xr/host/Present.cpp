@@ -697,57 +697,70 @@ namespace
     if (!ovl || !ovl->GetTransformForOverlayCoordinates)
       return false;
 
-    HmdVector2_t scale{};
-    scale.v[0] = static_cast<float>(m_targetWidth);
-    scale.v[1] = static_cast<float>(m_targetHeight);
+    const auto point = [&](float x, float y, float out[3]) {
+      HmdVector2_t at{};
+      at.v[0] = x;
+      at.v[1] = y;
+      HmdMatrix34_t transform{};
+      if (ovl->GetTransformForOverlayCoordinates(m_overlay,
+                                                 ETrackingUniverseOrigin_TrackingUniverseStanding,
+                                                 at, &transform) !=
+          EVROverlayError_VROverlayError_None)
+        return false;
+      out[0] = transform.m[0][3];
+      out[1] = transform.m[1][3];
+      out[2] = transform.m[2][3];
+      return true;
+    };
+
+    const auto span = [](const float a[3], const float b[3]) {
+      const float dx = b[0] - a[0];
+      const float dy = b[1] - a[1];
+      const float dz = b[2] - a[2];
+      return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    float extent[2] = {static_cast<float>(m_targetWidth), static_cast<float>(m_targetHeight)};
     if (ovl->GetOverlayMouseScale)
     {
       HmdVector2_t reported{};
       if (ovl->GetOverlayMouseScale(m_overlay, &reported) ==
             EVROverlayError_VROverlayError_None &&
           reported.v[0] > 1.0f && reported.v[1] > 1.0f)
-        scale = reported;
+      {
+        extent[0] = reported.v[0];
+        extent[1] = reported.v[1];
+      }
     }
 
-    HmdMatrix34_t origin{};
-    HmdMatrix34_t acrossPoint{};
-    HmdMatrix34_t upPoint{};
+    const float candidates[2][2] = {{extent[0], extent[1]}, {1.0f, 1.0f}};
 
-    HmdVector2_t at{};
-    at.v[0] = 0.0f;
-    at.v[1] = 0.0f;
-    if (ovl->GetTransformForOverlayCoordinates(m_overlay,
-                                               ETrackingUniverseOrigin_TrackingUniverseStanding,
-                                               at, &origin) !=
-        EVROverlayError_VROverlayError_None)
-      return false;
+    for (int i = 0; i < 2; ++i)
+    {
+      float origin[3] = {0.0f, 0.0f, 0.0f};
+      float across[3] = {0.0f, 0.0f, 0.0f};
+      float up[3] = {0.0f, 0.0f, 0.0f};
 
-    at.v[0] = scale.v[0];
-    at.v[1] = 0.0f;
-    if (ovl->GetTransformForOverlayCoordinates(m_overlay,
-                                               ETrackingUniverseOrigin_TrackingUniverseStanding,
-                                               at, &acrossPoint) !=
-        EVROverlayError_VROverlayError_None)
-      return false;
+      if (!point(0.0f, 0.0f, origin) || !point(candidates[i][0], 0.0f, across) ||
+          !point(0.0f, candidates[i][1], up))
+        return false;
 
-    at.v[0] = 0.0f;
-    at.v[1] = scale.v[1];
-    if (ovl->GetTransformForOverlayCoordinates(m_overlay,
-                                               ETrackingUniverseOrigin_TrackingUniverseStanding,
-                                               at, &upPoint) !=
-        EVROverlayError_VROverlayError_None)
-      return false;
+      const float across0 = span(origin, across);
+      const float up0 = span(origin, up);
+      if (across0 < 0.001f || up0 < 0.001f)
+        continue;
 
-    const auto span = [](const HmdMatrix34_t& a, const HmdMatrix34_t& b) {
-      const float dx = b.m[0][3] - a.m[0][3];
-      const float dy = b.m[1][3] - a.m[1][3];
-      const float dz = b.m[2][3] - a.m[2][3];
-      return std::sqrt(dx * dx + dy * dy + dz * dz);
-    };
+      if (std::fabs(across0 - kScreenWidth) > 0.2f * kScreenWidth)
+        continue;
 
-    width = span(origin, acrossPoint);
-    height = span(origin, upPoint);
-    return width > 0.001f && height > 0.001f;
+      width = across0;
+      height = up0;
+      return true;
+    }
+
+    note("pmp-xr-host: overlay coordinates do not span %.2f m, not measuring the quad",
+         kScreenWidth);
+    return false;
   }
 
   void Presenter::calibrateAspect()
@@ -795,14 +808,25 @@ namespace
 
     float checkWidth = 0.0f;
     float checkHeight = 0.0f;
-    if (measureQuad(checkWidth, checkHeight))
-      note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f, now %.3fx%.3f m "
-           "aspect %.3f",
-           measured, wanted, m_texelAspect, checkWidth, checkHeight,
-           checkWidth / checkHeight);
-    else
-      note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f", measured, wanted,
-           m_texelAspect);
+    if (!measureQuad(checkWidth, checkHeight))
+    {
+      note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f, not re-measurable",
+           measured, wanted, m_texelAspect);
+      return;
+    }
+
+    const float corrected = checkWidth / checkHeight;
+    note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f, now %.3fx%.3f m "
+         "aspect %.3f",
+         measured, wanted, m_texelAspect, checkWidth, checkHeight, corrected);
+
+    if (std::fabs(corrected - wanted) >= std::fabs(measured - wanted))
+    {
+      m_texelAspect = 1.0f;
+      ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
+      ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
+      note("pmp-xr-host: the texel aspect did not improve the quad, back to 1.0");
+    }
   }
 
   void Presenter::send(XrProtocol::Type type, uint32_t index)
