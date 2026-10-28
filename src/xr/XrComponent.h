@@ -82,12 +82,13 @@ public:
 
   Q_SIGNAL void overrideChanged();
 
+  void noteActivity();
+
 private:
   explicit XrComponent(QObject* parent = nullptr);
 
   void probe(bool withSession);
   void finish(const QString& error);
-  void noteActivity();
 
   QProcess* m_process = nullptr;
   QTimer* m_timeout = nullptr;

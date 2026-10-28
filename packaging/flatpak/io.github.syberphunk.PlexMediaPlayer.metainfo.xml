@@ -51,6 +51,25 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.33" date="2026-10-28">
+      <description>
+        <p>Changed:</p>
+        <ul>
+          <li>The 3D screen was placed two metres ahead of the viewer and could not be
+              moved, resized or reached past. It now finds the Plex window in the headset
+              session and sits on it, copying its position, width, curve and stacking
+              order every frame, so moving or resizing the Plex window moves and resizes
+              the 3D screen with it.</li>
+          <li>The 3D screen is hidden while the Plex window is hidden, and the fixed
+              placement is kept for sessions where no window can be found to sit on.</li>
+          <li>Pointer, wheel and touch input now steps the 3D screen aside for four
+              seconds, as keyboard and gamepad input already did, so the Plex controls
+              under it can be used.</li>
+          <li>The log lists every screen in the headset session with its key, name, size,
+              shape, stacking order and position.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.32" date="2026-10-28">
       <description>
         <p>Fixed:</p>

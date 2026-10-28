@@ -16,6 +16,7 @@
 #include "QsLog.h"
 #include "shared/SessionEnv.h"
 #include "shared/Watchdog.h"
+#include "xr/XrComponent.h"
 #include "utils/Utils.h"
 #include "Globals.h"
 #include "EventFilter.h"
@@ -512,6 +513,27 @@ void KonvergoWindow::onVisibilityChanged(QWindow::Visibility visibility)
   }
 
   InputComponent::Get().cancelAutoRepeat();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+bool KonvergoWindow::event(QEvent* ev)
+{
+  switch (ev->type())
+  {
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
+    case QEvent::Wheel:
+    case QEvent::TouchBegin:
+    case QEvent::TouchUpdate:
+      XrComponent::Get().noteActivity();
+      break;
+    default:
+      break;
+  }
+
+  return QQuickWindow::event(ev);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

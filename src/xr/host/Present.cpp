@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <string>
@@ -20,6 +21,8 @@
 
 #include "../XrProtocol.h"
 
+extern "C" char** environ;
+
 namespace
 {
   const float kScreenDistance = 2.0f;
@@ -28,6 +31,17 @@ namespace
   const float kDefaultEyeHeight = 1.6f;
   const int kPlaceAttempts = 90;
   const uint32_t kSortOrder = 100;
+  const float kDockNudge = 0.01f;
+  const float kDockMinWidth = 0.3f;
+  const float kDockMaxWidth = 60.0f;
+  const int kSurveyGapMs = 2000;
+  const int kSurveyPatientGapMs = 10000;
+  const int kSurveyLoudRounds = 2;
+  const int kScanBudget = 2048;
+  const int kScanSliceMs = 2;
+  const int kDockLossLimit = 30;
+  const uint32_t kScanIndexes = 128;
+  const uint32_t kScanAhead = 8;
   const uint64_t kModifierInvalid = 0x00ffffffffffffffULL;
   const uint32_t kFrameSyncTimeoutMs = 100;
 
@@ -51,6 +65,33 @@ namespace
     struct timespec request = {ms / 1000, (ms % 1000) * 1000000L};
     nanosleep(&request, nullptr);
   }
+
+  int64_t nowMs()
+  {
+    struct timespec now = {0, 0};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_nsec / 1000000;
+  }
+
+  struct Neighbour
+  {
+    VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
+    char key[128] = {0};
+    char name[128] = {0};
+    float width = 0.0f;
+    float curvature = 0.0f;
+    float pitch = 0.0f;
+    uint32_t flags = 0;
+    uint32_t sortOrder = 0;
+    uint32_t pid = 0;
+    uint32_t textureWidth = 0;
+    uint32_t textureHeight = 0;
+    int transformType = -1;
+    bool visible = false;
+    bool placed = false;
+    ETrackingUniverseOrigin origin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+    HmdMatrix34_t transform{};
+  };
 
   bool checkVk(VkResult result, const char* stage)
   {
@@ -95,8 +136,17 @@ namespace
     bool blitEyes();
     void placeScreen();
     bool headPose(float position[3], float forward[3]) const;
-    void describeNeighbours();
+    void describeEnvironment();
+    bool readNeighbour(VROverlayHandle_t handle, Neighbour& out) const;
+    bool dockable(const Neighbour& candidate) const;
+    int dockScore(const Neighbour& candidate) const;
+    void survey();
+    void finishSurvey();
+    void adoptDock(const Neighbour& chosen);
+    void applyDock(const Neighbour& window, bool force);
+    void trackDock();
     void setVisible(bool visible);
+    void updateVisibility();
 
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags) const;
     std::vector<const char*> wantedInstanceExtensions();
@@ -108,8 +158,33 @@ namespace
     VROverlayHandle_t m_overlay = k_ulOverlayHandleInvalid;
     bool m_screenPlaced = false;
     int m_placeAttempts = 0;
-    bool m_visible = true;
-    bool m_neighboursDescribed = false;
+    bool m_appVisible = true;
+    bool m_dockVisible = true;
+    bool m_shown = true;
+
+    bool m_environmentDescribed = false;
+    bool m_surveyRunning = false;
+    bool m_surveyDone = false;
+    int m_surveyRounds = 0;
+    int64_t m_surveyAt = 0;
+    uint32_t m_scanGeneration = 0;
+    uint32_t m_scanIndex = 0;
+    uint32_t m_topGeneration = 0;
+    int m_scanSeen = 0;
+    int m_scanProbes = 0;
+    Neighbour m_best;
+    bool m_haveBest = false;
+
+    VROverlayHandle_t m_dock = k_ulOverlayHandleInvalid;
+    std::string m_dockKey;
+    bool m_docked = false;
+    int m_dockLosses = 0;
+    float m_dockedWidth = 0.0f;
+    float m_dockNudge = kDockNudge;
+    float m_dockedCurvature = -1.0f;
+    float m_dockedPitch = 0.0f;
+    uint32_t m_dockedSortOrder = kSortOrder;
+    HmdMatrix34_t m_dockedTransform{};
 
     VkInstance m_vkInstance = VK_NULL_HANDLE;
     VkPhysicalDevice m_physical = VK_NULL_HANDLE;
@@ -786,64 +861,399 @@ namespace
     return true;
   }
 
-  void Presenter::describeNeighbours()
+  void Presenter::describeEnvironment()
   {
-    m_neighboursDescribed = true;
+    m_environmentDescribed = true;
 
+    for (char** entry = environ; entry && *entry; ++entry)
+    {
+      if (std::strncmp(*entry, "GAMESCOPE_", 10) != 0 &&
+          std::strncmp(*entry, "STEAM_GAMESCOPE_", 16) != 0)
+        continue;
+      note("pmp-xr-host: session %s", *entry);
+    }
+  }
+
+  bool Presenter::readNeighbour(VROverlayHandle_t handle, Neighbour& out) const
+  {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->FindOverlay)
+
+    EVROverlayError error = EVROverlayError_VROverlayError_None;
+    const uint32_t length = ovl->GetOverlayKey(handle, out.key, sizeof(out.key), &error);
+    if (error != EVROverlayError_VROverlayError_None || length == 0 || out.key[0] == '\0')
+      return false;
+
+    out.handle = handle;
+
+    EVROverlayError nameError = EVROverlayError_VROverlayError_None;
+    if (ovl->GetOverlayName)
+      ovl->GetOverlayName(handle, out.name, sizeof(out.name), &nameError);
+    if (nameError != EVROverlayError_VROverlayError_None)
+      out.name[0] = '\0';
+
+    if (ovl->GetOverlayWidthInMeters)
+      ovl->GetOverlayWidthInMeters(handle, &out.width);
+    if (ovl->GetOverlayCurvature)
+      ovl->GetOverlayCurvature(handle, &out.curvature);
+    if (ovl->GetOverlayPreCurvePitch)
+      ovl->GetOverlayPreCurvePitch(handle, &out.pitch);
+    if (ovl->GetOverlayFlags)
+      ovl->GetOverlayFlags(handle, &out.flags);
+    if (ovl->GetOverlaySortOrder)
+      ovl->GetOverlaySortOrder(handle, &out.sortOrder);
+    if (ovl->GetOverlayRenderingPid)
+      out.pid = ovl->GetOverlayRenderingPid(handle);
+    if (ovl->IsOverlayVisible)
+      out.visible = ovl->IsOverlayVisible(handle);
+    if (ovl->GetOverlayTextureSize)
+      ovl->GetOverlayTextureSize(handle, &out.textureWidth, &out.textureHeight);
+
+    VROverlayTransformType type = VROverlayTransformType_VROverlayTransform_Invalid;
+    if (ovl->GetOverlayTransformType &&
+        ovl->GetOverlayTransformType(handle, &type) == EVROverlayError_VROverlayError_None)
+      out.transformType = static_cast<int>(type);
+
+    out.placed = ovl->GetOverlayTransformAbsolute &&
+                 ovl->GetOverlayTransformAbsolute(handle, &out.origin, &out.transform) ==
+                   EVROverlayError_VROverlayError_None;
+
+    if (!out.placed && ovl->GetTransformForOverlayCoordinates)
+    {
+      HmdVector2_t centre{};
+      out.origin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+      out.placed = ovl->GetTransformForOverlayCoordinates(handle, out.origin, centre,
+                                                          &out.transform) ==
+                   EVROverlayError_VROverlayError_None;
+    }
+
+    return true;
+  }
+
+  bool Presenter::dockable(const Neighbour& candidate) const
+  {
+    if (candidate.handle == m_overlay || !candidate.placed || !candidate.visible)
+      return false;
+
+    if (candidate.width < kDockMinWidth || candidate.width > kDockMaxWidth)
+      return false;
+
+    if (std::strcmp(candidate.key, kOverlayKey) == 0)
+      return false;
+
+    static const char* const furniture[] = {"system.systemui",     "system.toast",
+                                            "system.pointer",      "system.keyboard",
+                                            "system.notification", "system.vrdashboard",
+                                            "system.vrmonitor",    "system.generated."};
+
+    for (const char* piece : furniture)
+      if (std::strncmp(candidate.key, piece, std::strlen(piece)) == 0)
+        return false;
+
+    return true;
+  }
+
+  int Presenter::dockScore(const Neighbour& candidate) const
+  {
+    int score = 0;
+
+    if (std::strstr(candidate.key, ".window."))
+      score += 100;
+    if (std::strstr(candidate.key, "gamescope"))
+      score += 50;
+    if (std::strcmp(candidate.name, kOverlayName) == 0)
+      score += 25;
+    if (std::strstr(candidate.key, "steam"))
+      score += 10;
+
+    return score;
+  }
+
+  void Presenter::survey()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->GetOverlayKey || m_overlay == k_ulOverlayHandleInvalid)
       return;
 
-    static char keys[][48] = {"valve.steam.gamescope",
-                              "valve.steam.gamescope.screen",
-                              "gamescope",
-                              "system.systemui",
-                              "system.vrdashboard",
-                              "valve.steamvr.desktop",
-                              "steam.overlay.screen",
-                              "valve.steamframe.screen",
-                              "openxr.overlay"};
+    const int64_t now = nowMs();
 
-    for (char* key : keys)
+    if (!m_surveyRunning)
     {
-      VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
-      if (ovl->FindOverlay(key, &handle) != EVROverlayError_VROverlayError_None ||
-          handle == k_ulOverlayHandleInvalid)
+      const int gap = m_surveyRounds < kSurveyLoudRounds ? kSurveyGapMs : kSurveyPatientGapMs;
+      if (m_surveyDone && now - m_surveyAt < gap)
+        return;
+
+      m_surveyRunning = true;
+      m_surveyDone = false;
+      m_surveyAt = now;
+      m_haveBest = false;
+      m_scanSeen = 0;
+      m_scanProbes = 0;
+      m_scanIndex = 0;
+
+      const uint32_t ours = static_cast<uint32_t>(m_overlay >> 32);
+      m_scanGeneration = (ours > m_topGeneration ? ours : m_topGeneration) + kScanAhead;
+
+      if (!m_environmentDescribed)
+        describeEnvironment();
+
+      const char* named = std::getenv("STEAM_GAMESCOPE_VROVERLAY_TARGET");
+      if (named && *named && ovl->FindOverlay)
+      {
+        VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
+        Neighbour target;
+        if (ovl->FindOverlay(const_cast<char*>(named), &handle) ==
+              EVROverlayError_VROverlayError_None &&
+            handle != k_ulOverlayHandleInvalid && readNeighbour(handle, target))
+        {
+          note("pmp-xr-host: the session names \"%s\" as the window to render into", named);
+          if (dockable(target))
+          {
+            m_best = target;
+            m_haveBest = true;
+          }
+        }
+      }
+
+      if (m_surveyRounds < kSurveyLoudRounds)
+        note("pmp-xr-host: looking for the window to dock to, generation %u down to 0",
+             m_scanGeneration);
+    }
+
+    const int64_t slice = nowMs();
+
+    for (int budget = 0; budget < kScanBudget; ++budget)
+    {
+      if ((budget & 63) == 63 && nowMs() - slice >= kScanSliceMs)
+        return;
+
+      ++m_scanProbes;
+
+      const VROverlayHandle_t handle =
+        (static_cast<VROverlayHandle_t>(m_scanGeneration) << 32) | m_scanIndex;
+
+      bool last = false;
+      if (++m_scanIndex >= kScanIndexes)
+      {
+        m_scanIndex = 0;
+        if (m_scanGeneration == 0)
+          last = true;
+        else
+          --m_scanGeneration;
+      }
+
+      Neighbour found;
+      const bool live = handle != m_overlay && readNeighbour(handle, found);
+
+      if (last)
+      {
+        if (live && dockable(found) && (!m_haveBest || dockScore(found) > dockScore(m_best)))
+        {
+          m_best = found;
+          m_haveBest = true;
+        }
+        finishSurvey();
+        return;
+      }
+
+      if (!live)
         continue;
 
-      float wide = 0.0f;
-      if (ovl->GetOverlayWidthInMeters)
-        ovl->GetOverlayWidthInMeters(handle, &wide);
+      ++m_scanSeen;
 
-      ETrackingUniverseOrigin origin = ETrackingUniverseOrigin_TrackingUniverseStanding;
-      HmdMatrix34_t transform{};
-      const bool placed = ovl->GetOverlayTransformAbsolute &&
-                          ovl->GetOverlayTransformAbsolute(handle, &origin, &transform) ==
-                            EVROverlayError_VROverlayError_None;
+      const uint32_t generation = static_cast<uint32_t>(handle >> 32);
+      if (generation > m_topGeneration)
+        m_topGeneration = generation;
 
-      note("pmp-xr-host: neighbour \"%s\" %llu, %.2f m wide, origin %d, at %.2f %.2f %.2f%s",
-           key, static_cast<unsigned long long>(handle), wide, static_cast<int>(origin),
-           transform.m[0][3], transform.m[1][3], transform.m[2][3],
-           placed ? "" : " (no transform)");
+      if (m_surveyRounds < kSurveyLoudRounds)
+        note("pmp-xr-host: overlay %llu \"%s\" named \"%s\", %.2f m wide, texture %ux%u, %s, "
+             "flags 0x%x, sort %u, transform %d, curve %.3f, pid %u, at %.2f %.2f %.2f%s",
+             static_cast<unsigned long long>(handle), found.key, found.name, found.width,
+             found.textureWidth, found.textureHeight, found.visible ? "showing" : "hidden",
+             found.flags, found.sortOrder, found.transformType, found.curvature, found.pid,
+             found.transform.m[0][3], found.transform.m[1][3], found.transform.m[2][3],
+             found.placed ? "" : " (no transform)");
+
+      if (!dockable(found))
+        continue;
+
+      if (!m_haveBest || dockScore(found) > dockScore(m_best) ||
+          (dockScore(found) == dockScore(m_best) && found.width > m_best.width))
+      {
+        m_best = found;
+        m_haveBest = true;
+      }
     }
+  }
+
+  void Presenter::finishSurvey()
+  {
+    m_surveyRunning = false;
+    m_surveyDone = true;
+    m_surveyAt = nowMs();
+    ++m_surveyRounds;
+
+    if (m_haveBest)
+    {
+      note("pmp-xr-host: %d of %d handles are live overlays", m_scanSeen, m_scanProbes);
+      adoptDock(m_best);
+      return;
+    }
+
+    if (m_surveyRounds <= kSurveyLoudRounds)
+      note("pmp-xr-host: %d of %d handles are live overlays and none of them is a window to "
+           "dock to; the screen stays where it was put",
+           m_scanSeen, m_scanProbes);
+  }
+
+  void Presenter::adoptDock(const Neighbour& chosen)
+  {
+    m_dock = chosen.handle;
+    m_dockKey.assign(chosen.key);
+    m_docked = true;
+    m_dockLosses = 0;
+    m_dockedWidth = 0.0f;
+
+    float head[3] = {0.0f, kDefaultEyeHeight, 0.0f};
+    float look[3] = {0.0f, 0.0f, -1.0f};
+    headPose(head, look);
+
+    float facing = 0.0f;
+    for (int axis = 0; axis < 3; ++axis)
+      facing += chosen.transform.m[axis][2] * (head[axis] - chosen.transform.m[axis][3]);
+
+    m_dockNudge = facing < 0.0f ? -kDockNudge : kDockNudge;
+
+    note("pmp-xr-host: docking the screen to \"%s\" %llu, %.2f m wide, texture %ux%u, at %.2f "
+         "%.2f %.2f",
+         m_dockKey.c_str(), static_cast<unsigned long long>(chosen.handle), chosen.width,
+         chosen.textureWidth, chosen.textureHeight, chosen.transform.m[0][3],
+         chosen.transform.m[1][3], chosen.transform.m[2][3]);
+
+    if (chosen.textureWidth > 0 && chosen.textureHeight > 0)
+    {
+      const float windowAspect =
+        static_cast<float>(chosen.textureWidth) / static_cast<float>(chosen.textureHeight);
+      if (std::fabs(windowAspect - m_eyeAspect) > 0.05f)
+        note("pmp-xr-host: the window is %.3f wide for its height and each eye is %.3f, so the "
+             "screen will not cover it exactly",
+             windowAspect, m_eyeAspect);
+    }
+
+    applyDock(chosen, true);
+  }
+
+  void Presenter::applyDock(const Neighbour& window, bool force)
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->SetOverlayTransformAbsolute)
+      return;
+
+    HmdMatrix34_t placed = window.transform;
+    for (int row = 0; row < 3; ++row)
+      placed.m[row][3] += window.transform.m[row][2] * m_dockNudge;
+
+    bool moved = force;
+    for (int row = 0; row < 3 && !moved; ++row)
+      for (int column = 0; column < 4 && !moved; ++column)
+        if (std::fabs(placed.m[row][column] - m_dockedTransform.m[row][column]) > 0.0005f)
+          moved = true;
+
+    const bool resized = force || std::fabs(window.width - m_dockedWidth) > 0.001f;
+    const bool reshaped = std::fabs(window.curvature - m_dockedCurvature) > 0.001f ||
+                          std::fabs(window.pitch - m_dockedPitch) > 0.001f ||
+                          window.sortOrder + 1 != m_dockedSortOrder;
+
+    if (!moved && !resized && !reshaped)
+      return;
+
+    if (resized && ovl->SetOverlayWidthInMeters)
+      ovl->SetOverlayWidthInMeters(m_overlay, window.width);
+
+    if (std::fabs(window.curvature - m_dockedCurvature) > 0.001f && ovl->SetOverlayCurvature)
+    {
+      ovl->SetOverlayCurvature(m_overlay, window.curvature);
+      m_dockedCurvature = window.curvature;
+    }
+
+    if (std::fabs(window.pitch - m_dockedPitch) > 0.001f && ovl->SetOverlayPreCurvePitch)
+    {
+      ovl->SetOverlayPreCurvePitch(m_overlay, window.pitch);
+      m_dockedPitch = window.pitch;
+    }
+
+    const uint32_t above = window.sortOrder + 1;
+    if (above != m_dockedSortOrder && ovl->SetOverlaySortOrder)
+    {
+      ovl->SetOverlaySortOrder(m_overlay, above);
+      m_dockedSortOrder = above;
+    }
+
+    const EVROverlayError error =
+      ovl->SetOverlayTransformAbsolute(m_overlay, window.origin, &placed);
+    if (error != EVROverlayError_VROverlayError_None)
+    {
+      note("pmp-xr-host: the screen would not follow the window (%d)", static_cast<int>(error));
+      return;
+    }
+
+    m_dockedTransform = placed;
+    m_dockedWidth = window.width;
+    m_screenPlaced = true;
+  }
+
+  void Presenter::trackDock()
+  {
+    Neighbour window;
+    if (!readNeighbour(m_dock, window) || !window.placed)
+    {
+      if (++m_dockLosses < kDockLossLimit)
+        return;
+
+      note("pmp-xr-host: the window the screen was docked to is gone, looking for another");
+      m_docked = false;
+      m_dock = k_ulOverlayHandleInvalid;
+      m_dockLosses = 0;
+      m_surveyDone = false;
+      m_surveyRunning = false;
+      m_surveyRounds = 0;
+      return;
+    }
+
+    m_dockLosses = 0;
+
+    if (window.visible != m_dockVisible)
+    {
+      m_dockVisible = window.visible;
+      updateVisibility();
+    }
+
+    applyDock(window, false);
   }
 
   void Presenter::setVisible(bool visible)
   {
-    if (visible == m_visible)
-      return;
+    m_appVisible = visible;
+    updateVisibility();
+  }
 
+  void Presenter::updateVisibility()
+  {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
     if (!ovl || m_overlay == k_ulOverlayHandleInvalid)
       return;
 
-    m_visible = visible;
-    if (visible)
+    const bool wanted = m_appVisible && m_dockVisible;
+    if (wanted == m_shown)
+      return;
+
+    m_shown = wanted;
+    if (wanted)
       ovl->ShowOverlay(m_overlay);
     else if (ovl->HideOverlay)
       ovl->HideOverlay(m_overlay);
 
-    note("pmp-xr-host: the screen is now %s", visible ? "showing" : "out of the way");
+    note("pmp-xr-host: the screen is now %s%s", wanted ? "showing" : "out of the way",
+         m_dockVisible ? "" : " because the window it docks to is not showing");
   }
 
   void Presenter::send(XrProtocol::Type type, uint32_t index)
@@ -994,9 +1404,6 @@ namespace
          "looking%s",
          transform.m[0][3], transform.m[1][3], transform.m[2][3], kScreenDistance,
          tracked ? "" : " (no pose, placed ahead of the standing origin)");
-
-    if (!m_neighboursDescribed)
-      describeNeighbours();
   }
 
   bool Presenter::blitEyes()
@@ -1125,7 +1532,12 @@ namespace
       return;
     }
 
-    if (!m_screenPlaced)
+    if (m_docked)
+      trackDock();
+    else
+      survey();
+
+    if (!m_docked && !m_screenPlaced)
       placeScreen();
 
     if (!blitEyes())

@@ -101,6 +101,7 @@ Q_SIGNALS:
   void webUrlChanged();
 
 protected:
+  bool event(QEvent* ev) override;
   void focusOutEvent(QFocusEvent* ev) override;
   void resizeEvent(QResizeEvent* event) override;
 
