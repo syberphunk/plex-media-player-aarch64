@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QtCore/qglobal.h>
 #include <QVariant>
+#include <QHash>
 #include <QSet>
 #include <QQuickWindow>
 #include <QTimer>
@@ -228,6 +229,7 @@ private:
   // Call resume() when done.
   void startCodecsLoading(std::function<void()> resume);
   void updateVideoAspectSettings();
+  void setVideoProperty(const QString& name, const QVariant& value);
   QVariantList findStreamsForURL(const QString &url);
   void reselectStream(const QString &streamSelection, MediaType target);
   void probeLoadfileSignature();
@@ -256,6 +258,7 @@ private:
   bool m_doAc3Transcoding;
   QStringList m_passthroughCodecs;
   QStringList m_videoDecoderPreference;
+  QHash<QString, QVariant> m_videoProperties;
   QVariantMap m_serverMediaInfo;
   QString m_currentSubtitleStream;
   QString m_currentAudioStream;

@@ -51,6 +51,25 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.26" date="2026-10-28">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>Changing a 3D setting while a file was playing stopped the app responding,
+              and it would then not quit. The 3D settings are held in the same group as
+              the video settings, and a change to any setting in that group re-applied
+              the whole video configuration to the player, the decoder included, part
+              way through a stream. Each video setting is now sent to the player only
+              when its value has actually changed, so a 3D setting no longer touches
+              playback at all.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>The 3D section comes before the key list in the settings menu.</li>
+          <li>The key list is behind a button, so the settings list is shorter.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.25" date="2026-10-28">
       <description>
         <p>Fixed:</p>

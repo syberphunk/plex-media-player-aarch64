@@ -44,6 +44,8 @@ FocusScope
   property bool customPathOpen: false
   property string customPath: ""
 
+  property bool keyListOpen: false
+
   property bool steamOffer: false
   property bool steamOfferShown: false
   property string steamStatus: ""
@@ -75,6 +77,7 @@ FocusScope
 
       customPathOpen = cfg && cfg.downloadPreset === "custom"
       customPath = cfg ? cfg.downloadDir : ""
+      keyListOpen = false
       Qt.callLater(menu.takeFocus)
       return;
     }
@@ -1337,6 +1340,117 @@ FocusScope
         Heading
         {
           width: parent.width
+          visible: menu.xr !== null && menu.xr.supported
+          text: qsTr("Stereoscopic 3D")
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.xr !== null && menu.xr.supported
+          text: qsTr("Side-by-side and over-under files can be shown with real "
+                     + "depth through the headset. The headset is driven by a "
+                     + "helper outside the sandbox, which Plex starts only while "
+                     + "this is on.")
+        }
+
+        Toggle
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported
+          label: qsTr("Play 3D files through the headset")
+          hint: qsTr("Off plays them flat, as a doubled image")
+          checked: menu.xr !== null && menu.xr.enabled
+          onToggled: function(value)
+          {
+            if (menu.xr)
+              menu.xr.enabled = value
+          }
+        }
+
+        Picker
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          label: qsTr("How 3D files are packed")
+          hint: qsTr("Left as worked out, unless a file is wrong and needs saying")
+          options: [
+            { value: "auto", label: qsTr("Work it out per file") },
+            { value: "sbs_half", label: qsTr("Side-by-side, half width") },
+            { value: "sbs", label: qsTr("Side-by-side, full width") },
+            { value: "ou_half", label: qsTr("Over-under, half height") },
+            { value: "ou", label: qsTr("Over-under, full height") },
+            { value: "mono", label: qsTr("Treat everything as 2D") }
+          ]
+          current: menu.xr ? menu.xr.formatOverride : "auto"
+          currentLabel: menu.packingLabel(menu.xr ? menu.xr.formatOverride : "auto")
+          onPicked: function(value)
+          {
+            if (menu.xr)
+              menu.xr.formatOverride = value
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          text: menu.packingStatusText()
+        }
+
+        Toggle
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          label: qsTr("Swap left and right eye")
+          hint: qsTr("For a file whose eyes are the other way round")
+          checked: menu.xr !== null && menu.xr.swapEyes
+          onToggled: function(value)
+          {
+            if (menu.xr)
+              menu.xr.swapEyes = value
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          text: menu.xrStatusText()
+        }
+
+        Item
+        {
+          width: parent.width
+          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
+          height: visible ? Math.round(96 * menu.u) : 0
+
+          Btn
+          {
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            enabled: menu.xr !== null && !menu.xr.busy
+            label: menu.xr && menu.xr.busy
+                     ? qsTr("Checking...")
+                     : qsTr("Check the headset")
+            hint: qsTr("Takes the headset over for a moment to prove both eyes "
+                       + "can be drawn to")
+            minW: 330
+            onClicked:
+            {
+              if (menu.xr)
+                menu.xr.testOutput()
+            }
+          }
+        }
+
+        Heading
+        {
+          width: parent.width
           text: qsTr("Keys and remotes")
         }
 
@@ -1386,17 +1500,36 @@ FocusScope
           }
         }
 
+        Item
+        {
+          width: parent.width
+          height: Math.round(96 * menu.u)
+
+          Btn
+          {
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            label: menu.keyListOpen ? qsTr("Hide the key list")
+                                    : qsTr("Show the key list")
+            hint: qsTr("The keys Plex already answers to")
+            minW: 330
+            onClicked: menu.keyListOpen = !menu.keyListOpen
+          }
+        }
+
         Note
         {
           width: parent.width - Math.round(36 * menu.u)
           x: Math.round(18 * menu.u)
+          visible: menu.keyListOpen
           text: qsTr("These are the keys Plex already answers to. Remotes and CEC devices "
                      + "send the same actions.")
         }
 
         Repeater
         {
-          model: cfg ? cfg.keyBindings : []
+          model: menu.keyListOpen && cfg ? cfg.keyBindings : []
 
           Item
           {
@@ -1520,117 +1653,6 @@ FocusScope
             hint: qsTr("Close Plex and ask Steam to start it again")
             minW: 330
             onClicked: menu.relaunchViaSteam()
-          }
-        }
-
-        Heading
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported
-          text: qsTr("Stereoscopic 3D")
-        }
-
-        Note
-        {
-          width: parent.width - Math.round(36 * menu.u)
-          x: Math.round(18 * menu.u)
-          visible: menu.xr !== null && menu.xr.supported
-          text: qsTr("Side-by-side and over-under files can be shown with real "
-                     + "depth through the headset. The headset is driven by a "
-                     + "helper outside the sandbox, which Plex starts only while "
-                     + "this is on.")
-        }
-
-        Toggle
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported
-          label: qsTr("Play 3D files through the headset")
-          hint: qsTr("Off plays them flat, as a doubled image")
-          checked: menu.xr !== null && menu.xr.enabled
-          onToggled: function(value)
-          {
-            if (menu.xr)
-              menu.xr.enabled = value
-          }
-        }
-
-        Picker
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          label: qsTr("How 3D files are packed")
-          hint: qsTr("Left as worked out, unless a file is wrong and needs saying")
-          options: [
-            { value: "auto", label: qsTr("Work it out per file") },
-            { value: "sbs_half", label: qsTr("Side-by-side, half width") },
-            { value: "sbs", label: qsTr("Side-by-side, full width") },
-            { value: "ou_half", label: qsTr("Over-under, half height") },
-            { value: "ou", label: qsTr("Over-under, full height") },
-            { value: "mono", label: qsTr("Treat everything as 2D") }
-          ]
-          current: menu.xr ? menu.xr.formatOverride : "auto"
-          currentLabel: menu.packingLabel(menu.xr ? menu.xr.formatOverride : "auto")
-          onPicked: function(value)
-          {
-            if (menu.xr)
-              menu.xr.formatOverride = value
-          }
-        }
-
-        Note
-        {
-          width: parent.width - Math.round(36 * menu.u)
-          x: Math.round(18 * menu.u)
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          text: menu.packingStatusText()
-        }
-
-        Toggle
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          label: qsTr("Swap left and right eye")
-          hint: qsTr("For a file whose eyes are the other way round")
-          checked: menu.xr !== null && menu.xr.swapEyes
-          onToggled: function(value)
-          {
-            if (menu.xr)
-              menu.xr.swapEyes = value
-          }
-        }
-
-        Note
-        {
-          width: parent.width - Math.round(36 * menu.u)
-          x: Math.round(18 * menu.u)
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          text: menu.xrStatusText()
-        }
-
-        Item
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          height: visible ? Math.round(96 * menu.u) : 0
-
-          Btn
-          {
-            anchors.left: parent.left
-            anchors.leftMargin: Math.round(18 * menu.u)
-            anchors.verticalCenter: parent.verticalCenter
-            enabled: menu.xr !== null && !menu.xr.busy
-            label: menu.xr && menu.xr.busy
-                     ? qsTr("Checking...")
-                     : qsTr("Check the headset")
-            hint: qsTr("Takes the headset over for a moment to prove both eyes "
-                       + "can be drawn to")
-            minW: 330
-            onClicked:
-            {
-              if (menu.xr)
-                menu.xr.testOutput()
-            }
           }
         }
 

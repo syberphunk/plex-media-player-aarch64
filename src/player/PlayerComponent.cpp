@@ -1284,6 +1284,17 @@ void PlayerComponent::updateSubtitleSettings()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::setVideoProperty(const QString& name, const QVariant& value)
+{
+  auto it = m_videoProperties.constFind(name);
+  if (it != m_videoProperties.constEnd() && it.value() == value)
+    return;
+
+  m_videoProperties[name] = value;
+  mpv::qt::set_property(m_mpv, name, value);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerComponent::updateVideoAspectSettings()
 {
   QVariant mode = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "aspect").toString();
@@ -1324,10 +1335,10 @@ void PlayerComponent::updateVideoAspectSettings()
     disableScaling = true;
   }
 
-  mpv::qt::set_property(m_mpv, "video-unscaled", disableScaling);
-  mpv::qt::set_property(m_mpv, "video-aspect-override", forceAspect);
-  mpv::qt::set_property(m_mpv, "keepaspect", keepAspect);
-  mpv::qt::set_property(m_mpv, "panscan", panScan);
+  setVideoProperty(QStringLiteral("video-unscaled"), disableScaling);
+  setVideoProperty(QStringLiteral("video-aspect-override"), forceAspect);
+  setVideoProperty(QStringLiteral("keepaspect"), keepAspect);
+  setVideoProperty(QStringLiteral("panscan"), panScan);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1380,7 +1391,7 @@ void PlayerComponent::updateVideoSettings()
     return;
 
   QVariant syncMode = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "sync_mode");
-  mpv::qt::set_property(m_mpv, "video-sync", syncMode);
+  setVideoProperty(QStringLiteral("video-sync"), syncMode.toString());
 
   QString hardwareDecodingMode = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "hardwareDecoding").toString();
   QString hwdecMode = "no";
@@ -1402,43 +1413,49 @@ void PlayerComponent::updateVideoSettings()
     hwdecMode = "auto-copy";
   }
 
-  mpv::qt::set_property(m_mpv, "hwdec", hwdecMode);
+  setVideoProperty(QStringLiteral("hwdec"), hwdecMode);
 
-  m_videoDecoderPreference.clear();
+  QStringList preference;
   if (hwdecMode != "no")
   {
     for (const QString& codec : SessionEnv::v4l2DecodeCodecs())
-      m_videoDecoderPreference << codec + "_v4l2m2m";
+      preference << codec + "_v4l2m2m";
   }
 
-  if (!m_videoDecoderPreference.isEmpty())
+  if (preference != m_videoDecoderPreference)
   {
-    QLOG_INFO() << "V4L2 stateful decoding available:" << qPrintable(SessionEnv::v4l2DecodeReport());
-    QLOG_INFO() << "preferring video decoders"
-                << qPrintable(m_videoDecoderPreference.join(","))
-                << "- any other codec falls back to software";
-    QLOG_INFO() << "V4L2 decoder emits at most" << SessionEnv::v4l2DecodeBitDepth()
-                << "bit; deeper streams will use software decoding";
-  }
-  else if (hwdecMode != "no")
-  {
-    QLOG_INFO() << "no V4L2 stateful decoding:" << qPrintable(SessionEnv::v4l2DecodeReport());
-  }
+    m_videoDecoderPreference = preference;
 
-  mpv::qt::set_property(m_mpv, "vd", m_videoDecoderPreference.join(","));
+    if (!m_videoDecoderPreference.isEmpty())
+    {
+      QLOG_INFO() << "V4L2 stateful decoding available:" << qPrintable(SessionEnv::v4l2DecodeReport());
+      QLOG_INFO() << "preferring video decoders"
+                  << qPrintable(m_videoDecoderPreference.join(","))
+                  << "- any other codec falls back to software";
+      QLOG_INFO() << "V4L2 decoder emits at most" << SessionEnv::v4l2DecodeBitDepth()
+                  << "bit; deeper streams will use software decoding";
+    }
+    else if (hwdecMode != "no")
+    {
+      QLOG_INFO() << "no V4L2 stateful decoding:" << qPrintable(SessionEnv::v4l2DecodeReport());
+    }
+
+    mpv::qt::set_property(m_mpv, "vd", m_videoDecoderPreference.join(","));
+  }
 
   QVariant deinterlace = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "deinterlace");
-  mpv::qt::set_property(m_mpv, "deinterlace", deinterlace.toBool() ? "yes" : "no");
+  setVideoProperty(QStringLiteral("deinterlace"),
+                   deinterlace.toBool() ? QStringLiteral("yes") : QStringLiteral("no"));
 
   double displayFps = DisplayComponent::Get().currentRefreshRate();
   if (qIsFinite(displayFps) && displayFps > 0)
-    mpv::qt::set_property(m_mpv, "display-fps-override", displayFps);
+    setVideoProperty(QStringLiteral("display-fps-override"), displayFps);
 
   setAudioDelay(m_playbackAudioDelay);
 
   QVariant cache = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "cache");
-  mpv::qt::set_property(m_mpv, "cache", "yes");
-  mpv::qt::set_property(m_mpv, "demuxer-max-bytes", (qint64)cache.toInt() * 1024 * 1024);
+  setVideoProperty(QStringLiteral("cache"), QStringLiteral("yes"));
+  setVideoProperty(QStringLiteral("demuxer-max-bytes"), (qint64)cache.toInt() * 1024 * 1024);
 
   updateVideoAspectSettings();
 }
