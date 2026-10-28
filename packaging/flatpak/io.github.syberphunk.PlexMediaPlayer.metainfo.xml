@@ -66,6 +66,10 @@
           <li>The screen is placed two metres in front of wherever the headset is looking
               when the first frame arrives, and the button in the 3D settings puts it
               back there.</li>
+          <li>The shape of the screen is measured once the first picture has been handed
+              over and corrected if it does not match the shape of the video, because a
+              side by side picture is twice as wide as what each eye is shown and SteamVR
+              is not documented as to which of the two it takes the shape from.</li>
           <li>The log records which SteamVR interfaces answered, the size of the picture
               being submitted and where the screen was placed.</li>
         </ul>

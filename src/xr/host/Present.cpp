@@ -89,6 +89,8 @@ namespace
     void frame();
     bool blitEyes();
     void placeScreen();
+    bool measureQuad(float& width, float& height);
+    void calibrateAspect();
 
     uint32_t memoryType(uint32_t bits, VkMemoryPropertyFlags flags) const;
     std::vector<const char*> wantedInstanceExtensions();
@@ -121,6 +123,8 @@ namespace
     uint32_t m_targetWidth = 0;
     uint32_t m_targetHeight = 0;
     bool m_targetWritten = false;
+    bool m_calibrated = false;
+    float m_texelAspect = 1.0f;
 
     Source m_sources[XrProtocol::kBufferCount];
     uint32_t m_sourceWidth = 0;
@@ -436,6 +440,8 @@ namespace
     ovl->SetOverlayFlag(m_overlay, VROverlayFlags_SortWithNonSceneOverlays, true);
     ovl->SetOverlayTextureColorSpace(m_overlay, EColorSpace_ColorSpace_Gamma);
     ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
+    if (ovl->SetOverlayTexelAspect)
+      ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
     ovl->SetOverlaySortOrder(m_overlay, kSortOrder);
     ovl->SetOverlayAlpha(m_overlay, 1.0f);
 
@@ -600,12 +606,8 @@ namespace
     if (rectWidth < 2 || rectHeight < 2)
       return false;
 
-    float aspect = m_eyeAspect;
-    if (!(aspect > 0.1f && aspect < 10.0f))
-      aspect = static_cast<float>(rectWidth) / static_cast<float>(rectHeight);
-
+    uint32_t eyeWidth = rectWidth;
     uint32_t eyeHeight = rectHeight;
-    uint32_t eyeWidth = static_cast<uint32_t>(std::lround(eyeHeight * aspect));
 
     while ((eyeWidth * 2 > m_maxDimension || eyeHeight > m_maxDimension) && eyeHeight > 2)
     {
@@ -675,8 +677,132 @@ namespace
 
     m_targetWidth = width;
     m_targetHeight = height;
+    m_calibrated = false;
+
+    if (m_ovr.overlay && m_ovr.overlay->SetOverlayMouseScale)
+    {
+      HmdVector2_t scale{};
+      scale.v[0] = static_cast<float>(width);
+      scale.v[1] = static_cast<float>(height);
+      m_ovr.overlay->SetOverlayMouseScale(m_overlay, &scale);
+    }
+
     note("pmp-xr-host: overlay texture %ux%u, %ux%u per eye", width, height, eyeWidth, eyeHeight);
     return true;
+  }
+
+  bool Presenter::measureQuad(float& width, float& height)
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->GetTransformForOverlayCoordinates)
+      return false;
+
+    HmdVector2_t scale{};
+    scale.v[0] = static_cast<float>(m_targetWidth);
+    scale.v[1] = static_cast<float>(m_targetHeight);
+    if (ovl->GetOverlayMouseScale)
+    {
+      HmdVector2_t reported{};
+      if (ovl->GetOverlayMouseScale(m_overlay, &reported) ==
+            EVROverlayError_VROverlayError_None &&
+          reported.v[0] > 1.0f && reported.v[1] > 1.0f)
+        scale = reported;
+    }
+
+    HmdMatrix34_t origin{};
+    HmdMatrix34_t acrossPoint{};
+    HmdMatrix34_t upPoint{};
+
+    HmdVector2_t at{};
+    at.v[0] = 0.0f;
+    at.v[1] = 0.0f;
+    if (ovl->GetTransformForOverlayCoordinates(m_overlay,
+                                               ETrackingUniverseOrigin_TrackingUniverseStanding,
+                                               at, &origin) !=
+        EVROverlayError_VROverlayError_None)
+      return false;
+
+    at.v[0] = scale.v[0];
+    at.v[1] = 0.0f;
+    if (ovl->GetTransformForOverlayCoordinates(m_overlay,
+                                               ETrackingUniverseOrigin_TrackingUniverseStanding,
+                                               at, &acrossPoint) !=
+        EVROverlayError_VROverlayError_None)
+      return false;
+
+    at.v[0] = 0.0f;
+    at.v[1] = scale.v[1];
+    if (ovl->GetTransformForOverlayCoordinates(m_overlay,
+                                               ETrackingUniverseOrigin_TrackingUniverseStanding,
+                                               at, &upPoint) !=
+        EVROverlayError_VROverlayError_None)
+      return false;
+
+    const auto span = [](const HmdMatrix34_t& a, const HmdMatrix34_t& b) {
+      const float dx = b.m[0][3] - a.m[0][3];
+      const float dy = b.m[1][3] - a.m[1][3];
+      const float dz = b.m[2][3] - a.m[2][3];
+      return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    width = span(origin, acrossPoint);
+    height = span(origin, upPoint);
+    return width > 0.001f && height > 0.001f;
+  }
+
+  void Presenter::calibrateAspect()
+  {
+    m_calibrated = true;
+
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->SetOverlayTexelAspect)
+      return;
+
+    float wanted = m_eyeAspect;
+    if (!(wanted > 0.1f && wanted < 10.0f))
+      wanted = kDefaultAspect;
+
+    float quadWidth = 0.0f;
+    float quadHeight = 0.0f;
+    if (!measureQuad(quadWidth, quadHeight))
+    {
+      const float full = static_cast<float>(m_targetWidth) / static_cast<float>(m_targetHeight);
+      m_texelAspect = wanted / full;
+      ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
+      note("pmp-xr-host: quad not measurable, texel aspect %.3f for %.3f from %.3f",
+           m_texelAspect, wanted, full);
+      return;
+    }
+
+    const float measured = quadWidth / quadHeight;
+    if (std::fabs(measured - wanted) < 0.01f * wanted)
+    {
+      note("pmp-xr-host: quad %.3fx%.3f m, aspect %.3f, wanted %.3f", quadWidth, quadHeight,
+           measured, wanted);
+      return;
+    }
+
+    m_texelAspect *= wanted / measured;
+    if (!(m_texelAspect > 0.01f && m_texelAspect < 100.0f))
+    {
+      note("pmp-xr-host: refusing texel aspect %.3f", m_texelAspect);
+      m_texelAspect = 1.0f;
+      return;
+    }
+
+    ovl->SetOverlayTexelAspect(m_overlay, m_texelAspect);
+    ovl->SetOverlayWidthInMeters(m_overlay, kScreenWidth);
+
+    float checkWidth = 0.0f;
+    float checkHeight = 0.0f;
+    if (measureQuad(checkWidth, checkHeight))
+      note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f, now %.3fx%.3f m "
+           "aspect %.3f",
+           measured, wanted, m_texelAspect, checkWidth, checkHeight,
+           checkWidth / checkHeight);
+    else
+      note("pmp-xr-host: quad aspect %.3f, wanted %.3f, texel aspect %.3f", measured, wanted,
+           m_texelAspect);
   }
 
   void Presenter::send(XrProtocol::Type type, uint32_t index)
@@ -975,6 +1101,9 @@ namespace
       note("pmp-xr-host: presenting %ux%u side by side", m_targetWidth, m_targetHeight);
       m_presented = 1;
     }
+
+    if (!m_calibrated)
+      calibrateAspect();
   }
 
   void Presenter::pollEvents(bool& exit)
