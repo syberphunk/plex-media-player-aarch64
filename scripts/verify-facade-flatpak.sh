@@ -15,6 +15,7 @@ command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; ex
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found (apt install ffmpeg)" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl not found" >&2; exit 1; }
+command -v xdotool >/dev/null || { echo "xdotool not found (apt install xdotool)" >&2; exit 1; }
 
 WIDTH=1280
 HEIGHT=720
@@ -86,6 +87,9 @@ rm -rf "$HOME/.var/app/$APP_ID/config/plex.tv" \
        "$HOME/.var/app/$APP_ID/cache/qtshadercache-"*
 
 EXTRA_ENV=()
+if [ "$ARCH" != "$(flatpak --default-arch)" ]; then
+  EXTRA_ENV+=(--env=PMP_STARTUP_DEADLINE="$RUN_SECONDS")
+fi
 if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
   echo "==> Chromium flags from the environment: $QTWEBENGINE_CHROMIUM_FLAGS"
   EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS")
@@ -97,6 +101,9 @@ fi
 GRAB_AT=$((RUN_SECONDS - 8))
 [ "$GRAB_AT" -lt 4 ] && GRAB_AT=$((RUN_SECONDS / 2))
 SHOT=$OUT/shot.rgb
+POINTER=$OUT/pointer.txt
+GL_STATE="$HOME/.var/app/$APP_ID/data/plexmediaplayer/gl-state"
+rm -f "$GL_STATE"
 
 echo "==> running headless for ${RUN_SECONDS}s, screen grab at ${GRAB_AT}s"
 (
@@ -105,6 +112,39 @@ echo "==> running headless for ${RUN_SECONDS}s, screen grab at ${GRAB_AT}s"
     -frames:v 1 -pix_fmt rgb24 -f rawvideo "$SHOT" </dev/null
 ) &
 GRAB_PID=$!
+
+(
+  deadline=$((SECONDS + GRAB_AT - 4))
+  window=
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    window=$(xdotool search --onlyvisible --name 'Plex Media Player' 2>/dev/null | tail -1)
+    [ -n "$window" ] && break
+    sleep 1
+  done
+
+  if [ -z "$window" ]; then
+    echo "pointer no-window" > "$POINTER"
+    exit 0
+  fi
+
+  moves=0
+  wheels=0
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    x=$(( (RANDOM % (WIDTH - 40)) + 20 ))
+    y=$(( (RANDOM % (HEIGHT - 40)) + 20 ))
+    if xdotool mousemove --window "$window" "$x" "$y" 2>/dev/null; then
+      moves=$((moves + 1))
+    fi
+    if [ $((moves % 11)) -eq 0 ]; then
+      xdotool click --window "$window" 4 2>/dev/null && wheels=$((wheels + 1))
+      xdotool click --window "$window" 5 2>/dev/null && wheels=$((wheels + 1))
+    fi
+    sleep 0.2
+  done
+
+  echo "pointer delivered window=$window moves=$moves wheels=$wheels" > "$POINTER"
+) &
+POINTER_PID=$!
 
 PROBE=$OUT/probe.txt
 (
@@ -151,6 +191,7 @@ echo "    exited with $rc (124 = ran until the timeout, which is the good case)"
 
 wait "$GRAB_PID" 2>/dev/null || true
 wait "$PROBE_PID" 2>/dev/null || true
+wait "$POINTER_PID" 2>/dev/null || true
 flatpak kill "$APP_ID" 2>/dev/null || true
 
 cat > "$OUT/pixels.py" <<'PY'
@@ -216,6 +257,22 @@ for marker in \
 done
 
 echo
+echo "==> synthetic pointer input"
+if [ -f "$POINTER" ]; then
+  sed 's/^/    /' "$POINTER"
+else
+  echo "    the pointer driver produced nothing"
+fi
+
+echo
+echo "==> recorded process state"
+if [ -f "$GL_STATE" ]; then
+  sed 's/^/    /' "$GL_STATE"
+else
+  echo "    no gl-state file was written"
+fi
+
+echo
 echo "==> embedded server exposure"
 if [ -f "$PROBE" ]; then
   sed 's/^/    /' "$PROBE"
@@ -273,6 +330,31 @@ if [ -s "$SHOT" ]; then
   fi
 else
   echo "    FAIL  no screen grab was captured"
+  fail=1
+fi
+
+if [ "$rc" -eq 124 ]; then
+  echo "    pass  the app ran until the timeout without exiting"
+else
+  echo "    FAIL  the app exited on its own with $rc before the timeout"
+  fail=1
+fi
+
+crash=$(grep -c '^crash=' "$GL_STATE" 2>/dev/null || true)
+if [ "${crash:-0}" -eq 0 ]; then
+  echo "    pass  the app recorded no crash"
+else
+  echo "    FAIL  the app recorded a crash: $(grep '^crash=' "$GL_STATE" | tr '\n' ' ')"
+  echo "          the backtrace is in ./facade-verify-$ARCH.log"
+  fail=1
+fi
+
+pointer=$(awk '/^pointer/{print $2}' "$POINTER" 2>/dev/null || true)
+if [ "$pointer" = delivered ]; then
+  echo "    pass  the app survived synthetic pointer input"
+else
+  echo "    FAIL  no pointer input was delivered to the window ($pointer)"
+  echo "          the input paths in the app were not exercised by this run"
   fail=1
 fi
 

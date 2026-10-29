@@ -29,6 +29,8 @@
 #include "ui/ErrorMessage.h"
 #include "UniqueApplication.h"
 #include "utils/Log.h"
+#include "shared/CrashReport.h"
+#include "shared/Paths.h"
 #include "shared/SessionEnv.h"
 #include "shared/Watchdog.h"
 #include "xr/XrPresenter.h"
@@ -36,6 +38,57 @@
 
 #include "SignalManager.h"
 
+static QString g_webEngineReport;
+
+static void preinitWebEngine()
+{
+  if (!SessionEnv::insideGamescope())
+    return;
+
+  if (qEnvironmentVariableIsSet("PMP_WEBENGINE_GPU"))
+  {
+    if (qgetenv("PMP_WEBENGINE_GPU") != "0")
+    {
+      g_webEngineReport = QStringLiteral("Chromium keeps the GPU path (forced by PMP_WEBENGINE_GPU)");
+      return;
+    }
+  }
+
+  QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+  if (flags.contains("--disable-gpu") || flags.contains("--use-gl") || flags.contains("--use-angle"))
+  {
+    g_webEngineReport = QStringLiteral("Chromium flags came from the environment: %1")
+                          .arg(QString::fromLocal8Bit(flags));
+    return;
+  }
+
+  if (!flags.isEmpty() && !flags.endsWith(' '))
+    flags += ' ';
+  flags += "--disable-gpu --disable-gpu-compositing";
+  qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
+
+  g_webEngineReport = QStringLiteral("--disable-gpu (Chromium rasterises the client UI; the EGL "
+                                     "display under gamescope is kept for Qt Quick and the "
+                                     "stereo buffers, and mpv decodes media in-process)");
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
+static int startupDeadlineSeconds()
+{
+  const int fallback = 20;
+
+  if (!qEnvironmentVariableIsSet("PMP_STARTUP_DEADLINE"))
+    return fallback;
+
+  bool ok = false;
+  const int seconds = qEnvironmentVariableIntValue("PMP_STARTUP_DEADLINE", &ok);
+  if (!ok || seconds < 5 || seconds > 1800)
+    return fallback;
+
+  return seconds;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////
 static void preinitPlatform()
 {
 #if defined(Q_OS_UNIX)
@@ -155,6 +208,8 @@ int main(int argc, char *argv[])
       qputenv("QTWEBENGINE_REMOTE_DEBUGGING",
               QString("127.0.0.1:%1").arg(WEB_INSPECTOR_PORT).toUtf8());
 
+    preinitWebEngine();
+
     QtWebEngineQuick::initialize();
 
     QApplication app(argc, argv);
@@ -176,6 +231,10 @@ int main(int argc, char *argv[])
     Log::Init();
     if (parser.isSet("terminal"))
       Log::EnableTerminalOutput();
+    else
+      CrashReport::captureStandardError(Paths::logDir("stderr.log"));
+
+    CrashReport::install(openGLStatePath());
 
     QLOG_INFO() << "Process:" << qPrintable(QStringLiteral("pid=%1").arg(QCoreApplication::applicationPid()));
     if (!uniqueApp->note().isEmpty())
@@ -192,6 +251,10 @@ int main(int argc, char *argv[])
     {
       QLOG_INFO() << "GL integration:" << qPrintable(openGLReport());
     }
+    if (!g_webEngineReport.isEmpty())
+    {
+      QLOG_INFO() << "Web engine:" << qPrintable(g_webEngineReport);
+    }
 
     if (XrSupport::autoProbeAllowed())
     {
@@ -200,7 +263,7 @@ int main(int argc, char *argv[])
 
     detectOpenGLLate();
 
-    Watchdog::armStartup(20, openGLStatePath());
+    Watchdog::armStartup(startupDeadlineSeconds(), openGLStatePath());
 
     QObject::connect(&app, &QCoreApplication::aboutToQuit, [] {
       QLOG_INFO() << "Shutdown: the application is quitting";

@@ -26,6 +26,7 @@ struct GLState
   QString integration;
   QString stall;
   int strikes = 0;
+  bool pending = false;
 };
 
 static QString statePath()
@@ -61,21 +62,25 @@ static GLState readState()
       state.stall = value;
     else if (key == QLatin1String("strikes"))
       state.strikes = value.toInt();
+    else if (key == QLatin1String("pending"))
+      state.pending = value.toInt() != 0;
   }
 
   return state;
 }
 
-static void writeState(const QString& integration, int strikes)
+static void writeState(const QString& integration, int strikes, bool pending)
 {
   QFile file(statePath());
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     return;
 
-  const QString text = QStringLiteral("version=%1\nintegration=%2\nstrikes=%3\n")
+  const QString text = QStringLiteral("version=%1\nintegration=%2\nstrikes=%3\npending=%4\n")
                          .arg(Version::GetVersionString(), integration)
-                         .arg(strikes);
+                         .arg(strikes)
+                         .arg(pending ? 1 : 0);
   file.write(text.toLatin1());
+  file.flush();
   file.close();
 }
 
@@ -152,7 +157,7 @@ static void useEgl(int attempt)
   qputenv("QT_XCB_GL_INTEGRATION", "xcb_egl");
   if (attempt > 0)
   {
-    writeState(QStringLiteral("xcb_egl"), g_strikes);
+    writeState(QStringLiteral("xcb_egl"), g_strikes, true);
     g_openGLReport = QStringLiteral("QT_XCB_GL_INTEGRATION=xcb_egl (X11 under gamescope; GLX "
                                     "offers no EGL display; attempt %1 of %2)")
                        .arg(attempt).arg(kEglAttemptLimit);
@@ -171,18 +176,15 @@ static void chooseEglAutomatically()
   if (sameBuild)
   {
     g_strikes = state.strikes;
-    if (state.stall == QLatin1String("frame"))
-    {
-      if (state.integration == QLatin1String("xcb_egl"))
-        g_strikes++;
-      else
-        g_strikes = 0;
-    }
+
+    const bool neverPresented = state.pending || !state.stall.isEmpty();
+    if (neverPresented && state.integration == QLatin1String("xcb_egl"))
+      g_strikes++;
   }
 
   if (g_strikes >= kEglAttemptLimit)
   {
-    writeState(QStringLiteral("glx"), g_strikes);
+    writeState(QStringLiteral("glx"), g_strikes, false);
     g_openGLReport = QStringLiteral("xcb_egl is off for this build (%1 starts with it presented "
                                     "no frame); GLX instead, so no 3D")
                        .arg(g_strikes);
@@ -232,7 +234,7 @@ void confirmOpenGLSession()
     return;
 
   g_strikes = 0;
-  writeState(QStringLiteral("xcb_egl"), 0);
+  writeState(QStringLiteral("xcb_egl"), 0, false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

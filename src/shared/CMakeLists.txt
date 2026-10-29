@@ -1,6 +1,7 @@
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
 add_library(shared STATIC
+  CrashReport.cpp CrashReport.h
   Paths.cpp Paths.h
   SessionEnv.cpp SessionEnv.h
   Watchdog.cpp Watchdog.h

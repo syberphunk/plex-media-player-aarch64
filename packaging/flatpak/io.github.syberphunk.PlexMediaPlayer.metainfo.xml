@@ -51,6 +51,32 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.34" date="2026-10-29">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>Starting to a black screen that had to be cleared by restarting the
+              headset. The app was dying as the web engine was created, and the fallback
+              meant to give up on the EGL graphics path after two such starts could never
+              run, because a start that died recorded nothing and reset the count instead
+              of adding to it. A start is now marked when it begins and cleared only once
+              a frame has been drawn, so starts that die are counted and the fallback is
+              reached.</li>
+          <li>The web engine no longer brings up its own GPU path inside the headset
+              compositor. It draws the Plex interface only; media is decoded and
+              presented separately, and the 3D path is unaffected.</li>
+        </ul>
+        <p>Added:</p>
+        <ul>
+          <li>A crash handler that writes the signal, the faulting address and a
+              backtrace, and records the crash for the next start to read.</li>
+          <li>Everything the app writes to standard error is kept in a log file, so
+              failures that only report there are no longer lost when the app is started
+              from Steam.</li>
+          <li>The startup deadline can be set, for slow and emulated environments.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.33" date="2026-10-28">
       <description>
         <p>Changed:</p>

@@ -17,6 +17,7 @@
 #include "shared/SessionEnv.h"
 #include "shared/Watchdog.h"
 #include "xr/XrComponent.h"
+#include "xr/XrPresenter.h"
 #include "utils/Utils.h"
 #include "Globals.h"
 #include "EventFilter.h"
@@ -527,7 +528,8 @@ bool KonvergoWindow::event(QEvent* ev)
     case QEvent::Wheel:
     case QEvent::TouchBegin:
     case QEvent::TouchUpdate:
-      XrComponent::Get().noteActivity();
+      if (XrPresenter::exists() && XrPresenter::Get().wanted())
+        XrComponent::Get().noteActivity();
       break;
     default:
       break;
