@@ -6,7 +6,7 @@
 namespace XrProtocol
 {
   const uint32_t kMagic = 0x58504d50;
-  const uint32_t kVersion = 1;
+  const uint32_t kVersion = 2;
   const uint32_t kBufferCount = 3;
   const int kSocketFd = 3;
 
@@ -19,7 +19,8 @@ namespace XrProtocol
     Show = 5,
     Stop = 6,
     Failed = 7,
-    Hide = 8
+    Hide = 8,
+    Place = 9
   };
 
   enum Packing : uint32_t
@@ -48,6 +49,9 @@ namespace XrProtocol
     uint32_t packing;
     uint32_t swapped;
     float eyeAspect;
+
+    float rect[4];
+    float reveal;
   };
 
   inline Message make(Type type)

@@ -24,6 +24,7 @@ public:
   uint32_t framebuffer(int index) const;
   void submit(int index, uint32_t packing, bool swapped, float eyeAspect);
   void setVisible(bool visible);
+  void place(const float rect[4], float reveal);
   bool poll();
 
   const QString& failure() const { return m_failure; }
@@ -51,6 +52,8 @@ private:
   void* m_display = nullptr;
   bool m_ready = false;
   bool m_visible = true;
+  float m_rect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+  float m_reveal = -1.0f;
   QSize m_size;
   uint32_t m_stride = 0;
   uint32_t m_offset = 0;

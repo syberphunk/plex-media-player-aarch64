@@ -6,6 +6,8 @@
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 
+#include <cmath>
+
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <gbm.h>
@@ -306,6 +308,7 @@ bool XrSurface::begin(int socket, const QSize& size)
 
   m_ready = true;
   m_visible = true;
+  m_reveal = -1.0f;
   QLOG_INFO() << "Stereoscopic: sharing" << XrProtocol::kBufferCount << "buffers of"
               << size.width() << "x" << size.height() << "stride" << m_stride << "modifier"
               << QString::number(m_modifier, 16);
@@ -399,6 +402,31 @@ void XrSurface::submit(int index, uint32_t packing, bool swapped, float eyeAspec
   }
 }
 
+void XrSurface::place(const float rect[4], float reveal)
+{
+  if (!m_ready)
+    return;
+
+  bool same = std::fabs(reveal - m_reveal) < 0.001f;
+  for (int edge = 0; edge < 4 && same; ++edge)
+    if (std::fabs(rect[edge] - m_rect[edge]) > 0.0005f)
+      same = false;
+  if (same)
+    return;
+
+  XrProtocol::Message message = XrProtocol::make(XrProtocol::Place);
+  for (int edge = 0; edge < 4; ++edge)
+    message.rect[edge] = rect[edge];
+  message.reveal = reveal;
+
+  if (send(m_socket, &message, sizeof(message), MSG_NOSIGNAL | MSG_DONTWAIT) < 0)
+    return;
+
+  for (int edge = 0; edge < 4; ++edge)
+    m_rect[edge] = rect[edge];
+  m_reveal = reveal;
+}
+
 void XrSurface::setVisible(bool visible)
 {
   if (!m_ready || visible == m_visible)
@@ -490,6 +518,10 @@ void XrSurface::submit(int, uint32_t, bool, float)
 }
 
 void XrSurface::setVisible(bool)
+{
+}
+
+void XrSurface::place(const float[4], float)
 {
 }
 

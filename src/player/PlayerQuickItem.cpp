@@ -26,6 +26,11 @@
 #include <QtGui/qguiapplication_platform.h>
 #endif
 
+namespace
+{
+  const float kControlsReveal = 0.18f;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static void* get_proc_address(void* ctx, const char* name)
 {
@@ -44,7 +49,8 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereo(nullptr), m_stereoSocket(-1), m_stereoGeneration(0),
   m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
-  m_stereoEyeAspect(16.0f / 9.0f), m_stereoVisible(true), m_probeTarget(nullptr),
+  m_stereoEyeAspect(16.0f / 9.0f), m_stereoVisible(true), m_stereoRect{0.0f, 0.0f, 1.0f, 1.0f},
+  m_stereoReveal(0.0f), m_probeTarget(nullptr),
   m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
 {
   m_item->m_renderer = this;
@@ -179,6 +185,9 @@ void PlayerRenderer::syncStereo()
   m_stereoSwapped = presenter.swapped();
   m_stereoEyeAspect = presenter.eyeAspect();
   m_stereoVisible = presenter.overlayVisible();
+
+  presenter.videoRect(m_stereoRect);
+  m_stereoReveal = presenter.controlsActive() ? kControlsReveal : 0.0f;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -279,6 +288,7 @@ bool PlayerRenderer::renderStereo()
     return giveUp();
 
   m_stereo->setVisible(m_stereoVisible);
+  m_stereo->place(m_stereoRect, m_stereoReveal);
 
   const int index = m_stereo->acquire();
   if (index < 0)
@@ -478,6 +488,17 @@ void PlayerQuickItem::updateVideoGeometry()
   {
     setPosition(QPointF(0, 0));
     setSize(QSizeF(win->width(), win->height()));
+  }
+
+  if (XrPresenter::exists() && win->width() > 0 && win->height() > 0)
+  {
+    const qreal across = win->width();
+    const qreal down = win->height();
+    const QPointF at = position();
+    XrPresenter::Get().setVideoRect(
+      static_cast<float>(at.x() / across), static_cast<float>(at.y() / down),
+      static_cast<float>((at.x() + width()) / across),
+      static_cast<float>((at.y() + height()) / down));
   }
 }
 

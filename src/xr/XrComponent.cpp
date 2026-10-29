@@ -41,7 +41,7 @@ bool XrComponent::componentInitialize()
   m_idle->setSingleShot(true);
   m_idle->setInterval(kIdleMs);
   connect(m_idle, &QTimer::timeout, this,
-          []() { XrPresenter::Get().setOverlayVisible(true); });
+          []() { XrPresenter::Get().setControlsActive(false); });
 
   connect(&InputComponent::Get(), &InputComponent::receivedInput, this,
           &XrComponent::noteActivity);
@@ -51,7 +51,7 @@ bool XrComponent::componentInitialize()
 
 void XrComponent::noteActivity()
 {
-  XrPresenter::Get().setOverlayVisible(false);
+  XrPresenter::Get().setControlsActive(true);
   if (m_idle)
     m_idle->start();
 }

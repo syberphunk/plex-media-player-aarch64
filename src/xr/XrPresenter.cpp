@@ -28,6 +28,28 @@ bool XrPresenter::exists()
 
 XrPresenter::XrPresenter(QObject* parent) : QObject(parent)
 {
+  m_rect[0] = 0.0f;
+  m_rect[1] = 0.0f;
+  m_rect[2] = 1.0f;
+  m_rect[3] = 1.0f;
+}
+
+void XrPresenter::setVideoRect(float left, float top, float right, float bottom)
+{
+  if (!(right > left) || !(bottom > top))
+    return;
+
+  m_rect[0] = left;
+  m_rect[1] = top;
+  m_rect[2] = right;
+  m_rect[3] = bottom;
+  m_haveRect = true;
+}
+
+void XrPresenter::videoRect(float out[4]) const
+{
+  for (int edge = 0; edge < 4; ++edge)
+    out[edge] = m_rect[edge];
 }
 
 int XrPresenter::takeSocket()

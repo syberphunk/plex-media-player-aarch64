@@ -35,6 +35,13 @@ public:
   void setOverlayVisible(bool visible) { m_overlayVisible = visible; }
   bool overlayVisible() const { return m_overlayVisible; }
 
+  void setVideoRect(float left, float top, float right, float bottom);
+  void videoRect(float out[4]) const;
+  bool haveVideoRect() const { return m_haveRect; }
+
+  void setControlsActive(bool active) { m_controlsActive = active; }
+  bool controlsActive() const { return m_controlsActive; }
+
   void wantProbe(const QSize& videoSize);
   void resetProbe();
   bool probeWanted() const { return m_probeWanted; }
@@ -60,6 +67,9 @@ private:
   std::atomic<bool> m_wanted{false};
   std::atomic<uint32_t> m_generation{0};
   std::atomic<bool> m_overlayVisible{true};
+  std::atomic<bool> m_controlsActive{false};
+  std::atomic<bool> m_haveRect{false};
+  std::atomic<float> m_rect[4];
   std::atomic<bool> m_impossible{false};
 
   std::atomic<bool> m_probeWanted{false};
