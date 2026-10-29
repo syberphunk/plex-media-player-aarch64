@@ -114,10 +114,14 @@ echo "==> running headless for ${RUN_SECONDS}s, screen grab at ${GRAB_AT}s"
 GRAB_PID=$!
 
 (
+  trap '[ -s "$POINTER" ] || echo "pointer driver-stopped-early" > "$POINTER"' EXIT
+
   deadline=$((SECONDS + GRAB_AT - 4))
   window=
   while [ "$SECONDS" -lt "$deadline" ]; do
-    window=$(xdotool search --onlyvisible --name 'Plex Media Player' 2>/dev/null | tail -1)
+    window=$(xdotool search --onlyvisible --name 'Plex Media Player' 2>/dev/null | tail -1 || true)
+    [ -n "$window" ] || window=$(xdotool search --name 'Plex Media Player' 2>/dev/null | tail -1 || true)
+    [ -n "$window" ] || window=$(xdotool search --class plexmediaplayer 2>/dev/null | tail -1 || true)
     [ -n "$window" ] && break
     sleep 1
   done
@@ -136,8 +140,8 @@ GRAB_PID=$!
       moves=$((moves + 1))
     fi
     if [ $((moves % 11)) -eq 0 ]; then
-      xdotool click --window "$window" 4 2>/dev/null && wheels=$((wheels + 1))
-      xdotool click --window "$window" 5 2>/dev/null && wheels=$((wheels + 1))
+      xdotool click 4 2>/dev/null && wheels=$((wheels + 1))
+      xdotool click 5 2>/dev/null && wheels=$((wheels + 1))
     fi
     sleep 0.2
   done
