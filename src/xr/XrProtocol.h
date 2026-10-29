@@ -52,6 +52,7 @@ namespace XrProtocol
 
     float rect[4];
     float reveal;
+    float window;
   };
 
   inline Message make(Type type)

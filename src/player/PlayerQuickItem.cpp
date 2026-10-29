@@ -50,7 +50,7 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
   m_playbackActive(false), m_stereo(nullptr), m_stereoSocket(-1), m_stereoGeneration(0),
   m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoEyeAspect(16.0f / 9.0f), m_stereoVisible(true), m_stereoRect{0.0f, 0.0f, 1.0f, 1.0f},
-  m_stereoReveal(0.0f), m_probeTarget(nullptr),
+  m_stereoReveal(0.0f), m_stereoWindowAspect(16.0f / 9.0f), m_probeTarget(nullptr),
   m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
 {
   m_item->m_renderer = this;
@@ -188,6 +188,7 @@ void PlayerRenderer::syncStereo()
 
   presenter.videoRect(m_stereoRect);
   m_stereoReveal = presenter.controlsActive() ? kControlsReveal : 0.0f;
+  m_stereoWindowAspect = presenter.windowAspect();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -288,7 +289,7 @@ bool PlayerRenderer::renderStereo()
     return giveUp();
 
   m_stereo->setVisible(m_stereoVisible);
-  m_stereo->place(m_stereoRect, m_stereoReveal);
+  m_stereo->place(m_stereoRect, m_stereoReveal, m_stereoWindowAspect);
 
   const int index = m_stereo->acquire();
   if (index < 0)
@@ -498,7 +499,7 @@ void PlayerQuickItem::updateVideoGeometry()
     XrPresenter::Get().setVideoRect(
       static_cast<float>(at.x() / across), static_cast<float>(at.y() / down),
       static_cast<float>((at.x() + width()) / across),
-      static_cast<float>((at.y() + height()) / down));
+      static_cast<float>((at.y() + height()) / down), static_cast<float>(across / down));
   }
 }
 

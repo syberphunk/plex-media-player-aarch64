@@ -34,10 +34,14 @@ XrPresenter::XrPresenter(QObject* parent) : QObject(parent)
   m_rect[3] = 1.0f;
 }
 
-void XrPresenter::setVideoRect(float left, float top, float right, float bottom)
+void XrPresenter::setVideoRect(float left, float top, float right, float bottom,
+                               float windowAspect)
 {
   if (!(right > left) || !(bottom > top))
     return;
+
+  if (windowAspect > 0.1f && windowAspect < 10.0f)
+    m_windowAspect = windowAspect;
 
   m_rect[0] = left;
   m_rect[1] = top;

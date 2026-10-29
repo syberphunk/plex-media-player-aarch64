@@ -35,9 +35,10 @@ public:
   void setOverlayVisible(bool visible) { m_overlayVisible = visible; }
   bool overlayVisible() const { return m_overlayVisible; }
 
-  void setVideoRect(float left, float top, float right, float bottom);
+  void setVideoRect(float left, float top, float right, float bottom, float windowAspect);
   void videoRect(float out[4]) const;
   bool haveVideoRect() const { return m_haveRect; }
+  float windowAspect() const { return m_windowAspect; }
 
   void setControlsActive(bool active) { m_controlsActive = active; }
   bool controlsActive() const { return m_controlsActive; }
@@ -70,6 +71,7 @@ private:
   std::atomic<bool> m_controlsActive{false};
   std::atomic<bool> m_haveRect{false};
   std::atomic<float> m_rect[4];
+  std::atomic<float> m_windowAspect{16.0f / 9.0f};
   std::atomic<bool> m_impossible{false};
 
   std::atomic<bool> m_probeWanted{false};

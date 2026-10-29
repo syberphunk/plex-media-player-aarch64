@@ -53,6 +53,7 @@ private:
   bool m_stereoVisible;
   float m_stereoRect[4];
   float m_stereoReveal;
+  float m_stereoWindowAspect;
 
   StereoProbe::Detector m_probe;
   QOpenGLFramebufferObject* m_probeTarget;

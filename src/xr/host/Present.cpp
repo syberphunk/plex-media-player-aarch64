@@ -253,6 +253,7 @@ namespace
     float m_eyeAspect = kDefaultAspect;
     float m_rect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
     float m_reveal = 0.0f;
+    float m_windowAspect = 0.0f;
     int m_submitFailures = 0;
   };
 
@@ -1269,8 +1270,20 @@ namespace
     if (!(aspect > 0.1f && aspect < 10.0f))
       aspect = kDefaultAspect;
 
+    float planeHeight = window.planeHeight;
+    const char* heightFrom = "the probed plane";
+    if (m_windowAspect > 0.1f && m_windowAspect < 10.0f)
+    {
+      const float expected = window.planeWidth / m_windowAspect;
+      if (std::fabs(expected - planeHeight) > 0.02f * expected)
+      {
+        planeHeight = expected;
+        heightFrom = "the window's pixel aspect";
+      }
+    }
+
     const float rectWidth = window.planeWidth * spanAcross;
-    const float rectHeight = window.planeHeight * spanUp;
+    const float rectHeight = planeHeight * spanUp;
 
     float fitWidth = rectWidth;
     if (fitWidth > rectHeight * aspect)
@@ -1283,7 +1296,7 @@ namespace
       return;
 
     const float midAcross = 0.5f * (left + right);
-    const float midUp = upper - 0.5f * (heightMeters / window.planeHeight);
+    const float midUp = upper - 0.5f * (heightMeters / planeHeight);
 
     HmdMatrix34_t placed{};
     for (int row = 0; row < 3; ++row)
@@ -1344,10 +1357,12 @@ namespace
     m_screenPlaced = true;
 
     if (force || moved || resized)
-      note("pmp-xr-host: the screen sits on the video rectangle %.3f %.3f to %.3f %.3f, "
-           "%.2f x %.2f m at %.2f %.2f %.2f, revealing %.0f%% for the controls",
-           m_rect[0], m_rect[1], m_rect[2], m_rect[3], widthMeters, heightMeters,
-           placed.m[0][3], placed.m[1][3], placed.m[2][3], m_reveal * 100.0f);
+      note("pmp-xr-host: the screen sits on the video rectangle %.3f %.3f to %.3f %.3f of a "
+           "%.2f x %.2f m window (height from %s), %.2f x %.2f m at %.2f %.2f %.2f, "
+           "revealing %.0f%% for the controls",
+           m_rect[0], m_rect[1], m_rect[2], m_rect[3], window.planeWidth, planeHeight,
+           heightFrom, widthMeters, heightMeters, placed.m[0][3], placed.m[1][3],
+           placed.m[2][3], m_reveal * 100.0f);
   }
 
   void Presenter::trackDock()
@@ -1499,16 +1514,11 @@ namespace
           if (message.rect[2] > message.rect[0] && message.rect[3] > message.rect[1] &&
               message.reveal >= 0.0f && message.reveal < 0.9f)
           {
-            const bool moved =
-              m_rect[0] != message.rect[0] || m_rect[1] != message.rect[1] ||
-              m_rect[2] != message.rect[2] || m_rect[3] != message.rect[3] ||
-              m_reveal != message.reveal;
-            if (moved)
-            {
-              for (int i = 0; i < 4; ++i)
-                m_rect[i] = message.rect[i];
-              m_reveal = message.reveal;
-            }
+            for (int i = 0; i < 4; ++i)
+              m_rect[i] = message.rect[i];
+            m_reveal = message.reveal;
+            if (message.window > 0.1f && message.window < 10.0f)
+              m_windowAspect = message.window;
           }
           break;
 
