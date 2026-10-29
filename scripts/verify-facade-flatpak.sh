@@ -87,6 +87,7 @@ rm -rf "$HOME/.var/app/$APP_ID/config/plex.tv" \
        "$HOME/.var/app/$APP_ID/cache/qtshadercache-"*
 
 EXTRA_ENV=()
+EXTRA_ENV+=(--env=PMP_WEBENGINE_GPU=0)
 if [ "$ARCH" != "$(flatpak --default-arch)" ]; then
   EXTRA_ENV+=(--env=PMP_STARTUP_DEADLINE="$RUN_SECONDS")
 fi
@@ -273,7 +274,8 @@ echo "==> recorded process state"
 if [ -f "$GL_STATE" ]; then
   sed 's/^/    /' "$GL_STATE"
 else
-  echo "    no gl-state file was written"
+  echo "    no gl-state file was written: no crash was recorded, and the EGL"
+  echo "    selection only runs inside gamescope, which this host is not"
 fi
 
 echo
@@ -359,6 +361,14 @@ if [ "$pointer" = delivered ]; then
 else
   echo "    FAIL  no pointer input was delivered to the window ($pointer)"
   echo "          the input paths in the app were not exercised by this run"
+  fail=1
+fi
+
+if grep -qF 'Web engine: --disable-gpu' "$OUT/run.log"; then
+  echo "    pass  the client started with Chromium's GPU path disabled"
+else
+  echo "    FAIL  the build did not apply --disable-gpu to Chromium"
+  echo "          the configuration the headset runs was not exercised by this run"
   fail=1
 fi
 

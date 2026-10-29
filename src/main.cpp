@@ -42,16 +42,15 @@ static QString g_webEngineReport;
 
 static void preinitWebEngine()
 {
-  if (!SessionEnv::insideGamescope())
+  const bool forced = qEnvironmentVariableIsSet("PMP_WEBENGINE_GPU");
+
+  if (!forced && !SessionEnv::insideGamescope())
     return;
 
-  if (qEnvironmentVariableIsSet("PMP_WEBENGINE_GPU"))
+  if (forced && qgetenv("PMP_WEBENGINE_GPU") != "0")
   {
-    if (qgetenv("PMP_WEBENGINE_GPU") != "0")
-    {
-      g_webEngineReport = QStringLiteral("Chromium keeps the GPU path (forced by PMP_WEBENGINE_GPU)");
-      return;
-    }
+    g_webEngineReport = QStringLiteral("Chromium keeps the GPU path (forced by PMP_WEBENGINE_GPU)");
+    return;
   }
 
   QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
