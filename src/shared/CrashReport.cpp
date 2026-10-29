@@ -117,6 +117,12 @@ namespace
     reset.sa_handler = SIG_DFL;
     sigemptyset(&reset.sa_mask);
     sigaction(signo, &reset, nullptr);
+
+    sigset_t pending;
+    sigemptyset(&pending);
+    sigaddset(&pending, signo);
+    sigprocmask(SIG_UNBLOCK, &pending, nullptr);
+
     raise(signo);
     _exit(4);
   }
