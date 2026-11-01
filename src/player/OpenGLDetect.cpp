@@ -17,6 +17,7 @@
 static QString g_openGLReport;
 static bool g_eglAttempted = false;
 static int g_strikes = 0;
+static QString g_lastEnding;
 
 static const int kEglAttemptLimit = 2;
 
@@ -25,6 +26,7 @@ struct GLState
   QString version;
   QString integration;
   QString stall;
+  QString crash;
   int strikes = 0;
   bool pending = false;
 };
@@ -60,6 +62,8 @@ static GLState readState()
       state.integration = value;
     else if (key == QLatin1String("stall"))
       state.stall = value;
+    else if (key == QLatin1String("crash"))
+      state.crash = value;
     else if (key == QLatin1String("strikes"))
       state.strikes = value.toInt();
     else if (key == QLatin1String("pending"))
@@ -69,16 +73,20 @@ static GLState readState()
   return state;
 }
 
-static void writeState(const QString& integration, int strikes, bool pending)
+static void writeState(const QString& integration, int strikes, bool pending,
+                       const QString& last = QString())
 {
   QFile file(statePath());
   if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
     return;
 
-  const QString text = QStringLiteral("version=%1\nintegration=%2\nstrikes=%3\npending=%4\n")
-                         .arg(Version::GetVersionString(), integration)
-                         .arg(strikes)
-                         .arg(pending ? 1 : 0);
+  QString text = QStringLiteral("version=%1\nintegration=%2\nstrikes=%3\npending=%4\n")
+                   .arg(Version::GetVersionString(), integration)
+                   .arg(strikes)
+                   .arg(pending ? 1 : 0);
+  if (!last.isEmpty())
+    text += QStringLiteral("last=%1\n").arg(last);
+
   file.write(text.toLatin1());
   file.flush();
   file.close();
@@ -129,6 +137,49 @@ static bool shouldProbeHwdecInterop()
 #endif
 }
 
+static QString previousFatal()
+{
+  QFile file(Paths::logDir("stderr.log"));
+  if (!file.open(QIODevice::ReadOnly))
+    return QString();
+
+  const qint64 size = file.size();
+  const qint64 window = 64 * 1024;
+  if (size > window)
+    file.seek(size - window);
+
+  const QStringList lines = QString::fromLatin1(file.readAll()).split(QLatin1Char('\n'));
+  file.close();
+
+  for (int at = lines.size() - 1; at >= 0; at--)
+  {
+    const QString line = lines.at(at);
+    if (!line.contains(QLatin1String(":FATAL:")) && !line.contains(QLatin1String("Check failed")))
+      continue;
+
+    const int mark = line.indexOf(QLatin1String(":FATAL:"));
+    QString text = mark < 0 ? line : line.mid(mark + 7);
+    text = text.simplified();
+    if (text.size() > 160)
+      text = text.left(160);
+    return text;
+  }
+
+  return QString();
+}
+
+static QString previousEnding(const GLState& state, const QString& fatal)
+{
+  QStringList parts;
+  if (!state.crash.isEmpty())
+    parts << QStringLiteral("crash=%1").arg(state.crash);
+  if (!state.stall.isEmpty())
+    parts << QStringLiteral("stall=%1").arg(state.stall);
+  if (!fatal.isEmpty())
+    parts << QStringLiteral("fatal=%1").arg(fatal);
+  return parts.join(QLatin1Char(' '));
+}
+
 enum class EglChoice
 {
   No,
@@ -157,7 +208,7 @@ static void useEgl(int attempt)
   qputenv("QT_XCB_GL_INTEGRATION", "xcb_egl");
   if (attempt > 0)
   {
-    writeState(QStringLiteral("xcb_egl"), g_strikes, true);
+    writeState(QStringLiteral("xcb_egl"), g_strikes, true, g_lastEnding);
     g_openGLReport = QStringLiteral("QT_XCB_GL_INTEGRATION=xcb_egl (X11 under gamescope; GLX "
                                     "offers no EGL display; attempt %1 of %2)")
                        .arg(attempt).arg(kEglAttemptLimit);
@@ -172,19 +223,24 @@ static void chooseEglAutomatically()
 {
   const GLState state = readState();
   const bool sameBuild = state.version == Version::GetVersionString();
+  const QString fatal = previousFatal();
+
+  g_lastEnding = previousEnding(state, fatal);
 
   if (sameBuild)
   {
     g_strikes = state.strikes;
 
     const bool neverPresented = state.pending || !state.stall.isEmpty();
-    if (neverPresented && state.integration == QLatin1String("xcb_egl"))
+    const bool diedElsewhere = !state.crash.isEmpty() || !fatal.isEmpty();
+
+    if (neverPresented && !diedElsewhere && state.integration == QLatin1String("xcb_egl"))
       g_strikes++;
   }
 
   if (g_strikes >= kEglAttemptLimit)
   {
-    writeState(QStringLiteral("glx"), g_strikes, false);
+    writeState(QStringLiteral("glx"), g_strikes, false, g_lastEnding);
     g_openGLReport = QStringLiteral("xcb_egl is off for this build (%1 starts with it presented "
                                     "no frame); GLX instead, so no 3D")
                        .arg(g_strikes);
@@ -192,6 +248,9 @@ static void chooseEglAutomatically()
   }
 
   useEgl(g_strikes + 1);
+
+  if (!g_lastEnding.isEmpty())
+    g_openGLReport += QStringLiteral("; the previous start ended with %1").arg(g_lastEnding);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -234,7 +293,7 @@ void confirmOpenGLSession()
     return;
 
   g_strikes = 0;
-  writeState(QStringLiteral("xcb_egl"), 0, false);
+  writeState(QStringLiteral("xcb_egl"), 0, false, g_lastEnding);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

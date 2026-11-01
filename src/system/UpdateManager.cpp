@@ -225,7 +225,10 @@ void UpdateManager::componentPostInitialize()
     return;
   }
 
-  startMonitor();
+  connect(qApp, &QCoreApplication::aboutToQuit, this, &UpdateManager::stopMonitor);
+
+  QLOG_INFO() << "Update monitor: not opened at startup, only when an update is applied";
+
   scheduleChecks();
 }
 
@@ -447,9 +450,6 @@ void UpdateManager::onSettingsChanged(const QString& section, const QVariantMap&
 
   if (values[SETTING_UPDATE_CHECK].toBool())
   {
-    if (m_inSandbox && m_monitorPath.isEmpty())
-      startMonitor();
-
     scheduleChecks();
   }
   else
@@ -533,7 +533,7 @@ void UpdateManager::applyUpdate()
 
   hideInfo();
 
-  if (m_monitorPath.isEmpty())
+  if (m_monitorPath.isEmpty() && !(m_inSandbox && startMonitor()))
   {
     setState(StateManual);
     return;
