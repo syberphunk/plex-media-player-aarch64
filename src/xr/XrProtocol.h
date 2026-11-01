@@ -6,21 +6,17 @@
 namespace XrProtocol
 {
   const uint32_t kMagic = 0x58504d50;
-  const uint32_t kVersion = 3;
-  const uint32_t kBufferCount = 3;
+  const uint32_t kVersion = 4;
   const int kSocketFd = 3;
+  const int kReasonLength = 96;
 
   enum Type : uint32_t
   {
-    Buffers = 1,
-    Frame = 2,
-    Release = 3,
-    Started = 4,
-    Show = 5,
-    Stop = 6,
-    Failed = 7,
-    Hide = 8,
-    Screen = 9
+    Panel = 1,
+    Stop = 2,
+    Stereo = 3,
+    Flat = 4,
+    Failed = 5
   };
 
   enum Packing : uint32_t
@@ -36,22 +32,12 @@ namespace XrProtocol
     uint32_t version;
     uint32_t type;
 
-    uint32_t count;
-    uint32_t width;
-    uint32_t height;
-    uint32_t fourcc;
-    uint32_t stride;
-    uint32_t offset;
-    uint32_t pad;
-    uint64_t modifier;
-
-    uint32_t index;
     uint32_t packing;
     uint32_t swapped;
-    float eyeAspect;
+    uint32_t flags;
+    uint32_t appid;
 
-    float meters;
-    uint32_t recentre;
+    char reason[kReasonLength];
   };
 
   inline Message make(Type type)

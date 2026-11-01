@@ -14,7 +14,7 @@
 
 class PlayerQuickItem;
 class QOpenGLFramebufferObject;
-class XrSurface;
+class QOpenGLExtraFunctions;
 
 class PlayerRenderer : public QQuickFramebufferObject::Renderer
 {
@@ -23,7 +23,7 @@ public:
   ~PlayerRenderer() override;
 
   void reportSwap();
-  void captureWindow();
+  void composeWindow();
 
 protected:
   void render() override;
@@ -34,8 +34,9 @@ private:
   void collectGraphicsInfo();
 
   void syncStereo();
-  bool renderStereo();
-  bool composeEyes(uint32_t surfaceFbo);
+  bool renderPacked(QOpenGLFramebufferObject* target);
+  void overlayVideo(QOpenGLExtraFunctions* gl, int half);
+  void reportShot(QOpenGLExtraFunctions* gl);
   void probePicture(QOpenGLFramebufferObject* fbo);
 
   PlayerQuickItem* m_item;
@@ -45,24 +46,16 @@ private:
   bool m_playbackActive;
   QString m_graphicsInfo;
 
-  XrSurface* m_stereo;
-  int m_stereoSocket;
-  uint32_t m_stereoGeneration;
   bool m_stereoWanted;
-  QSize m_stereoSize;
   uint32_t m_stereoPacking;
   bool m_stereoSwapped;
-  float m_stereoEyeAspect;
-  bool m_stereoVisible;
   bool m_stereoControls;
-  float m_stereoScreenWidth;
-  bool m_stereoRecentre;
   QSize m_packedSize;
   QSize m_windowSize;
   QRect m_windowVideoRect;
   QOpenGLFramebufferObject* m_windowShot;
   QOpenGLFramebufferObject* m_videoFbo;
-  bool m_shotReported;
+  int m_shotReports;
 
   StereoProbe::Detector m_probe;
   QOpenGLFramebufferObject* m_probeTarget;

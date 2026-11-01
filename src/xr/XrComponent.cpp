@@ -16,11 +16,6 @@ namespace
   const char* const kKey = "stereoscopic";
   const char* const kFormatKey = "stereoscopic_format";
   const char* const kSwapKey = "stereoscopic_swap";
-  const char* const kSizeKey = "stereoscopic_size";
-
-  const qreal kSizeDefault = 2.4;
-  const qreal kSizeMin = 1.0;
-  const qreal kSizeMax = 6.0;
 
   const int kProbeTimeoutMs = 8000;
   const int kSessionTimeoutMs = 20000;
@@ -40,8 +35,6 @@ QString XrComponent::presentError() const
 
 bool XrComponent::componentInitialize()
 {
-  XrPresenter::Get().setScreenWidth(static_cast<float>(screenSize()));
-
   m_idle = new QTimer(this);
   m_idle->setSingleShot(true);
   m_idle->setInterval(kIdleMs);
@@ -122,32 +115,6 @@ void XrComponent::setSwapEyes(bool value)
   SettingsComponent::Get().setValue(kSection, kSwapKey, value);
   emit formatChanged();
   emit overrideChanged();
-}
-
-qreal XrComponent::screenSize() const
-{
-  const QVariant stored = SettingsComponent::Get().value(kSection, kSizeKey);
-  bool ok = false;
-  const qreal value = stored.toReal(&ok);
-  if (!ok || value < kSizeMin || value > kSizeMax)
-    return kSizeDefault;
-  return value;
-}
-
-void XrComponent::setScreenSize(qreal value)
-{
-  const qreal clamped = qBound(kSizeMin, value, kSizeMax);
-  if (qAbs(screenSize() - clamped) < 0.001)
-    return;
-
-  SettingsComponent::Get().setValue(kSection, kSizeKey, clamped);
-  XrPresenter::Get().setScreenWidth(static_cast<float>(clamped));
-  emit formatChanged();
-}
-
-void XrComponent::recentreScreen()
-{
-  XrPresenter::Get().askRecentre();
 }
 
 void XrComponent::setDetected(const QString& label, const QString& source, bool stereo)

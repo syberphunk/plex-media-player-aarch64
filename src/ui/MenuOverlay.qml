@@ -291,43 +291,6 @@ FocusScope
     return qsTr("Work it out per file")
   }
 
-  function screenSizeKey()
-  {
-    if (!menu.xr)
-      return "2.4"
-
-    var sizes = ["1.6", "2.0", "2.4", "3.0", "3.6", "4.4"]
-    var best = sizes[2]
-    var gap = 99
-
-    for (var i = 0; i < sizes.length; i++)
-    {
-      var away = Math.abs(parseFloat(sizes[i]) - menu.xr.screenSize)
-      if (away < gap)
-      {
-        gap = away
-        best = sizes[i]
-      }
-    }
-
-    return best
-  }
-
-  function screenSizeLabel(value)
-  {
-    if (value === "1.6")
-      return qsTr("Small")
-    if (value === "2.0")
-      return qsTr("Medium")
-    if (value === "3.0")
-      return qsTr("Large")
-    if (value === "3.6")
-      return qsTr("Very large")
-    if (value === "4.4")
-      return qsTr("Cinema")
-    return qsTr("Normal")
-  }
-
   function packingStatusText()
   {
     if (!menu.xr)
@@ -1450,57 +1413,12 @@ FocusScope
           }
         }
 
-        Picker
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          label: qsTr("How big the screen is")
-          hint: qsTr("How wide the headset screen is drawn, in front of you")
-          options: [
-            { value: "1.6", label: qsTr("Small") },
-            { value: "2.0", label: qsTr("Medium") },
-            { value: "2.4", label: qsTr("Normal") },
-            { value: "3.0", label: qsTr("Large") },
-            { value: "3.6", label: qsTr("Very large") },
-            { value: "4.4", label: qsTr("Cinema") }
-          ]
-          current: menu.screenSizeKey()
-          currentLabel: menu.screenSizeLabel(menu.screenSizeKey())
-          onPicked: function(value)
-          {
-            if (menu.xr)
-              menu.xr.screenSize = parseFloat(value)
-          }
-        }
-
         Note
         {
           width: parent.width - Math.round(36 * menu.u)
           x: Math.round(18 * menu.u)
           visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
           text: menu.xrStatusText()
-        }
-
-        Item
-        {
-          width: parent.width
-          visible: menu.xr !== null && menu.xr.supported && menu.xr.enabled
-          height: visible ? Math.round(96 * menu.u) : 0
-
-          Btn
-          {
-            anchors.left: parent.left
-            anchors.leftMargin: Math.round(18 * menu.u)
-            anchors.verticalCenter: parent.verticalCenter
-            label: qsTr("Put the screen in front of me")
-            hint: qsTr("Moves the headset screen back to where you are looking")
-            minW: 330
-            onClicked:
-            {
-              if (menu.xr)
-                menu.xr.recentreScreen()
-            }
-          }
         }
 
         Item

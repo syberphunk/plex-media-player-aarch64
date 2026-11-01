@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 class QProcess;
+class QSocketNotifier;
 
 class XrPresenter : public QObject
 {
@@ -18,30 +19,20 @@ public:
   static XrPresenter& Get();
   static bool exists();
 
-  void request(const QSize& videoSize, uint32_t packing, bool swapped, float eyeAspect);
+  void request(const QSize& videoSize, uint32_t packing, bool swapped);
   void release();
 
   bool wanted() const { return m_wanted; }
-  uint32_t generation() const { return m_generation; }
-  int takeSocket();
+  bool panelStereo() const { return m_panelStereo; }
 
   const QSize& videoSize() const { return m_videoSize; }
   uint32_t packing() const { return m_packing; }
   bool swapped() const { return m_swapped; }
-  float eyeAspect() const { return m_eyeAspect; }
 
   const QString& lastFailure() const { return m_lastFailure; }
 
-  void setOverlayVisible(bool visible) { m_overlayVisible = visible; }
-  bool overlayVisible() const { return m_overlayVisible; }
-
   void setControlsActive(bool active) { m_controlsActive = active; }
   bool controlsActive() const { return m_controlsActive; }
-
-  void setScreenWidth(float meters);
-  float screenWidth() const { return m_screenWidth; }
-  void askRecentre() { m_recentre = true; }
-  bool takeRecentre() { return m_recentre.exchange(false); }
 
   void wantProbe(const QSize& videoSize);
   void resetProbe();
@@ -49,28 +40,29 @@ public:
   QSize probeSize() const;
   int probeResult() const { return m_probeResult; }
 
-  Q_INVOKABLE void reportFailure(const QString& reason, bool permanent);
   Q_INVOKABLE void reportProbe(int packing);
 
   Q_SIGNAL void failed();
 
   Q_SIGNAL void probed();
 
+  Q_SIGNAL void panelChanged();
+
 private Q_SLOTS:
   void shutdown();
+  void readHost();
 
 private:
   explicit XrPresenter(QObject* parent = nullptr);
 
   bool spawn();
   void onFinished();
+  void tell(uint32_t type);
+  void note(const QString& reason, bool permanent);
 
   std::atomic<bool> m_wanted{false};
-  std::atomic<uint32_t> m_generation{0};
-  std::atomic<bool> m_overlayVisible{true};
+  std::atomic<bool> m_panelStereo{false};
   std::atomic<bool> m_controlsActive{false};
-  std::atomic<float> m_screenWidth{2.4f};
-  std::atomic<bool> m_recentre{false};
   std::atomic<bool> m_impossible{false};
 
   std::atomic<bool> m_probeWanted{false};
@@ -78,14 +70,14 @@ private:
   std::atomic<int> m_probeWidth{0};
   std::atomic<int> m_probeHeight{0};
 
-  std::atomic<int> m_socket{-1};
+  int m_socket = -1;
+  QSocketNotifier* m_notifier = nullptr;
   QProcess* m_process = nullptr;
 
   QString m_lastFailure;
   QSize m_videoSize;
   uint32_t m_packing = 0;
   bool m_swapped = false;
-  float m_eyeAspect = 16.0f / 9.0f;
 };
 
 #endif

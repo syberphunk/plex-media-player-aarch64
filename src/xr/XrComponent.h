@@ -37,7 +37,6 @@ public:
   Q_PROPERTY(QString formatOverride READ formatOverride WRITE setFormatOverride
                NOTIFY formatChanged)
   Q_PROPERTY(bool swapEyes READ swapEyes WRITE setSwapEyes NOTIFY formatChanged)
-  Q_PROPERTY(qreal screenSize READ screenSize WRITE setScreenSize NOTIFY formatChanged)
   Q_PROPERTY(QString detectedLabel READ detectedLabel NOTIFY formatChanged)
   Q_PROPERTY(QString detectedSource READ detectedSource NOTIFY formatChanged)
   Q_PROPERTY(bool detectedStereo READ detectedStereo NOTIFY formatChanged)
@@ -61,16 +60,12 @@ public:
   void setFormatOverride(const QString& value);
   bool swapEyes() const;
   void setSwapEyes(bool value);
-  qreal screenSize() const;
-  void setScreenSize(qreal value);
   QString detectedLabel() const { return m_detectedLabel; }
   QString detectedSource() const { return m_detectedSource; }
   bool detectedStereo() const { return m_detectedStereo; }
 
   void setDetected(const QString& label, const QString& source, bool stereo);
   void clearDetected();
-
-  Q_INVOKABLE void recentreScreen();
 
   Q_INVOKABLE void ensureProbed();
 

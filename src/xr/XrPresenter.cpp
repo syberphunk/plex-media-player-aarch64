@@ -1,6 +1,7 @@
 #include "XrPresenter.h"
 
 #include <QProcess>
+#include <QSocketNotifier>
 #include <QThread>
 
 #include <errno.h>
@@ -30,17 +31,6 @@ XrPresenter::XrPresenter(QObject* parent) : QObject(parent)
 {
 }
 
-void XrPresenter::setScreenWidth(float meters)
-{
-  if (meters > 0.5f && meters < 8.0f)
-    m_screenWidth = meters;
-}
-
-int XrPresenter::takeSocket()
-{
-  return m_socket.exchange(-1);
-}
-
 bool XrPresenter::spawn()
 {
   int pair[2] = {-1, -1};
@@ -64,6 +54,9 @@ bool XrPresenter::spawn()
   m_process = process;
   m_socket = pair[0];
 
+  m_notifier = new QSocketNotifier(m_socket, QSocketNotifier::Read, this);
+  connect(m_notifier, &QSocketNotifier::activated, this, &XrPresenter::readHost);
+
   connect(process, &QProcess::finished, this, &XrPresenter::onFinished);
   connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
     QLOG_ERROR() << "Stereoscopic: the presenter failed to run";
@@ -78,9 +71,103 @@ bool XrPresenter::spawn()
     }
   });
 
-  m_generation++;
-  QLOG_INFO() << "Stereoscopic: presenter started, generation" << m_generation.load();
+  QLOG_INFO() << "Stereoscopic: asking the headset to show the Plex panel side by side";
   return true;
+}
+
+void XrPresenter::tell(uint32_t type)
+{
+  if (m_socket < 0)
+    return;
+
+  XrProtocol::Message message = XrProtocol::make(XrProtocol::Type(type));
+  message.packing = m_packing;
+  message.swapped = m_swapped ? 1 : 0;
+
+  if (::send(m_socket, &message, sizeof(message), MSG_NOSIGNAL) < 0)
+    QLOG_WARN() << "Stereoscopic: the presenter did not take the message:" << strerror(errno);
+}
+
+void XrPresenter::readHost()
+{
+  while (true)
+  {
+    XrProtocol::Message message{};
+    const ssize_t got = recv(m_socket, &message, sizeof(message), MSG_DONTWAIT);
+
+    if (got == 0)
+    {
+      QLOG_INFO() << "Stereoscopic: the presenter closed the channel";
+      shutdown();
+      return;
+    }
+    if (got < 0)
+    {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        return;
+      if (errno == EINTR)
+        continue;
+      QLOG_WARN() << "Stereoscopic: the presenter channel failed:" << strerror(errno);
+      shutdown();
+      return;
+    }
+
+    if (got != ssize_t(sizeof(message)) || !XrProtocol::valid(message))
+    {
+      QLOG_WARN() << "Stereoscopic: a message from the presenter was not understood";
+      continue;
+    }
+
+    message.reason[XrProtocol::kReasonLength - 1] = '\0';
+    const QString reason = QString::fromUtf8(message.reason);
+
+    switch (message.type)
+    {
+      case XrProtocol::Stereo:
+        m_panelStereo = true;
+        m_lastFailure.clear();
+        QLOG_INFO() << "Stereoscopic:"
+                    << qPrintable(QStringLiteral(
+                         "the Plex panel is side by side, flags 0x%1; squeezing the window")
+                         .arg(message.flags, 0, 16));
+        emit panelChanged();
+        break;
+
+      case XrProtocol::Flat:
+        if (m_panelStereo)
+          QLOG_INFO() << "Stereoscopic: the Plex panel is flat again, the window goes back";
+        m_panelStereo = false;
+        note(reason, false);
+        emit panelChanged();
+        break;
+
+      case XrProtocol::Failed:
+        m_panelStereo = false;
+        note(reason, true);
+        emit panelChanged();
+        shutdown();
+        return;
+
+      default:
+        break;
+    }
+  }
+}
+
+void XrPresenter::note(const QString& reason, bool permanent)
+{
+  if (!reason.isEmpty())
+  {
+    QLOG_ERROR() << "Stereoscopic:" << qPrintable(reason);
+    m_lastFailure = reason;
+    emit failed();
+  }
+
+  if (permanent)
+  {
+    m_impossible = true;
+    QLOG_INFO() << "Stereoscopic: nothing more will be tried in this session";
+  }
 }
 
 void XrPresenter::wantProbe(const QSize& videoSize)
@@ -111,14 +198,10 @@ void XrPresenter::reportProbe(int packing)
   emit probed();
 }
 
-void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped, float eyeAspect)
+void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped)
 {
-  m_overlayVisible = true;
   m_packing = packing;
   m_swapped = swapped;
-  m_eyeAspect = eyeAspect > 0.1f && eyeAspect < 10.0f ? eyeAspect : 16.0f / 9.0f;
-
-  const bool sizeChanged = videoSize != m_videoSize;
   m_videoSize = videoSize;
 
   if (m_impossible)
@@ -135,17 +218,22 @@ void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped
     return;
   }
 
-  if (m_wanted && m_process && !sizeChanged)
+  if (videoSize.width() < 2 || videoSize.height() < 2)
     return;
+
+  if (m_wanted && m_process)
+  {
+    tell(XrProtocol::Panel);
+    return;
+  }
 
   if (m_process)
     shutdown();
 
-  if (videoSize.width() < 2 || videoSize.height() < 2)
-    return;
-
   m_lastFailure.clear();
   m_wanted = spawn();
+  if (m_wanted)
+    tell(XrProtocol::Panel);
 }
 
 void XrPresenter::release()
@@ -153,25 +241,10 @@ void XrPresenter::release()
   if (!m_wanted && !m_process)
     return;
 
-  QLOG_INFO() << "Stereoscopic: presenter no longer wanted";
-  shutdown();
-}
-
-void XrPresenter::reportFailure(const QString& reason, bool permanent)
-{
-  if (!reason.isEmpty())
-  {
-    QLOG_ERROR() << "Stereoscopic:" << qPrintable(reason);
-    m_lastFailure = reason;
-    emit failed();
-  }
-
-  if (permanent)
-  {
-    m_impossible = true;
-    QLOG_INFO() << "Stereoscopic: nothing more will be tried in this session";
-  }
-
+  QLOG_INFO() << "Stereoscopic: the panel no longer needs to be side by side";
+  m_panelStereo = false;
+  emit panelChanged();
+  tell(XrProtocol::Stop);
   shutdown();
 }
 
@@ -180,17 +253,26 @@ void XrPresenter::shutdown()
   if (QThread::currentThread() != thread())
   {
     m_wanted = false;
-    m_generation++;
+    m_panelStereo = false;
     QMetaObject::invokeMethod(this, "shutdown", Qt::QueuedConnection);
     return;
   }
 
   m_wanted = false;
-  m_generation++;
+  m_panelStereo = false;
 
-  const int socket = m_socket.exchange(-1);
-  if (socket >= 0)
-    close(socket);
+  if (m_notifier)
+  {
+    m_notifier->setEnabled(false);
+    m_notifier->deleteLater();
+    m_notifier = nullptr;
+  }
+
+  if (m_socket >= 0)
+  {
+    close(m_socket);
+    m_socket = -1;
+  }
 
   if (m_process)
   {

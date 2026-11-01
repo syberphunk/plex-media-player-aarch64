@@ -1430,25 +1430,14 @@ void PlayerComponent::resolveStereoFormat()
 
   XrComponent::Get().ensureProbed();
 
-  const float width = m_videoSize.width();
-  const float height = m_videoSize.height();
   uint32_t packing = XrProtocol::Mono;
-  float eyeAspect = width / height;
 
   if (active.packing == StereoFormat::Packing::SideBySide)
-  {
     packing = XrProtocol::SideBySide;
-    if (!active.half)
-      eyeAspect = (width / 2.0f) / height;
-  }
   else if (active.packing == StereoFormat::Packing::OverUnder)
-  {
     packing = XrProtocol::OverUnder;
-    if (!active.half)
-      eyeAspect = width / (height / 2.0f);
-  }
 
-  XrPresenter::Get().request(m_videoSize, packing, active.swapped, eyeAspect);
+  XrPresenter::Get().request(m_videoSize, packing, active.swapped);
 }
 
 void PlayerComponent::updateVideoSettings()
