@@ -5,6 +5,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <string>
@@ -23,6 +24,7 @@ namespace
 {
   const char kPanelPrefix[] = "valve.steam.desktopgame.";
   const uint32_t kStereoFlag = VROverlayFlags_SideBySide_Parallel;
+  const float kPackedEyes = 2.0f;
 
   const int kScanIndexes = 128;
   const int kScanAhead = 8;
@@ -151,6 +153,7 @@ namespace
     void surveySlice();
 
     bool assertStereo(std::string& why);
+    void widenPanel();
     void dropStereo();
     void hold();
 
@@ -161,6 +164,9 @@ namespace
     VROverlayHandle_t m_panel = k_ulOverlayHandleInvalid;
     uint32_t m_panelFlags = 0;
     bool m_panelWasStereo = false;
+    float m_panelTexelAspect = 1.0f;
+    bool m_texelAspectKnown = false;
+    bool m_texelAspectSet = false;
     bool m_stereo = false;
     bool m_told = false;
 
@@ -288,6 +294,21 @@ namespace
     m_panel = found.handle;
     m_panelFlags = found.flags;
     m_panelWasStereo = (found.flags & kStereoFlag) != 0;
+
+    m_panelTexelAspect = 1.0f;
+    m_texelAspectKnown = false;
+    m_texelAspectSet = false;
+    if (m_ovr.overlay->GetOverlayTexelAspect)
+    {
+      float was = 1.0f;
+      if (m_ovr.overlay->GetOverlayTexelAspect(found.handle, &was) ==
+            EVROverlayError_VROverlayError_None &&
+          was > 0.0f)
+      {
+        m_panelTexelAspect = was;
+        m_texelAspectKnown = true;
+      }
+    }
 
     note("pmp-xr-host: the Plex panel is overlay %llu \"%s\" named \"%s\", %.2f m wide, "
          "texture %ux%u, %s, flags 0x%x, transform %d, pid %u",
@@ -495,7 +516,36 @@ namespace
     }
 
     m_stereo = true;
+    widenPanel();
     return true;
+  }
+
+  void Presenter::widenPanel()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl->SetOverlayTexelAspect)
+    {
+      note("pmp-xr-host: the runtime cannot set a texel aspect, so the panel stays narrow");
+      return;
+    }
+
+    const float wanted = m_panelTexelAspect * kPackedEyes;
+    const EVROverlayError set = ovl->SetOverlayTexelAspect(m_panel, wanted);
+
+    float back = 0.0f;
+    const bool read = ovl->GetOverlayTexelAspect &&
+                      ovl->GetOverlayTexelAspect(m_panel, &back) ==
+                        EVROverlayError_VROverlayError_None;
+
+    if (set != EVROverlayError_VROverlayError_None)
+    {
+      note("pmp-xr-host: the panel kept its narrow shape: %s", errorName(set));
+      return;
+    }
+
+    m_texelAspectSet = true;
+    note("pmp-xr-host: the panel is %.3f texels wide per tall, was %.3f%s", read ? back : wanted,
+         m_panelTexelAspect, m_texelAspectKnown ? "" : " (assumed)");
   }
 
   void Presenter::dropStereo()
@@ -508,6 +558,13 @@ namespace
     }
 
     m_stereo = false;
+
+    if (m_texelAspectSet && ovl->SetOverlayTexelAspect)
+    {
+      ovl->SetOverlayTexelAspect(m_panel, m_panelTexelAspect);
+      m_texelAspectSet = false;
+    }
+
     if (m_panelWasStereo)
       return;
 
@@ -542,7 +599,22 @@ namespace
     }
 
     if (enabled)
+    {
+      if (m_texelAspectSet && ovl->GetOverlayTexelAspect)
+      {
+        const float wanted = m_panelTexelAspect * kPackedEyes;
+        float now = wanted;
+        if (ovl->GetOverlayTexelAspect(m_panel, &now) == EVROverlayError_VROverlayError_None &&
+            std::fabs(now - wanted) > 0.01f)
+        {
+          note("pmp-xr-host: the panel narrowed to %.3f texels wide per tall, widening it again",
+               now);
+          m_texelAspectSet = false;
+          widenPanel();
+        }
+      }
       return;
+    }
 
     note("pmp-xr-host: something cleared the side by side flag, setting it again");
 
