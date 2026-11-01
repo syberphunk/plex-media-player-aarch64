@@ -15,6 +15,7 @@
 class PlayerQuickItem;
 class QOpenGLFramebufferObject;
 class QOpenGLExtraFunctions;
+class QOpenGLShaderProgram;
 
 class PlayerRenderer : public QQuickFramebufferObject::Renderer
 {
@@ -36,7 +37,10 @@ private:
   void syncStereo();
   bool renderPacked(QOpenGLFramebufferObject* target);
   void overlayVideo(QOpenGLExtraFunctions* gl, int half);
+  bool prepareKey();
+  void drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height);
   void reportShot(QOpenGLExtraFunctions* gl);
+  void dumpFrames(QOpenGLExtraFunctions* gl);
   void probePicture(QOpenGLFramebufferObject* fbo);
 
   PlayerQuickItem* m_item;
@@ -55,7 +59,11 @@ private:
   QRect m_windowVideoRect;
   QOpenGLFramebufferObject* m_windowShot;
   QOpenGLFramebufferObject* m_videoFbo;
+  QOpenGLShaderProgram* m_keyProgram;
+  unsigned int m_keyVao;
+  bool m_keyFailed;
   int m_shotReports;
+  int m_dumpsLeft;
 
   StereoProbe::Detector m_probe;
   QOpenGLFramebufferObject* m_probeTarget;

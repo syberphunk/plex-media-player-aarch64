@@ -81,6 +81,25 @@ namespace
     return 0;
   }
 
+  uint32_t appidFromKey(const char* key, bool& exact)
+  {
+    exact = false;
+
+    if (std::strncmp(key, kPanelPrefix, sizeof(kPanelPrefix) - 1) != 0)
+      return 0;
+
+    const char* tail = key + sizeof(kPanelPrefix) - 1;
+    const char* walk = tail;
+    while (*walk >= '0' && *walk <= '9')
+      ++walk;
+
+    if (walk == tail)
+      return 0;
+
+    exact = (*walk == 0);
+    return static_cast<uint32_t>(strtoul(tail, nullptr, 10));
+  }
+
   struct Neighbour
   {
     VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
@@ -347,16 +366,33 @@ namespace
       {
         ++m_scanSeen;
 
-        if (m_panel == k_ulOverlayHandleInvalid && found.visible &&
-            std::strncmp(found.key, kPanelPrefix, sizeof(kPanelPrefix) - 1) == 0 &&
-            std::strcmp(found.key + sizeof(kPanelPrefix) - 1, "0") != 0)
+        if (m_panel == k_ulOverlayHandleInvalid)
         {
-          note("pmp-xr-host: no key lookup worked, but this overlay looks like the panel");
-          adopt(found);
-          m_appid = static_cast<uint32_t>(
-            strtoul(found.key + sizeof(kPanelPrefix) - 1, nullptr, 10));
-          m_lookTries = 0;
-          m_lookAt = 0;
+          bool exact = false;
+          const uint32_t keyed = appidFromKey(found.key, exact);
+
+          if (keyed != 0 && exact)
+          {
+            m_appid = keyed;
+            note("pmp-xr-host: this overlay carries the panel's own key");
+            adopt(found);
+            m_lookTries = 0;
+            m_lookAt = 0;
+          }
+          else if (keyed != 0 && keyed != m_appid)
+          {
+            note("pmp-xr-host: \"%s\" is a part of the panel, not the panel; "
+                 "the app is Steam id %u",
+                 found.key, keyed);
+            m_appid = keyed;
+            if (findByKey())
+            {
+              m_lookTries = 0;
+              m_lookAt = 0;
+            }
+            else
+              note("pmp-xr-host: %s%u is not findable by key yet", kPanelPrefix, m_appid);
+          }
         }
 
         note("pmp-xr-host: overlay %llu \"%s\" named \"%s\", %.2f m wide, texture %ux%u, %s, "

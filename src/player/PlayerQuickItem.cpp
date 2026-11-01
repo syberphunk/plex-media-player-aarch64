@@ -5,6 +5,10 @@
 #include <QSizeF>
 
 #include <QtOpenGL/QOpenGLFramebufferObject>
+#include <QtOpenGL/QOpenGLShaderProgram>
+#include <QDir>
+#include <QImage>
+#include <QDateTime>
 
 #include <QtQuick/QQuickWindow>
 #include <QOpenGLExtraFunctions>
@@ -15,6 +19,7 @@
 #include <mpv/render_gl.h>
 
 #include "QsLog.h"
+#include "shared/Paths.h"
 #include "utils/Utils.h"
 #include "xr/XrPresenter.h"
 #include "xr/XrProtocol.h"
@@ -26,7 +31,29 @@
 
 namespace
 {
-  const float kControlsReveal = 0.18f;
+  const int kFrameDumps = 2;
+
+  const char kKeyVertex[] = R"(
+out vec2 v_uv;
+void main()
+{
+  vec2 corner = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  v_uv = corner;
+  gl_Position = vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+  const char kKeyFragment[] = R"(
+uniform sampler2D u_shot;
+in vec2 v_uv;
+out vec4 fragColour;
+void main()
+{
+  vec3 shot = texture(u_shot, v_uv).rgb;
+  float cover = max(max(shot.r, shot.g), shot.b);
+  fragColour = vec4(shot, cover);
+}
+)";
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -46,7 +73,8 @@ static void* get_proc_address(void* ctx, const char* name)
 PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
-  m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_shotReports(0),
+  m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
+  m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
 {
   m_item->m_renderer = this;
@@ -64,6 +92,16 @@ PlayerRenderer::~PlayerRenderer()
   m_windowShot = nullptr;
   delete m_videoFbo;
   m_videoFbo = nullptr;
+  delete m_keyProgram;
+  m_keyProgram = nullptr;
+
+  if (m_keyVao)
+  {
+    QOpenGLContext* context = QOpenGLContext::currentContext();
+    if (context)
+      context->extraFunctions()->glDeleteVertexArrays(1, &m_keyVao);
+    m_keyVao = 0;
+  }
 
   // Keep in mind that the m_mpv handle must be held until this is done.
   if (m_mpvGL)
@@ -156,13 +194,20 @@ void PlayerRenderer::syncStereo()
 
   const bool wanted = presenter.wanted() && presenter.panelStereo();
   if (wanted != m_stereoWanted)
+  {
     m_shotReports = 0;
+    m_dumpsLeft = wanted ? kFrameDumps : 0;
+  }
 
   m_stereoWanted = wanted;
   m_packedSize = presenter.videoSize();
   m_stereoPacking = presenter.packing();
   m_stereoSwapped = presenter.swapped();
-  m_stereoControls = presenter.controlsActive();
+
+  const bool controls = presenter.controlsActive();
+  if (controls && !m_stereoControls && m_stereoWanted)
+    m_dumpsLeft = kFrameDumps;
+  m_stereoControls = controls;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -277,13 +322,6 @@ void PlayerRenderer::overlayVideo(QOpenGLExtraFunctions* gl, int half)
   if (rect.width() < 4 || rect.height() < 4)
     rect = QRect(0, 0, w, h);
 
-  if (m_stereoControls)
-  {
-    const int across = int(rect.width() * (1.0f - kControlsReveal));
-    const int down = int(rect.height() * (1.0f - kControlsReveal));
-    rect = QRect(rect.x() + (rect.width() - across) / 2, rect.y(), across, down);
-  }
-
   const int pw = m_videoFbo->width();
   const int ph = m_videoFbo->height();
 
@@ -318,9 +356,94 @@ void PlayerRenderer::overlayVideo(QOpenGLExtraFunctions* gl, int half)
     const int dx0 = eye * half + rect.x() / 2;
     const int dx1 = dx0 + rect.width() / 2;
 
-    gl->glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, bottom, dx1, top, GL_COLOR_BUFFER_BIT,
+    gl->glBlitFramebuffer(sx0, sy1, sx1, sy0, dx0, bottom, dx1, top, GL_COLOR_BUFFER_BIT,
                           GL_LINEAR);
   }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool PlayerRenderer::prepareKey()
+{
+  if (m_keyProgram)
+    return true;
+  if (m_keyFailed)
+    return false;
+
+  QOpenGLContext* context = QOpenGLContext::currentContext();
+  if (!context)
+    return false;
+
+  const QByteArray header =
+    context->isOpenGLES() ? QByteArrayLiteral("#version 300 es\nprecision mediump float;\n")
+                          : QByteArrayLiteral("#version 330 core\n");
+
+  auto* program = new QOpenGLShaderProgram();
+  bool built = program->addShaderFromSourceCode(QOpenGLShader::Vertex, header + kKeyVertex);
+  built = built && program->addShaderFromSourceCode(QOpenGLShader::Fragment, header + kKeyFragment);
+  built = built && program->link();
+
+  if (!built)
+  {
+    QLOG_WARN() << "Stereoscopic: the window cannot be keyed over the video:" << program->log();
+    delete program;
+    m_keyFailed = true;
+    return false;
+  }
+
+  context->extraFunctions()->glGenVertexArrays(1, &m_keyVao);
+  m_keyProgram = program;
+
+  QLOG_INFO() << "Stereoscopic: the window will be keyed over the video";
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height)
+{
+  gl->glViewport(x, 0, width, height);
+  gl->glActiveTexture(GL_TEXTURE0);
+  gl->glBindTexture(GL_TEXTURE_2D, m_windowShot->texture());
+  gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+  m_keyProgram->bind();
+  m_keyProgram->setUniformValue("u_shot", 0);
+  gl->glBindVertexArray(m_keyVao);
+  gl->glDrawArrays(GL_TRIANGLES, 0, 3);
+  gl->glBindVertexArray(0);
+  m_keyProgram->release();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::dumpFrames(QOpenGLExtraFunctions* gl)
+{
+  --m_dumpsLeft;
+
+  const QString stamp = QDateTime::currentDateTime().toString("HHmmss-zzz");
+  const QString dir = Paths::logDir();
+
+  QOpenGLFramebufferObject screen(m_windowSize);
+  if (screen.isValid())
+  {
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, screen.handle());
+    gl->glBlitFramebuffer(0, 0, m_windowSize.width(), m_windowSize.height(), 0, 0,
+                          m_windowSize.width(), m_windowSize.height(), GL_COLOR_BUFFER_BIT,
+                          GL_NEAREST);
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    screen.toImage().save(dir + QDir::separator() + "stereo-" + stamp + "-screen.png");
+  }
+
+  if (m_windowShot && m_windowShot->isValid())
+    m_windowShot->toImage().save(dir + QDir::separator() + "stereo-" + stamp + "-window.png");
+
+  if (m_videoFbo && m_videoFbo->isValid())
+    m_videoFbo->toImage().mirrored(false, true).save(dir + QDir::separator() + "stereo-" + stamp +
+                                                     "-video.png");
+
+  QLOG_INFO() << "Stereoscopic: wrote the composite to" << dir << "as stereo-" << stamp << "-*.png";
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -350,6 +473,8 @@ void PlayerRenderer::composeWindow()
 
   QOpenGLExtraFunctions* gl = context->extraFunctions();
   gl->glDisable(GL_SCISSOR_TEST);
+  gl->glDisable(GL_DEPTH_TEST);
+  gl->glDisable(GL_CULL_FACE);
 
   gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
   gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_windowShot->handle());
@@ -358,20 +483,40 @@ void PlayerRenderer::composeWindow()
   reportShot(gl);
 
   const int half = w / 2;
+  const bool showing = m_playbackActive && m_videoFbo && m_videoFbo->isValid();
+  const bool keyed = showing && prepareKey();
 
   gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   gl->glClear(GL_COLOR_BUFFER_BIT);
 
-  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_windowShot->handle());
-  for (int eye = 0; eye < 2; ++eye)
-    gl->glBlitFramebuffer(0, 0, w, h, eye * half, 0, eye * half + half, h, GL_COLOR_BUFFER_BIT,
-                          GL_LINEAR);
-
-  if (m_playbackActive && m_videoFbo && m_videoFbo->isValid())
+  if (keyed)
+  {
     overlayVideo(gl, half);
 
+    gl->glEnable(GL_BLEND);
+    gl->glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    for (int eye = 0; eye < 2; ++eye)
+      drawShot(gl, eye * half, half, h);
+    gl->glDisable(GL_BLEND);
+    gl->glViewport(0, 0, w, h);
+  }
+  else
+  {
+    gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_windowShot->handle());
+    for (int eye = 0; eye < 2; ++eye)
+      gl->glBlitFramebuffer(0, 0, w, h, eye * half, 0, eye * half + half, h, GL_COLOR_BUFFER_BIT,
+                            GL_LINEAR);
+
+    if (showing)
+      overlayVideo(gl, half);
+  }
+
   gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  if (m_dumpsLeft > 0 && showing)
+    dumpFrames(gl);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -442,6 +587,15 @@ bool PlayerRenderer::renderPacked(QOpenGLFramebufferObject* target)
 
   QOpenGLExtraFunctions* gl = context->extraFunctions();
   gl->glDisable(GL_SCISSOR_TEST);
+  gl->glBindFramebuffer(GL_FRAMEBUFFER, target->handle());
+
+  if (m_playbackActive)
+  {
+    gl->glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    gl->glClear(GL_COLOR_BUFFER_BIT);
+    return true;
+  }
+
   gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_videoFbo->handle());
   gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->handle());
   gl->glBlitFramebuffer(sx0, sy0, sx1, sy1, 0, 0, target->width(), target->height(),
@@ -506,7 +660,10 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
     m_graphicsInfo.clear();
   }
 
+  const bool wasActive = m_playbackActive;
   m_playbackActive = player->m_playbackActive;
+  if (m_playbackActive && !wasActive && m_stereoWanted)
+    m_dumpsLeft = kFrameDumps;
 
   QQuickWindow* win = player->window();
   if (win)
