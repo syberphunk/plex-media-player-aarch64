@@ -408,6 +408,11 @@
         "value": "stereoscopic_swap",
         "default": false,
         "hidden": true
+      },
+      {
+        "value": "stereoscopic_size",
+        "default": 2.4,
+        "hidden": true
       }
     ]
   },

@@ -308,8 +308,7 @@ bool XrSurface::begin(int socket, const QSize& size)
 
   m_ready = true;
   m_visible = true;
-  m_reveal = -1.0f;
-  m_windowAspect = 0.0f;
+  m_screenWidth = 0.0f;
   QLOG_INFO() << "Stereoscopic: sharing" << XrProtocol::kBufferCount << "buffers of"
               << size.width() << "x" << size.height() << "stride" << m_stride << "modifier"
               << QString::number(m_modifier, 16);
@@ -403,32 +402,22 @@ void XrSurface::submit(int index, uint32_t packing, bool swapped, float eyeAspec
   }
 }
 
-void XrSurface::place(const float rect[4], float reveal, float windowAspect)
+void XrSurface::screen(float meters, bool recentre)
 {
   if (!m_ready)
     return;
 
-  bool same = std::fabs(reveal - m_reveal) < 0.001f &&
-              std::fabs(windowAspect - m_windowAspect) < 0.0005f;
-  for (int edge = 0; edge < 4 && same; ++edge)
-    if (std::fabs(rect[edge] - m_rect[edge]) > 0.0005f)
-      same = false;
-  if (same)
+  if (!recentre && std::fabs(meters - m_screenWidth) < 0.0005f)
     return;
 
-  XrProtocol::Message message = XrProtocol::make(XrProtocol::Place);
-  for (int edge = 0; edge < 4; ++edge)
-    message.rect[edge] = rect[edge];
-  message.reveal = reveal;
-  message.window = windowAspect;
+  XrProtocol::Message message = XrProtocol::make(XrProtocol::Screen);
+  message.meters = meters;
+  message.recentre = recentre ? 1u : 0u;
 
   if (send(m_socket, &message, sizeof(message), MSG_NOSIGNAL | MSG_DONTWAIT) < 0)
     return;
 
-  for (int edge = 0; edge < 4; ++edge)
-    m_rect[edge] = rect[edge];
-  m_reveal = reveal;
-  m_windowAspect = windowAspect;
+  m_screenWidth = meters;
 }
 
 void XrSurface::setVisible(bool visible)
@@ -525,7 +514,7 @@ void XrSurface::setVisible(bool)
 {
 }
 
-void XrSurface::place(const float[4], float, float)
+void XrSurface::screen(float, bool)
 {
 }
 

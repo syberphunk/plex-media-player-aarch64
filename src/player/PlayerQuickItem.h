@@ -2,6 +2,7 @@
 #define PLAYERQUICKITEM_H
 
 #include <Qt>
+#include <QRect>
 #include <QtQuick/QQuickFramebufferObject>
 
 #include <mpv/client.h>
@@ -22,6 +23,7 @@ public:
   ~PlayerRenderer() override;
 
   void reportSwap();
+  void captureWindow();
 
 protected:
   void render() override;
@@ -33,6 +35,7 @@ private:
 
   void syncStereo();
   bool renderStereo();
+  bool composeEyes(uint32_t surfaceFbo);
   void probePicture(QOpenGLFramebufferObject* fbo);
 
   PlayerQuickItem* m_item;
@@ -51,9 +54,15 @@ private:
   bool m_stereoSwapped;
   float m_stereoEyeAspect;
   bool m_stereoVisible;
-  float m_stereoRect[4];
-  float m_stereoReveal;
-  float m_stereoWindowAspect;
+  bool m_stereoControls;
+  float m_stereoScreenWidth;
+  bool m_stereoRecentre;
+  QSize m_packedSize;
+  QSize m_windowSize;
+  QRect m_windowVideoRect;
+  QOpenGLFramebufferObject* m_windowShot;
+  QOpenGLFramebufferObject* m_videoFbo;
+  bool m_shotReported;
 
   StereoProbe::Detector m_probe;
   QOpenGLFramebufferObject* m_probeTarget;
@@ -83,6 +92,7 @@ private slots:
     void onHandleFatalError(QString message);
     void onVideoPlaybackActive(bool active);
     void onFrameSwapped();
+    void onAfterRendering();
     void updateVideoGeometry();
 
 private:
