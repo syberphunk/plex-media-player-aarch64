@@ -31,6 +31,7 @@ namespace
   const int kScanSlice = 512;
   const int kLoopGapMs = 50;
   const int kCheckGapMs = 1000;
+  const int kReassertTries = 3;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
 
@@ -168,9 +169,11 @@ namespace
     float m_panelTexelAspect = 1.0f;
     bool m_texelAspectKnown = false;
     bool m_texelAspectSet = false;
+    int m_texelAspectTries = 0;
     float m_panelMouseScale[2] = { 0.0f, 0.0f };
     bool m_mouseScaleKnown = false;
     bool m_mouseScaleSet = false;
+    int m_mouseScaleTries = 0;
     bool m_stereo = false;
     bool m_told = false;
 
@@ -302,6 +305,7 @@ namespace
     m_panelTexelAspect = 1.0f;
     m_texelAspectKnown = false;
     m_texelAspectSet = false;
+    m_texelAspectTries = 0;
     if (m_ovr.overlay->GetOverlayTexelAspect)
     {
       float was = 1.0f;
@@ -318,6 +322,7 @@ namespace
     m_panelMouseScale[1] = 0.0f;
     m_mouseScaleKnown = false;
     m_mouseScaleSet = false;
+    m_mouseScaleTries = 0;
     if (m_ovr.overlay->GetOverlayMouseScale)
     {
       struct HmdVector2_t was = { { 0.0f, 0.0f } };
@@ -671,10 +676,19 @@ namespace
         if (ovl->GetOverlayTexelAspect(m_panel, &now) == EVROverlayError_VROverlayError_None &&
             std::fabs(now - wanted) > 0.01f)
         {
-          note("pmp-xr-host: the panel narrowed to %.3f texels wide per tall, widening it again",
-               now);
           m_texelAspectSet = false;
-          widenPanel();
+          if (++m_texelAspectTries >= kReassertTries)
+          {
+            note("pmp-xr-host: the session keeps narrowing the panel to %.3f texels wide per "
+                 "tall, so it stays that way",
+                 now);
+          }
+          else
+          {
+            note("pmp-xr-host: the panel narrowed to %.3f texels wide per tall, widening it again",
+                 now);
+            widenPanel();
+          }
         }
       }
 
@@ -685,9 +699,18 @@ namespace
         if (ovl->GetOverlayMouseScale(m_panel, &now) == EVROverlayError_VROverlayError_None &&
             std::fabs(now.v[0] - wanted) > 0.5f)
         {
-          note("pmp-xr-host: the pointer narrowed to %.1f, widening it again", now.v[0]);
           m_mouseScaleSet = false;
-          widenMouse();
+          if (++m_mouseScaleTries >= kReassertTries)
+          {
+            note("pmp-xr-host: the session keeps narrowing the pointer to %.1f, so it stays "
+                 "that way",
+                 now.v[0]);
+          }
+          else
+          {
+            note("pmp-xr-host: the pointer narrowed to %.1f, widening it again", now.v[0]);
+            widenMouse();
+          }
         }
       }
       return;
