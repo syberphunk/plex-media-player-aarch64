@@ -10,10 +10,13 @@
 """
 
 import hashlib
+import http.client
 import json
 import os
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -331,7 +334,11 @@ def check_actions(offline):
         try:
             latest = action_latest(action)
         except Exception as problem:
-            failures.append(report(action, False, "release probe failed: %s" % problem))
+            if transport_failure(problem):
+                warn(action, "release probe unreachable: %s" % problem)
+            else:
+                failures.append(report(action, False,
+                                       "release probe failed: %s" % problem))
             continue
         if latest != version:
             newer.append(action)
@@ -438,6 +445,17 @@ def report(name, ok, detail):
     return ok
 
 
+def warn(name, detail):
+    print("    %-6s %-28s %s" % ("warn", name, detail))
+
+
+def transport_failure(problem):
+    if isinstance(problem, urllib.error.HTTPError):
+        return problem.code in (408, 429) or problem.code >= 500
+    return isinstance(problem, (urllib.error.URLError, socket.timeout,
+                                OSError, ssl.SSLError, http.client.HTTPException))
+
+
 def check(sources, deep, offline):
     failures = []
     outdated = []
@@ -531,8 +549,11 @@ def check(sources, deep, offline):
             latest = normalise(latest_version(spec["probe"], prefix),
                                spec["strip_v"], prefix)
         except Exception as problem:
-            failures.append(report(source.module, False,
-                                   "version probe failed: %s" % problem))
+            if transport_failure(problem):
+                warn(source.module, "version probe unreachable: %s" % problem)
+            else:
+                failures.append(report(source.module, False,
+                                       "version probe failed: %s" % problem))
             continue
         if latest is None:
             continue
