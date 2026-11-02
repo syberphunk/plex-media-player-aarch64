@@ -51,6 +51,60 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.44" date="2026-11-02">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>Side-by-side and over-under files are shown with depth through the headset.
+              The packed frame is split into a left and a right picture and handed to the
+              headset as one screen, so each eye is shown its own half instead of both
+              halves being shown to both eyes.</li>
+          <li>The 3D screen sits on the Plex window in the headset session, copying its
+              position, size, curve and stacking order every frame, so the video stays in
+              the player rather than floating in front of the viewer.</li>
+          <li>The Plex interface is drawn over the video on the same screen, so the
+              playback controls can be read and used while a file is in 3D.</li>
+          <li>How a file is packed is worked out from the file's own 3D tag, from its
+              name, from the shape of the picture and by comparing the two halves of a
+              frame. The settings menu can set the packing by hand and swap the eyes, for
+              a file that is tagged wrongly.</li>
+          <li>A pointer is drawn on the 3D screen, since the system pointer is not part of
+              the picture sent to the headset. It hides itself after four seconds without
+              movement, so it does not sit over the video.</li>
+          <li>A diagnostics setting, off by default. While it is on, the most detailed log
+              is written and a few pictures of what the headset was shown are saved beside
+              it, for reporting a problem. While it is off, no pictures are written.</li>
+        </ul>
+        <p>Fixed:</p>
+        <ul>
+          <li>The 3D picture was drawn half as wide as it should be. The headset is told
+              the screen holds two eyes side by side, which makes it measure the screen
+              from one half of the texture, so the texture is now declared twice as wide
+              per unit of height.</li>
+          <li>Pointing at a control did not hit it: the pointer had to be moved about
+              twice as far to the right as it was pointed. The same halving applies to
+              where the headset reports a pointer event, so the screen's pointer scale is
+              now doubled to match.</li>
+          <li>Seeking through a file could leave the audio behind the picture. On a file
+              whose audio for the seeked region sits far ahead in the byte stream, reading
+              stopped at the read-ahead limit before any audio arrived and the empty audio
+              queue was read as the end of the file. The read-ahead is now at least
+              256 MB.</li>
+          <li>Stopping a 3D file left the Plex library doubled side by side. The
+              side-by-side marking is now taken off the screen when the video stops.</li>
+          <li>The video and the interface were drawn upside down relative to each other.</li>
+        </ul>
+        <p>Known:</p>
+        <ul>
+          <li>The resize handles of the 3D screen do not meet the edges of the picture, so
+              the screen is wider than what it holds and its curve is more pronounced than
+              it should be.</li>
+          <li>The pointer is close but not exact. The headset compositor resets the
+              screen's pointer scale about every second and a half and the app sets it
+              again each time, so the alignment alternates between the two.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.34" date="2026-10-29">
       <description>
         <p>Fixed:</p>
