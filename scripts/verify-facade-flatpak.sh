@@ -26,6 +26,12 @@ if [ ! -w /tmp/.X11-unix ] || [ ! -k /tmp/.X11-unix ]; then
   exit 1
 fi
 
+case " ${QTWEBENGINE_CHROMIUM_FLAGS:-} " in
+  *" --no-sandbox "*) ;;
+  *) QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox ${QTWEBENGINE_CHROMIUM_FLAGS:-}" ;;
+esac
+export QTWEBENGINE_CHROMIUM_FLAGS
+
 NEED_MB=1500
 case " ${QTWEBENGINE_CHROMIUM_FLAGS:-} " in
   *" --disable-dev-shm-usage "*) SCRATCH=${TMPDIR:-/tmp} ;;
@@ -35,7 +41,7 @@ SCRATCH_MB=$(df -Pm "$SCRATCH" | awk 'NR==2 {print $4}')
 if [ "${SCRATCH_MB:-0}" -lt "$NEED_MB" ]; then
   echo "$SCRATCH has ${SCRATCH_MB}MB free, under the ${NEED_MB}MB the emulated" >&2
   echo "renderer needs for its shared memory. Free space there and re-run; a" >&2
-  echo "short run will otherwise die with SIGTRAP and report a false verdict." >&2
+  echo "short run will otherwise die before it reaches its checks." >&2
   exit 1
 fi
 AVAIL_MB=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
