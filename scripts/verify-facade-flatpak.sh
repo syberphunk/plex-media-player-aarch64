@@ -26,6 +26,26 @@ if [ ! -w /tmp/.X11-unix ] || [ ! -k /tmp/.X11-unix ]; then
   exit 1
 fi
 
+NEED_MB=1500
+case " ${QTWEBENGINE_CHROMIUM_FLAGS:-} " in
+  *" --disable-dev-shm-usage "*) SCRATCH=${TMPDIR:-/tmp} ;;
+  *) SCRATCH=/dev/shm ;;
+esac
+SCRATCH_MB=$(df -Pm "$SCRATCH" | awk 'NR==2 {print $4}')
+if [ "${SCRATCH_MB:-0}" -lt "$NEED_MB" ]; then
+  echo "$SCRATCH has ${SCRATCH_MB}MB free, under the ${NEED_MB}MB the emulated" >&2
+  echo "renderer needs for its shared memory. Free space there and re-run; a" >&2
+  echo "short run will otherwise die with SIGTRAP and report a false verdict." >&2
+  exit 1
+fi
+AVAIL_MB=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo)
+if [ "${AVAIL_MB:-0}" -lt "$NEED_MB" ]; then
+  echo "${AVAIL_MB}MB of memory available, under the ${NEED_MB}MB the emulated" >&2
+  echo "renderer needs. Free memory and re-run." >&2
+  exit 1
+fi
+echo "==> scratch $SCRATCH ${SCRATCH_MB}MB free, ${AVAIL_MB}MB memory available"
+
 start_xvfb() {
   local n
   for n in $(seq 99 120); do
