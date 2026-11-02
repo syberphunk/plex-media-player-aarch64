@@ -51,6 +51,28 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.45" date="2026-11-02">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>The video window flickered for the whole of playback, as though it were
+              being resized about once a second. The headset compositor resets a screen's
+              shape and pointer scale when it takes the screen over, and the app set both
+              again every time it saw them reset, so the two wrote over each other without
+              end. The app now tries three times and then leaves the compositor's values
+              alone, which stops the flicker.</li>
+        </ul>
+        <p>Known:</p>
+        <ul>
+          <li>The resize handles of the 3D screen do not meet the edges of the picture, so
+              the screen is wider than what it holds and its curve is more pronounced than
+              it should be.</li>
+          <li>The pointer is close but not exact. It no longer drifts, because the app has
+              stopped contesting the compositor's pointer scale, but the offset that scale
+              leaves is still there.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.44" date="2026-11-02">
       <description>
         <p>Added:</p>
