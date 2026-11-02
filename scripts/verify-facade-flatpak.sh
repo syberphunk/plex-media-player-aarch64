@@ -30,6 +30,16 @@ case " ${QTWEBENGINE_CHROMIUM_FLAGS:-} " in
   *" --no-sandbox "*) ;;
   *) QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox ${QTWEBENGINE_CHROMIUM_FLAGS:-}" ;;
 esac
+if [ "$ARCH" != "$(flatpak --default-arch)" ]; then
+  case " $QTWEBENGINE_CHROMIUM_FLAGS " in
+    *" --renderer-process-limit="*) ;;
+    *) QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS --renderer-process-limit=1" ;;
+  esac
+  case " $QTWEBENGINE_CHROMIUM_FLAGS " in
+    *" --js-flags="*) ;;
+    *) QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS --js-flags=--max-old-space-size=384" ;;
+  esac
+fi
 export QTWEBENGINE_CHROMIUM_FLAGS
 
 NEED_MB=1500
@@ -117,13 +127,8 @@ EXTRA_ENV+=(--env=PMP_WEBENGINE_GPU=0)
 if [ "$ARCH" != "$(flatpak --default-arch)" ]; then
   EXTRA_ENV+=(--env=PMP_STARTUP_DEADLINE="$RUN_SECONDS")
 fi
-if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
-  echo "==> Chromium flags from the environment: $QTWEBENGINE_CHROMIUM_FLAGS"
-  EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS")
-elif [ "$ARCH" != "$(flatpak --default-arch)" ]; then
-  echo "==> $ARCH != host $(flatpak --default-arch): emulated run, disabling the Chromium sandbox"
-  EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox")
-fi
+echo "==> Chromium flags:$QTWEBENGINE_CHROMIUM_FLAGS"
+EXTRA_ENV+=(--env=QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS")
 
 GRAB_AT=$((RUN_SECONDS - 8))
 [ "$GRAB_AT" -lt 4 ] && GRAB_AT=$((RUN_SECONDS / 2))
