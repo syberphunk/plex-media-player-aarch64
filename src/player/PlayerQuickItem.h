@@ -2,6 +2,7 @@
 #define PLAYERQUICKITEM_H
 
 #include <Qt>
+#include <QPointF>
 #include <QRect>
 #include <QtQuick/QQuickFramebufferObject>
 
@@ -39,6 +40,8 @@ private:
   void overlayVideo(QOpenGLExtraFunctions* gl, int half);
   bool prepareKey();
   void drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height);
+  bool prepareArrow();
+  void drawCursor(QOpenGLExtraFunctions* gl, int half);
   void reportShot(QOpenGLExtraFunctions* gl);
   void dumpFrames(QOpenGLExtraFunctions* gl);
   void probePicture(QOpenGLFramebufferObject* fbo);
@@ -64,6 +67,11 @@ private:
   bool m_keyFailed;
   int m_shotReports;
   int m_dumpsLeft;
+  int m_dumpBudget;
+  QPointF m_cursorAt;
+  QOpenGLShaderProgram* m_arrowProgram;
+  unsigned int m_arrowVao;
+  bool m_arrowFailed;
 
   StereoProbe::Detector m_probe;
   QOpenGLFramebufferObject* m_probeTarget;
@@ -82,6 +90,7 @@ public:
     explicit PlayerQuickItem(QQuickItem* parent = nullptr);
     ~PlayerQuickItem() override;
     Renderer* createRenderer() const override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void initMpv(PlayerComponent* player);
     QString debugInfo() { return m_debugInfo; }
 
@@ -94,6 +103,7 @@ private slots:
     void onVideoPlaybackActive(bool active);
     void onFrameSwapped();
     void onAfterRendering();
+    void onPanelChanged();
     void updateVideoGeometry();
 
 private:
@@ -102,6 +112,8 @@ private:
     mpv::qt::Handle m_mpv;
     QString m_debugInfo;
     bool m_playbackActive;
+    bool m_stereoLive;
+    QPointF m_cursorAt;
     PlayerRenderer* m_renderer;
 };
 

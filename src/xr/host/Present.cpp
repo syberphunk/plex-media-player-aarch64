@@ -690,6 +690,7 @@ namespace
 
         case XrProtocol::Stop:
           note("pmp-xr-host: the app asked to stop");
+          dropStereo();
           return false;
 
         default:

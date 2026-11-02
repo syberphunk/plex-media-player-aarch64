@@ -1,5 +1,9 @@
 #include "PlayerQuickItem.h"
 
+#include <QCursor>
+#include <QGuiApplication>
+#include <QHoverEvent>
+#include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QPointF>
 #include <QSizeF>
@@ -14,6 +18,8 @@
 #include <QOpenGLExtraFunctions>
 #include <QOpenGLFunctions>
 #include <QVector>
+#include <QVector2D>
+#include <QVector3D>
 #include <QStringList>
 
 #include <mpv/render_gl.h>
@@ -32,6 +38,28 @@
 namespace
 {
   const int kFrameDumps = 2;
+  const int kDumpBudget = 6;
+  const float kCursorHeight = 30.0f;
+
+  const char kArrowVertex[] = R"(
+uniform vec2 u_p0;
+uniform vec2 u_p1;
+uniform vec2 u_p2;
+void main()
+{
+  vec2 p = gl_VertexID == 0 ? u_p0 : (gl_VertexID == 1 ? u_p1 : u_p2);
+  gl_Position = vec4(p, 0.0, 1.0);
+}
+)";
+
+  const char kArrowFragment[] = R"(
+uniform vec3 u_colour;
+out vec4 fragColour;
+void main()
+{
+  fragColour = vec4(u_colour, 1.0);
+}
+)";
 
   const char kKeyVertex[] = R"(
 out vec2 v_uv;
@@ -75,6 +103,7 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
   m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
+  m_dumpBudget(kDumpBudget), m_arrowProgram(nullptr), m_arrowVao(0), m_arrowFailed(false),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
 {
   m_item->m_renderer = this;
@@ -94,6 +123,16 @@ PlayerRenderer::~PlayerRenderer()
   m_videoFbo = nullptr;
   delete m_keyProgram;
   m_keyProgram = nullptr;
+  delete m_arrowProgram;
+  m_arrowProgram = nullptr;
+
+  if (m_arrowVao)
+  {
+    QOpenGLContext* context = QOpenGLContext::currentContext();
+    if (context)
+      context->extraFunctions()->glDeleteVertexArrays(1, &m_arrowVao);
+    m_arrowVao = 0;
+  }
 
   if (m_keyVao)
   {
@@ -196,7 +235,9 @@ void PlayerRenderer::syncStereo()
   if (wanted != m_stereoWanted)
   {
     m_shotReports = 0;
-    m_dumpsLeft = wanted ? kFrameDumps : 0;
+    if (wanted)
+      m_dumpBudget = kDumpBudget;
+    m_dumpsLeft = wanted ? qMin(kFrameDumps, m_dumpBudget) : 0;
   }
 
   m_stereoWanted = wanted;
@@ -206,7 +247,7 @@ void PlayerRenderer::syncStereo()
 
   const bool controls = presenter.controlsActive();
   if (controls && !m_stereoControls && m_stereoWanted)
-    m_dumpsLeft = kFrameDumps;
+    m_dumpsLeft = qMin(kFrameDumps, m_dumpBudget);
   m_stereoControls = controls;
 }
 
@@ -421,6 +462,16 @@ void PlayerRenderer::dumpFrames(QOpenGLExtraFunctions* gl)
 {
   --m_dumpsLeft;
 
+  if (m_dumpBudget <= 0)
+  {
+    m_dumpsLeft = 0;
+    return;
+  }
+
+  --m_dumpBudget;
+  if (m_dumpBudget == 0)
+    QLOG_INFO() << "Stereoscopic: that was the last frame capture of this run";
+
   const QString stamp = QDateTime::currentDateTime().toString("HHmmss-zzz");
   const QString dir = Paths::logDir();
 
@@ -444,6 +495,100 @@ void PlayerRenderer::dumpFrames(QOpenGLExtraFunctions* gl)
                                                      "-video.png");
 
   QLOG_INFO() << "Stereoscopic: wrote the composite to" << dir << "as stereo-" << stamp << "-*.png";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool PlayerRenderer::prepareArrow()
+{
+  if (m_arrowProgram)
+    return true;
+  if (m_arrowFailed)
+    return false;
+
+  QOpenGLContext* context = QOpenGLContext::currentContext();
+  if (!context)
+    return false;
+
+  const QByteArray header =
+    context->isOpenGLES() ? QByteArrayLiteral("#version 300 es\nprecision mediump float;\n")
+                          : QByteArrayLiteral("#version 330 core\n");
+
+  auto* program = new QOpenGLShaderProgram();
+  bool built = program->addShaderFromSourceCode(QOpenGLShader::Vertex, header + kArrowVertex);
+  built =
+    built && program->addShaderFromSourceCode(QOpenGLShader::Fragment, header + kArrowFragment);
+  built = built && program->link();
+
+  if (!built)
+  {
+    QLOG_WARN() << "Stereoscopic: the pointer cannot be drawn into the panel:" << program->log();
+    delete program;
+    m_arrowFailed = true;
+    return false;
+  }
+
+  context->extraFunctions()->glGenVertexArrays(1, &m_arrowVao);
+  m_arrowProgram = program;
+
+  QLOG_INFO() << "Stereoscopic: the pointer will be drawn into both halves of the panel";
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
+{
+  if (m_cursorAt.isNull())
+    return;
+
+  const int w = m_windowSize.width();
+  const int h = m_windowSize.height();
+  if (w < 4 || h < 4 || half < 2)
+    return;
+  if (!prepareArrow())
+    return;
+
+  const float x = float(m_cursorAt.x());
+  const float y = float(m_cursorAt.y());
+  if (x < 0.0f || y < 0.0f || x > float(w) || y > float(h))
+    return;
+
+  const float tall = kCursorHeight;
+  const float wide = tall * float(half) / float(w);
+
+  static const float shape[3][2] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 0.72f, 0.72f } };
+
+  gl->glDisable(GL_BLEND);
+  gl->glViewport(0, 0, w, h);
+  m_arrowProgram->bind();
+  gl->glBindVertexArray(m_arrowVao);
+
+  for (int eye = 0; eye < 2; ++eye)
+  {
+    const float tipX = float(eye * half) + x * float(half) / float(w);
+    const float tipY = float(h) - y;
+
+    for (int pass = 0; pass < 2; ++pass)
+    {
+      const float grow = pass == 0 ? 1.4f : 1.0f;
+      m_arrowProgram->setUniformValue("u_colour", pass == 0 ? QVector3D(0.0f, 0.0f, 0.0f)
+                                                            : QVector3D(1.0f, 1.0f, 1.0f));
+
+      for (int point = 0; point < 3; ++point)
+      {
+        const float px = tipX + shape[point][0] * wide * grow;
+        const float py = tipY - shape[point][1] * tall * grow;
+        const QString name = QStringLiteral("u_p%1").arg(point);
+        m_arrowProgram->setUniformValue(qPrintable(name),
+                                        QVector2D(px * 2.0f / float(w) - 1.0f,
+                                                  py * 2.0f / float(h) - 1.0f));
+      }
+
+      gl->glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+  }
+
+  gl->glBindVertexArray(0);
+  m_arrowProgram->release();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -501,6 +646,7 @@ void PlayerRenderer::composeWindow()
       drawShot(gl, eye * half, half, h);
     gl->glDisable(GL_BLEND);
     gl->glViewport(0, 0, w, h);
+    drawCursor(gl, half);
   }
   else
   {
@@ -511,6 +657,9 @@ void PlayerRenderer::composeWindow()
 
     if (showing)
       overlayVideo(gl, half);
+
+    gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    drawCursor(gl, half);
   }
 
   gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -663,13 +812,17 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
   const bool wasActive = m_playbackActive;
   m_playbackActive = player->m_playbackActive;
   if (m_playbackActive && !wasActive && m_stereoWanted)
-    m_dumpsLeft = kFrameDumps;
+    m_dumpsLeft = qMin(kFrameDumps, m_dumpBudget);
 
   QQuickWindow* win = player->window();
   if (win)
   {
     const qreal dpr = win->effectiveDevicePixelRatio();
     m_windowSize = QSize(int(qRound(win->width() * dpr)), int(qRound(win->height() * dpr)));
+
+    m_cursorAt = player->m_cursorAt.isNull()
+                   ? QPointF()
+                   : QPointF(player->m_cursorAt.x() * dpr, player->m_cursorAt.y() * dpr);
 
     const QPointF at = player->position();
     m_windowVideoRect = QRect(int(qRound(at.x() * dpr)), int(qRound(at.y() * dpr)),
@@ -682,9 +835,14 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
-: QQuickFramebufferObject(parent), m_playbackActive(false), m_renderer(nullptr)
+: QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
+  m_renderer(nullptr)
 {
   connect(this, &QQuickItem::windowChanged, this, &PlayerQuickItem::onWindowChanged, Qt::DirectConnection);
+  connect(&XrPresenter::Get(), &XrPresenter::panelChanged, this, &PlayerQuickItem::onPanelChanged,
+          Qt::QueuedConnection);
+  connect(&XrPresenter::Get(), &XrPresenter::failed, this, &PlayerQuickItem::onPanelChanged,
+          Qt::QueuedConnection);
   connect(this, &PlayerQuickItem::onFatalError, this, &PlayerQuickItem::onHandleFatalError, Qt::QueuedConnection);
 }
 
@@ -707,6 +865,7 @@ void PlayerQuickItem::onWindowChanged(QQuickWindow* win)
 
   win->setPersistentGraphics(true);
   win->setPersistentSceneGraph(true);
+  win->installEventFilter(this);
 
   connect(win, &QQuickWindow::frameSwapped, this, &PlayerQuickItem::onFrameSwapped, Qt::DirectConnection);
   connect(win, &QQuickWindow::afterRendering, this, &PlayerQuickItem::onAfterRendering, Qt::DirectConnection);
@@ -724,9 +883,48 @@ void PlayerQuickItem::onFrameSwapped()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::onPanelChanged()
+{
+  XrPresenter& presenter = XrPresenter::Get();
+  const bool live = presenter.wanted() && presenter.panelStereo();
+  if (live == m_stereoLive)
+    return;
+
+  m_stereoLive = live;
+  QLOG_INFO() << "Stereoscopic: the window composite is" << (live ? "on" : "off");
+
+  if (live)
+    QGuiApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
+  else
+    QGuiApplication::restoreOverrideCursor();
+
+  update();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
+{
+  switch (event->type())
+  {
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+      m_cursorAt = static_cast<QMouseEvent*>(event)->position();
+      break;
+    case QEvent::HoverMove:
+      m_cursorAt = static_cast<QHoverEvent*>(event)->position();
+      break;
+    default:
+      break;
+  }
+
+  return QQuickFramebufferObject::eventFilter(watched, event);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerQuickItem::onAfterRendering()
 {
-  if (!m_renderer)
+  if (!m_renderer || !m_stereoLive)
     return;
 
   QQuickWindow* win = window();
