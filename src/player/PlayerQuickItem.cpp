@@ -21,6 +21,7 @@
 #include <QVector2D>
 #include <QVector3D>
 #include <QStringList>
+#include <QTimer>
 
 #include <mpv/render_gl.h>
 
@@ -39,7 +40,8 @@ namespace
 {
   const int kFrameDumps = 2;
   const int kDumpBudget = 6;
-  const float kCursorHeight = 30.0f;
+  const float kCursorHeight = 18.0f;
+  const int kCursorIdleMs = 4000;
 
   const char kArrowVertex[] = R"(
 uniform vec2 u_p0;
@@ -836,8 +838,11 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
-  m_renderer(nullptr)
+  m_cursorIdle(new QTimer(this)), m_cursorHideLogged(false), m_renderer(nullptr)
 {
+  m_cursorIdle->setSingleShot(true);
+  m_cursorIdle->setInterval(kCursorIdleMs);
+  connect(m_cursorIdle, &QTimer::timeout, this, &PlayerQuickItem::onCursorIdle);
   connect(this, &QQuickItem::windowChanged, this, &PlayerQuickItem::onWindowChanged, Qt::DirectConnection);
   connect(&XrPresenter::Get(), &XrPresenter::panelChanged, this, &PlayerQuickItem::onPanelChanged,
           Qt::QueuedConnection);
@@ -894,9 +899,35 @@ void PlayerQuickItem::onPanelChanged()
   QLOG_INFO() << "Stereoscopic: the window composite is" << (live ? "on" : "off");
 
   if (live)
+  {
     QGuiApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
+    m_cursorHideLogged = false;
+    m_cursorIdle->start(kCursorIdleMs);
+  }
   else
+  {
     QGuiApplication::restoreOverrideCursor();
+    m_cursorIdle->stop();
+    m_cursorAt = QPointF();
+  }
+
+  update();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::onCursorIdle()
+{
+  if (m_cursorAt.isNull())
+    return;
+
+  m_cursorAt = QPointF();
+
+  if (!m_cursorHideLogged)
+  {
+    m_cursorHideLogged = true;
+    QLOG_INFO() << "Stereoscopic: the pointer hid itself after" << kCursorIdleMs
+                << "ms without moving";
+  }
 
   update();
 }
@@ -910,9 +941,19 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonRelease:
       m_cursorAt = static_cast<QMouseEvent*>(event)->position();
+      if (m_stereoLive)
+      {
+        m_cursorIdle->start(kCursorIdleMs);
+        update();
+      }
       break;
     case QEvent::HoverMove:
       m_cursorAt = static_cast<QHoverEvent*>(event)->position();
+      if (m_stereoLive)
+      {
+        m_cursorIdle->start(kCursorIdleMs);
+        update();
+      }
       break;
     default:
       break;

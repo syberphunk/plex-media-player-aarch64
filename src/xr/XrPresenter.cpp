@@ -249,10 +249,10 @@ void XrPresenter::release()
   if (m_process && QThread::currentThread() == thread() &&
       m_process->state() != QProcess::NotRunning)
   {
-    if (m_process->waitForFinished(2000))
+    if (m_process->waitForFinished(750))
       QLOG_INFO() << "Stereoscopic: the host left on its own after being asked to stop";
     else
-      QLOG_WARN() << "Stereoscopic: the host did not leave after being asked to stop";
+      QLOG_INFO() << "Stereoscopic: the host is still leaving, closing it down";
   }
 
   shutdown();

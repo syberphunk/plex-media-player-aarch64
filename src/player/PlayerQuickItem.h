@@ -17,6 +17,7 @@ class PlayerQuickItem;
 class QOpenGLFramebufferObject;
 class QOpenGLExtraFunctions;
 class QOpenGLShaderProgram;
+class QTimer;
 
 class PlayerRenderer : public QQuickFramebufferObject::Renderer
 {
@@ -104,6 +105,7 @@ private slots:
     void onFrameSwapped();
     void onAfterRendering();
     void onPanelChanged();
+    void onCursorIdle();
     void updateVideoGeometry();
 
 private:
@@ -114,6 +116,8 @@ private:
     bool m_playbackActive;
     bool m_stereoLive;
     QPointF m_cursorAt;
+    QTimer* m_cursorIdle;
+    bool m_cursorHideLogged;
     PlayerRenderer* m_renderer;
 };
 

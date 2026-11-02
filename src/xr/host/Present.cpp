@@ -154,6 +154,7 @@ namespace
 
     bool assertStereo(std::string& why);
     void widenPanel();
+    void widenMouse();
     void dropStereo();
     void hold();
 
@@ -167,6 +168,9 @@ namespace
     float m_panelTexelAspect = 1.0f;
     bool m_texelAspectKnown = false;
     bool m_texelAspectSet = false;
+    float m_panelMouseScale[2] = { 0.0f, 0.0f };
+    bool m_mouseScaleKnown = false;
+    bool m_mouseScaleSet = false;
     bool m_stereo = false;
     bool m_told = false;
 
@@ -307,6 +311,23 @@ namespace
       {
         m_panelTexelAspect = was;
         m_texelAspectKnown = true;
+      }
+    }
+
+    m_panelMouseScale[0] = 0.0f;
+    m_panelMouseScale[1] = 0.0f;
+    m_mouseScaleKnown = false;
+    m_mouseScaleSet = false;
+    if (m_ovr.overlay->GetOverlayMouseScale)
+    {
+      struct HmdVector2_t was = { { 0.0f, 0.0f } };
+      if (m_ovr.overlay->GetOverlayMouseScale(found.handle, &was) ==
+            EVROverlayError_VROverlayError_None &&
+          was.v[0] > 0.0f && was.v[1] > 0.0f)
+      {
+        m_panelMouseScale[0] = was.v[0];
+        m_panelMouseScale[1] = was.v[1];
+        m_mouseScaleKnown = true;
       }
     }
 
@@ -517,6 +538,7 @@ namespace
 
     m_stereo = true;
     widenPanel();
+    widenMouse();
     return true;
   }
 
@@ -548,6 +570,41 @@ namespace
          m_panelTexelAspect, m_texelAspectKnown ? "" : " (assumed)");
   }
 
+  void Presenter::widenMouse()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl->SetOverlayMouseScale)
+    {
+      note("pmp-xr-host: the runtime cannot set a mouse scale, so the pointer stays halved");
+      return;
+    }
+
+    if (!m_mouseScaleKnown)
+    {
+      note("pmp-xr-host: the panel would not report its mouse scale, leaving the pointer alone");
+      return;
+    }
+
+    struct HmdVector2_t wanted = { { m_panelMouseScale[0] * kPackedEyes, m_panelMouseScale[1] } };
+    const EVROverlayError set = ovl->SetOverlayMouseScale(m_panel, &wanted);
+
+    struct HmdVector2_t back = { { 0.0f, 0.0f } };
+    const bool read = ovl->GetOverlayMouseScale &&
+                      ovl->GetOverlayMouseScale(m_panel, &back) ==
+                        EVROverlayError_VROverlayError_None;
+
+    if (set != EVROverlayError_VROverlayError_None)
+    {
+      note("pmp-xr-host: the pointer stayed halved: %s", errorName(set));
+      return;
+    }
+
+    m_mouseScaleSet = true;
+    note("pmp-xr-host: the pointer now spans %.1f by %.1f, was %.1f by %.1f",
+         read ? back.v[0] : wanted.v[0], read ? back.v[1] : wanted.v[1], m_panelMouseScale[0],
+         m_panelMouseScale[1]);
+  }
+
   void Presenter::dropStereo()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -563,6 +620,13 @@ namespace
     {
       ovl->SetOverlayTexelAspect(m_panel, m_panelTexelAspect);
       m_texelAspectSet = false;
+    }
+
+    if (m_mouseScaleSet && ovl->SetOverlayMouseScale)
+    {
+      struct HmdVector2_t was = { { m_panelMouseScale[0], m_panelMouseScale[1] } };
+      ovl->SetOverlayMouseScale(m_panel, &was);
+      m_mouseScaleSet = false;
     }
 
     if (m_panelWasStereo)
@@ -611,6 +675,19 @@ namespace
                now);
           m_texelAspectSet = false;
           widenPanel();
+        }
+      }
+
+      if (m_mouseScaleSet && ovl->GetOverlayMouseScale)
+      {
+        const float wanted = m_panelMouseScale[0] * kPackedEyes;
+        struct HmdVector2_t now = { { wanted, m_panelMouseScale[1] } };
+        if (ovl->GetOverlayMouseScale(m_panel, &now) == EVROverlayError_VROverlayError_None &&
+            std::fabs(now.v[0] - wanted) > 0.5f)
+        {
+          note("pmp-xr-host: the pointer narrowed to %.1f, widening it again", now.v[0]);
+          m_mouseScaleSet = false;
+          widenMouse();
         }
       }
       return;
