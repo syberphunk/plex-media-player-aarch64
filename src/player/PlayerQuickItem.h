@@ -69,6 +69,7 @@ private:
   int m_shotReports;
   int m_dumpsLeft;
   int m_dumpBudget;
+  bool m_captures;
   QPointF m_cursorAt;
   QOpenGLShaderProgram* m_arrowProgram;
   unsigned int m_arrowVao;
@@ -106,6 +107,7 @@ private slots:
     void onAfterRendering();
     void onPanelChanged();
     void onCursorIdle();
+    void onSettingsChanged(const QString& section, const QVariantMap& values);
     void updateVideoGeometry();
 
 private:
@@ -118,6 +120,7 @@ private:
     QPointF m_cursorAt;
     QTimer* m_cursorIdle;
     bool m_cursorHideLogged;
+    bool m_captures;
     PlayerRenderer* m_renderer;
 };
 

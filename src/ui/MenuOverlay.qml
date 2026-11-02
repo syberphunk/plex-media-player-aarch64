@@ -46,6 +46,8 @@ FocusScope
 
   property bool keyListOpen: false
 
+  property bool diagnostics: settings ? settings.value("main", "diagnostics") === true : false
+
   property bool steamOffer: false
   property bool steamOfferShown: false
   property string steamStatus: ""
@@ -1443,6 +1445,39 @@ FocusScope
             {
               if (menu.xr)
                 menu.xr.testOutput()
+            }
+          }
+        }
+
+        Heading
+        {
+          width: parent.width
+          text: qsTr("Diagnostics")
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          text: qsTr("Turn this on only to report a problem. Plex writes the most "
+                     + "detailed log it can and saves a few pictures of what the "
+                     + "headset was shown, into %1. Logging at this level starts "
+                     + "with the next launch.").arg(cfg ? cfg.logDir : "the log folder")
+        }
+
+        Toggle
+        {
+          width: parent.width
+          label: qsTr("Keep extra logs and pictures")
+          hint: qsTr("Off for everyday use, which writes no pictures at all")
+          checked: menu.diagnostics
+          onToggled: function(value)
+          {
+            menu.diagnostics = value
+            if (settings)
+            {
+              settings.setValue("main", "diagnostics", value)
+              settings.setValue("main", "logLevel", value ? "trace" : "debug")
             }
           }
         }

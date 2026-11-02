@@ -33,6 +33,7 @@ public:
   Q_PROPERTY(bool downloadWritable READ downloadWritable NOTIFY downloadChanged)
   Q_PROPERTY(bool downloadAsk READ downloadAsk NOTIFY downloadChanged)
   Q_PROPERTY(QString downloadStatus READ downloadStatus NOTIFY downloadStatusChanged)
+  Q_PROPERTY(QString logDir READ logDir CONSTANT)
 
   bool visible() const { return m_visible; }
   QString menuKey() const;
@@ -47,6 +48,7 @@ public:
   bool downloadWritable() const;
   bool downloadAsk() const;
   QString downloadStatus() const { return m_downloadStatus; }
+  QString logDir() const;
 
   Q_INVOKABLE void show();
   Q_INVOKABLE void hide();

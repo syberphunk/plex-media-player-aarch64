@@ -228,6 +228,12 @@ bool MenuComponent::highContrast() const
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+QString MenuComponent::logDir() const
+{
+  return QDir::toNativeSeparators(Paths::logDir());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 bool MenuComponent::downloadAsk() const
 {
   return SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_DOWNLOAD_ASK).toBool();
