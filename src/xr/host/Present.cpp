@@ -155,6 +155,7 @@ namespace
 
     bool assertStereo(std::string& why);
     void widenPanel();
+    void measurePanel(const char* when);
     void widenMouse();
     void dropStereo();
     void hold();
@@ -337,10 +338,12 @@ namespace
     }
 
     note("pmp-xr-host: the Plex panel is overlay %llu \"%s\" named \"%s\", %.2f m wide, "
-         "texture %ux%u, %s, flags 0x%x, transform %d, pid %u",
+         "curve %.3f, texture %ux%u, %s, flags 0x%x, transform %d, pid %u",
          static_cast<unsigned long long>(found.handle), found.key, found.name, found.width,
-         found.textureWidth, found.textureHeight, found.visible ? "showing" : "hidden",
-         found.flags, found.transformType, found.pid);
+         found.curvature, found.textureWidth, found.textureHeight,
+         found.visible ? "showing" : "hidden", found.flags, found.transformType, found.pid);
+
+    measurePanel("before any change");
   }
 
   bool Presenter::seedScan()
@@ -547,6 +550,31 @@ namespace
     return true;
   }
 
+  void Presenter::measurePanel(const char* when)
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!m_panel)
+      return;
+
+    float width = 0.0f;
+    float curve = 0.0f;
+    float aspect = 0.0f;
+    struct HmdVector2_t scale = { { 0.0f, 0.0f } };
+
+    if (ovl->GetOverlayWidthInMeters)
+      ovl->GetOverlayWidthInMeters(m_panel, &width);
+    if (ovl->GetOverlayCurvature)
+      ovl->GetOverlayCurvature(m_panel, &curve);
+    if (ovl->GetOverlayTexelAspect)
+      ovl->GetOverlayTexelAspect(m_panel, &aspect);
+    if (ovl->GetOverlayMouseScale)
+      ovl->GetOverlayMouseScale(m_panel, &scale);
+
+    note("pmp-xr-host: the panel measures %.3f m wide, curve %.3f, aspect %.3f, "
+         "mouse %.1f by %.1f, %s",
+         width, curve, aspect, scale.v[0], scale.v[1], when);
+  }
+
   void Presenter::widenPanel()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -573,6 +601,7 @@ namespace
     m_texelAspectSet = true;
     note("pmp-xr-host: the panel is %.3f texels wide per tall, was %.3f%s", read ? back : wanted,
          m_panelTexelAspect, m_texelAspectKnown ? "" : " (assumed)");
+    measurePanel("after the texel aspect");
   }
 
   void Presenter::widenMouse()
@@ -641,6 +670,8 @@ namespace
       ovl->SetOverlayFlag(m_panel, VROverlayFlags_SideBySide_Parallel, false);
     note("pmp-xr-host: the panel is flat again%s",
          error == EVROverlayError_VROverlayError_None ? "" : " (the runtime complained)");
+
+    measurePanel("after going flat");
   }
 
   void Presenter::hold()

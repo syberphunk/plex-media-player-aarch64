@@ -153,6 +153,9 @@ void SystemComponent::setCursorVisibility(bool visible)
   if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "webMode") == "desktop")
     visible = true;
 
+  if (visible)
+    m_mouseOutTimer->start(MOUSE_TIMEOUT);
+
   if (visible == m_cursorVisible)
     return;
 
@@ -161,7 +164,6 @@ void SystemComponent::setCursorVisibility(bool visible)
   if (visible)
   {
     qApp->restoreOverrideCursor();
-    m_mouseOutTimer->start(MOUSE_TIMEOUT);
   }
   else
   {
