@@ -1,0 +1,105 @@
+--- a/libavcodec/v4l2_m2m_dec.c
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -133,6 +133,20 @@
+     return 0;
+ }
+ 
++static void v4l2_requeue_capture(V4L2m2mContext *s)
++{
++    V4L2Context *const capture = &s->capture;
++    int i;
++
++    if (s->draining || !capture->streamon || capture->done || !capture->buffers)
++        return;
++
++    for (i = 0; i < capture->num_buffers; i++) {
++        if (capture->buffers[i].status == V4L2BUF_AVAILABLE)
++            ff_v4l2_buffer_enqueue(&capture->buffers[i]);
++    }
++}
++
+ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+ {
+     V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
+@@ -140,6 +154,8 @@
+     V4L2Context *const output = &s->output;
+     int ret;
+ 
++    v4l2_requeue_capture(s);
++
+     if (!s->buf_pkt.size) {
+         ret = ff_decode_get_packet(avctx, &s->buf_pkt);
+         if (ret < 0) {
+@@ -220,6 +236,53 @@
+     return ff_v4l2_m2m_codec_end(avctx->priv_data);
+ }
+ 
++static void v4l2_decode_flush(AVCodecContext *avctx)
++{
++    V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
++    V4L2Context *const capture = &s->capture;
++    V4L2Context *const output = &s->output;
++    int i, ret;
++
++    av_packet_unref(&s->buf_pkt);
++
++    if (output->streamon) {
++        ret = ff_v4l2_context_set_status(output, VIDIOC_STREAMOFF);
++        if (ret)
++            av_log(avctx, AV_LOG_WARNING, "VIDIOC_STREAMOFF on output context\n");
++    }
++
++    if (capture->streamon) {
++        ret = ff_v4l2_context_set_status(capture, VIDIOC_STREAMOFF);
++        if (ret)
++            av_log(avctx, AV_LOG_WARNING, "VIDIOC_STREAMOFF on capture context\n");
++    }
++
++    for (i = 0; output->buffers && i < output->num_buffers; i++) {
++        if (output->buffers[i].status == V4L2BUF_IN_DRIVER)
++            output->buffers[i].status = V4L2BUF_AVAILABLE;
++    }
++
++    for (i = 0; capture->buffers && i < capture->num_buffers; i++) {
++        if (capture->buffers[i].status == V4L2BUF_IN_DRIVER)
++            capture->buffers[i].status = V4L2BUF_AVAILABLE;
++    }
++
++    s->draining = 0;
++    output->done = 0;
++    capture->done = 0;
++
++    if (!capture->buffers)
++        return;
++
++    ret = ff_v4l2_context_set_status(capture, VIDIOC_STREAMON);
++    if (ret) {
++        av_log(avctx, AV_LOG_WARNING, "VIDIOC_STREAMON on capture context\n");
++        return;
++    }
++
++    v4l2_requeue_capture(s);
++}
++
+ #define OFFSET(x) offsetof(V4L2m2mPriv, x)
+ #define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
+ 
+@@ -250,6 +313,7 @@
+         .init           = v4l2_decode_init, \
+         FF_CODEC_RECEIVE_FRAME_CB(v4l2_receive_frame), \
+         .close          = v4l2_decode_close, \
++        .flush          = v4l2_decode_flush, \
+         .bsfs           = bsf_name, \
+         .p.capabilities = AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING, \
+         .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE | \
+--- a/libavcodec/v4l2_buffers.c
++++ b/libavcodec/v4l2_buffers.c
+@@ -252,6 +252,8 @@
+             }
+             else if (avbuf->context->streamon)
+                 ff_v4l2_buffer_enqueue(avbuf);
++            else
++                avbuf->status = V4L2BUF_AVAILABLE;
+         }
+ 
+         av_refstruct_unref(&avbuf->context_ref);

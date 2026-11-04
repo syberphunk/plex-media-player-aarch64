@@ -108,6 +108,8 @@ modules:
       - type: archive
         path: ../../vendor-deps/ffmpeg-9.0.2.tar.xz
         sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+      - type: patch
+        path: patches/ffmpeg-v4l2m2m-flush.patch
 
   - name: libmpv
     buildsystem: meson
