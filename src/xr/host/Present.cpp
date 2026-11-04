@@ -31,6 +31,7 @@ namespace
   const int kScanSlice = 512;
   const int kLoopGapMs = 50;
   const int kCheckGapMs = 1000;
+  const int kSettleMs = 20000;
   const int kReassertTries = 3;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
@@ -177,6 +178,8 @@ namespace
     int m_lookTries = 0;
     int64_t m_lookAt = 0;
     int64_t m_checkAt = 0;
+    int64_t m_settledAt = 0;
+    bool m_settled = false;
 
     bool m_environmentDescribed = false;
     bool m_surveyDone = false;
@@ -458,6 +461,8 @@ namespace
         send(XrProtocol::Stereo, nullptr);
         m_told = true;
         note("pmp-xr-host: the panel is side by side, flags 0x%x", m_panelFlags);
+        m_settledAt = m_checkAt;
+        m_settled = false;
         return;
       }
 
@@ -536,6 +541,7 @@ namespace
     float curve = 0.0f;
     float aspect = 0.0f;
     struct HmdVector2_t scale = { { 0.0f, 0.0f } };
+    struct VRTextureBounds_t bounds = { 0.0f, 0.0f, 0.0f, 0.0f };
 
     if (ovl->GetOverlayWidthInMeters)
       ovl->GetOverlayWidthInMeters(m_panel, &width);
@@ -545,10 +551,13 @@ namespace
       ovl->GetOverlayTexelAspect(m_panel, &aspect);
     if (ovl->GetOverlayMouseScale)
       ovl->GetOverlayMouseScale(m_panel, &scale);
+    if (ovl->GetOverlayTextureBounds)
+      ovl->GetOverlayTextureBounds(m_panel, &bounds);
 
     note("pmp-xr-host: the panel measures %.3f m wide, curve %.3f, aspect %.3f, "
-         "mouse %.1f by %.1f, %s",
-         width, curve, aspect, scale.v[0], scale.v[1], when);
+         "mouse %.1f by %.1f, texture u %.4f to %.4f v %.4f to %.4f, %s",
+         width, curve, aspect, scale.v[0], scale.v[1], bounds.uMin, bounds.uMax, bounds.vMin,
+         bounds.vMax, when);
   }
 
   void Presenter::widenPanel()
@@ -614,6 +623,12 @@ namespace
     if (now - m_checkAt < kCheckGapMs)
       return;
     m_checkAt = now;
+
+    if (!m_settled && m_settledAt != 0 && now - m_settledAt > kSettleMs)
+    {
+      m_settled = true;
+      measurePanel("a while after going side by side");
+    }
 
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
 

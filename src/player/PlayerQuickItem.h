@@ -42,6 +42,7 @@ private:
   bool prepareKey();
   void drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height);
   bool prepareArrow();
+  void drawRuler(QOpenGLExtraFunctions* gl, int half);
   void drawCursor(QOpenGLExtraFunctions* gl, int half);
   void reportShot(QOpenGLExtraFunctions* gl);
   void dumpFrames(QOpenGLExtraFunctions* gl);
@@ -71,6 +72,8 @@ private:
   int m_dumpBudget;
   bool m_captures;
   QPointF m_cursorAt;
+  qint64 m_rulerFrom;
+  int m_rulerSaid;
   QOpenGLShaderProgram* m_arrowProgram;
   unsigned int m_arrowVao;
   bool m_arrowFailed;
@@ -93,6 +96,7 @@ public:
     ~PlayerQuickItem() override;
     Renderer* createRenderer() const override;
     void notePointerReach();
+    void notePointerRest();
     void reportPointerReach(const char* when);
     void reportPointerPress();
 
@@ -111,6 +115,7 @@ private slots:
     void onAfterRendering();
     void onPanelChanged();
     void onCursorIdle();
+    void onCursorRest();
     void onSettingsChanged(const QString& section, const QVariantMap& values);
     void updateVideoGeometry();
 
@@ -123,6 +128,9 @@ private:
     bool m_stereoLive;
     QPointF m_cursorAt;
     QTimer* m_cursorIdle;
+    QTimer* m_cursorRest;
+    QPointF m_cursorRestedAt;
+    int m_cursorRests;
     bool m_cursorHideLogged;
     float m_cursorSeenLow;
     float m_cursorSeenHigh;

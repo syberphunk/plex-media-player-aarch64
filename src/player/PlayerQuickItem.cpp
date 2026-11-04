@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QImage>
 #include <QDateTime>
+#include <QScreen>
 
 #include <QtQuick/QQuickWindow>
 #include <QOpenGLExtraFunctions>
@@ -45,6 +46,11 @@ namespace
   const int kCursorIdleMs = 4000;
   const int kCursorReportMs = 1000;
   const int kCursorReportMax = 40;
+  const int kCursorRestMs = 700;
+  const int kCursorRestMax = 80;
+  const int kRulerMs = 90000;
+  const int kRulerBars = 5;
+  const float kRulerWide = 10.0f;
 
   const char kArrowVertex[] = R"(
 uniform vec2 u_p0;
@@ -108,7 +114,8 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
   m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
-  m_dumpBudget(kDumpBudget), m_captures(false), m_arrowProgram(nullptr), m_arrowVao(0),
+  m_dumpBudget(kDumpBudget), m_captures(false), m_rulerFrom(0), m_rulerSaid(0),
+  m_arrowProgram(nullptr), m_arrowVao(0),
   m_arrowFailed(false),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
 {
@@ -244,6 +251,8 @@ void PlayerRenderer::syncStereo()
     if (wanted)
       m_dumpBudget = kDumpBudget;
     m_dumpsLeft = wanted ? qMin(kFrameDumps, m_dumpBudget) : 0;
+    m_rulerFrom = wanted ? QDateTime::currentMSecsSinceEpoch() : 0;
+    m_rulerSaid = 0;
   }
 
   m_stereoWanted = wanted;
@@ -547,6 +556,114 @@ bool PlayerRenderer::prepareArrow()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
+{
+  if (m_rulerFrom == 0)
+    return;
+
+  const int w = m_windowSize.width();
+  const int h = m_windowSize.height();
+  if (w < 4 || h < 4 || half < 2)
+    return;
+
+  const qint64 since = QDateTime::currentMSecsSinceEpoch() - m_rulerFrom;
+  if (since >= qint64(kRulerMs) * 2)
+  {
+    if (m_rulerSaid < 3)
+    {
+      m_rulerSaid = 3;
+      QLOG_INFO() << "Stereoscopic: the measuring bars are finished";
+    }
+    return;
+  }
+
+  if (!prepareArrow())
+    return;
+
+  const bool upright = since < kRulerMs;
+  const float span = upright ? float(w) : float(h);
+  const float edge = kRulerWide;
+
+  float at[kRulerBars];
+  for (int bar = 0; bar < kRulerBars; ++bar)
+    at[bar] = edge + float(bar) * (span - 2.0f * edge) / float(kRulerBars - 1);
+
+  const int want = upright ? 1 : 2;
+  if (m_rulerSaid < want)
+  {
+    m_rulerSaid = want;
+    QString where;
+    for (int bar = 0; bar < kRulerBars; ++bar)
+      where += QString::number(double(at[bar]), 'f', 0) + " ";
+    QLOG_INFO() << "Stereoscopic: five" << (upright ? "upright" : "flat")
+                << "measuring bars, red yellow green cyan magenta, at"
+                << (upright ? "x" : "y") << where << "of"
+                << (upright ? w : h) << "for the next" << kRulerMs / 1000 << "seconds";
+  }
+
+  static const float colour[kRulerBars][3] = {
+    { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f },
+    { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 1.0f }
+  };
+
+  gl->glDisable(GL_BLEND);
+  gl->glViewport(0, 0, w, h);
+  m_arrowProgram->bind();
+  gl->glBindVertexArray(m_arrowVao);
+
+  for (int eye = 0; eye < 2; ++eye)
+  {
+    for (int bar = 0; bar < kRulerBars; ++bar)
+    {
+      m_arrowProgram->setUniformValue(
+        "u_colour", QVector3D(colour[bar][0], colour[bar][1], colour[bar][2]));
+
+      float left = 0.0f;
+      float right = 0.0f;
+      float base = 0.0f;
+      float top = 0.0f;
+
+      if (upright)
+      {
+        left = float(eye * half) + (at[bar] - kRulerWide * 0.5f) * float(half) / float(w);
+        right = float(eye * half) + (at[bar] + kRulerWide * 0.5f) * float(half) / float(w);
+        base = 0.0f;
+        top = float(h);
+      }
+      else
+      {
+        left = float(eye * half);
+        right = float(eye * half + half);
+        base = float(h) - at[bar] - kRulerWide * 0.5f;
+        top = float(h) - at[bar] + kRulerWide * 0.5f;
+      }
+
+      const float corner[4][2] = {
+        { left, base }, { right, base }, { right, top }, { left, top }
+      };
+      static const int piece[2][3] = { { 0, 1, 2 }, { 0, 2, 3 } };
+
+      for (int pass = 0; pass < 2; ++pass)
+      {
+        for (int point = 0; point < 3; ++point)
+        {
+          const int corn = piece[pass][point];
+          const QString name = QStringLiteral("u_p%1").arg(point);
+          m_arrowProgram->setUniformValue(qPrintable(name),
+                                          QVector2D(corner[corn][0] * 2.0f / float(w) - 1.0f,
+                                                    corner[corn][1] * 2.0f / float(h) - 1.0f));
+        }
+
+        gl->glDrawArrays(GL_TRIANGLES, 0, 3);
+      }
+    }
+  }
+
+  gl->glBindVertexArray(0);
+  m_arrowProgram->release();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
 {
   if (m_cursorAt.isNull())
@@ -658,6 +775,7 @@ void PlayerRenderer::composeWindow()
       drawShot(gl, eye * half, half, h);
     gl->glDisable(GL_BLEND);
     gl->glViewport(0, 0, w, h);
+    drawRuler(gl, half);
     drawCursor(gl, half);
   }
   else
@@ -671,6 +789,7 @@ void PlayerRenderer::composeWindow()
       overlayVideo(gl, half);
 
     gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    drawRuler(gl, half);
     drawCursor(gl, half);
   }
 
@@ -850,7 +969,8 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
-  m_cursorIdle(new QTimer(this)), m_cursorHideLogged(false),
+  m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorRests(0),
+  m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
   m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
     m_cursorSeenTop(-1.0f), m_cursorSeenBase(-1.0f), m_cursorHitTop(false),
@@ -868,6 +988,9 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
   m_cursorIdle->setSingleShot(true);
   m_cursorIdle->setInterval(kCursorIdleMs);
   connect(m_cursorIdle, &QTimer::timeout, this, &PlayerQuickItem::onCursorIdle);
+  m_cursorRest->setSingleShot(true);
+  m_cursorRest->setInterval(kCursorRestMs);
+  connect(m_cursorRest, &QTimer::timeout, this, &PlayerQuickItem::onCursorRest);
   connect(this, &QQuickItem::windowChanged, this, &PlayerQuickItem::onWindowChanged, Qt::DirectConnection);
   connect(&XrPresenter::Get(), &XrPresenter::panelChanged, this, &PlayerQuickItem::onPanelChanged,
           Qt::QueuedConnection);
@@ -925,6 +1048,17 @@ void PlayerQuickItem::onPanelChanged()
 
   if (live)
   {
+    const QQuickWindow* win = window();
+    const QScreen* screen = win ? win->screen() : nullptr;
+    QLOG_INFO() << "Stereoscopic: the window is" << (win ? win->width() : 0) << "by"
+                << (win ? win->height() : 0) << "at" << (win ? win->x() : 0) << ","
+                << (win ? win->y() : 0) << "ratio" << (win ? win->devicePixelRatio() : 0.0)
+                << "on a screen of" << (screen ? screen->geometry() : QRect())
+                << "ratio" << (screen ? screen->devicePixelRatio() : 0.0);
+  }
+
+  if (live)
+  {
     QGuiApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
     m_cursorHideLogged = false;
     m_cursorSeenLow = -1.0f;
@@ -937,6 +1071,8 @@ void PlayerQuickItem::onPanelChanged()
     m_cursorSeenBase = -1.0f;
     m_cursorHitTop = false;
     m_cursorHitBase = false;
+    m_cursorRests = 0;
+    m_cursorRestedAt = QPointF();
     m_cursorIdle->start(kCursorIdleMs);
   }
   else
@@ -944,6 +1080,7 @@ void PlayerQuickItem::onPanelChanged()
     reportPointerReach("final");
     QGuiApplication::restoreOverrideCursor();
     m_cursorIdle->stop();
+    m_cursorRest->stop();
     m_cursorAt = QPointF();
   }
 
@@ -981,6 +1118,31 @@ void PlayerQuickItem::onCursorIdle()
   }
 
   update();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::onCursorRest()
+{
+  notePointerRest();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::notePointerRest()
+{
+  if (m_cursorAt.isNull() || m_cursorRests >= kCursorRestMax)
+    return;
+
+  const QPointF moved = m_cursorAt - m_cursorRestedAt;
+  if (!m_cursorRestedAt.isNull() && qAbs(moved.x()) < 3.0 && qAbs(moved.y()) < 3.0)
+    return;
+
+  m_cursorRestedAt = m_cursorAt;
+  ++m_cursorRests;
+
+  const QQuickWindow* win = window();
+  QLOG_INFO() << "Stereoscopic: the pointer rests at x" << float(m_cursorAt.x()) << "y"
+              << float(m_cursorAt.y()) << "of" << (win ? win->width() : 0) << "by"
+              << (win ? win->height() : 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1071,6 +1233,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         if (event->type() == QEvent::MouseButtonPress)
           reportPointerPress();
         m_cursorIdle->start(kCursorIdleMs);
+        m_cursorRest->start(kCursorRestMs);
         update();
       }
       break;
@@ -1080,6 +1243,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       {
         notePointerReach();
         m_cursorIdle->start(kCursorIdleMs);
+        m_cursorRest->start(kCursorRestMs);
         update();
       }
       break;
