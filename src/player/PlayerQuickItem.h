@@ -92,7 +92,9 @@ public:
     explicit PlayerQuickItem(QQuickItem* parent = nullptr);
     ~PlayerQuickItem() override;
     Renderer* createRenderer() const override;
-    bool eventFilter(QObject* watched, QEvent* event) override;
+    void notePointerReach();
+
+  bool eventFilter(QObject* watched, QEvent* event) override;
     void initMpv(PlayerComponent* player);
     QString debugInfo() { return m_debugInfo; }
 
@@ -120,6 +122,9 @@ private:
     QPointF m_cursorAt;
     QTimer* m_cursorIdle;
     bool m_cursorHideLogged;
+  float m_cursorSeenLow;
+  float m_cursorSeenHigh;
+  int m_cursorReports;
     bool m_captures;
     PlayerRenderer* m_renderer;
 };

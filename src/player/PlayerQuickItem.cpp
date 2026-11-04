@@ -849,6 +849,7 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
   m_cursorIdle(new QTimer(this)), m_cursorHideLogged(false),
+  m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
   m_captures(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "diagnostics").toBool()),
   m_renderer(nullptr)
 {
@@ -921,6 +922,9 @@ void PlayerQuickItem::onPanelChanged()
   {
     QGuiApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
     m_cursorHideLogged = false;
+    m_cursorSeenLow = -1.0f;
+    m_cursorSeenHigh = -1.0f;
+    m_cursorReports = 0;
     m_cursorIdle->start(kCursorIdleMs);
   }
   else
@@ -967,6 +971,33 @@ void PlayerQuickItem::onCursorIdle()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::notePointerReach()
+{
+  const float x = float(m_cursorAt.x());
+  const QQuickWindow* win = window();
+  const float wide = win ? float(win->width()) : 0.0f;
+
+  bool grew = false;
+  if (m_cursorSeenLow < 0.0f || x < m_cursorSeenLow)
+  {
+    m_cursorSeenLow = x;
+    grew = true;
+  }
+  if (m_cursorSeenHigh < 0.0f || x > m_cursorSeenHigh + 8.0f)
+  {
+    m_cursorSeenHigh = x;
+    grew = true;
+  }
+
+  if (!grew || m_cursorReports >= 24)
+    return;
+
+  ++m_cursorReports;
+  QLOG_INFO() << "Stereoscopic: the pointer reaches x" << m_cursorSeenLow << "to"
+              << m_cursorSeenHigh << "in a window" << wide << "wide";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
 {
   switch (event->type())
@@ -977,6 +1008,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       m_cursorAt = static_cast<QMouseEvent*>(event)->position();
       if (m_stereoLive)
       {
+        notePointerReach();
         m_cursorIdle->start(kCursorIdleMs);
         update();
       }
@@ -985,6 +1017,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       m_cursorAt = static_cast<QHoverEvent*>(event)->position();
       if (m_stereoLive)
       {
+        notePointerReach();
         m_cursorIdle->start(kCursorIdleMs);
         update();
       }
