@@ -29,6 +29,7 @@ finish-args:
   - --filesystem=xdg-config/openvr:ro
   - --filesystem=~/.steam:ro
   - --filesystem=xdg-data/Steam/userdata
+  - --filesystem=xdg-data/Steam/logs
   - --filesystem=xdg-data/flatpak/exports/share/icons:ro
   - --filesystem=/var/lib/flatpak/exports/share/icons:ro
   - --talk-name=org.freedesktop.ScreenSaver
