@@ -32,6 +32,9 @@ namespace
   const int kLoopGapMs = 50;
   const int kCheckGapMs = 1000;
   const int kSettleMs = 20000;
+  const char* const kDotPrefix = "gamescope.gamescope-0.cursor.";
+  const int kDotGapMs = 500;
+  const int kDotSaidMax = 400;
   const int kReassertTries = 3;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
@@ -157,6 +160,7 @@ namespace
     bool assertStereo(std::string& why);
     void widenPanel();
     void measurePanel(const char* when);
+    void probeCursor();
     void dropStereo();
     void hold();
 
@@ -173,6 +177,9 @@ namespace
     int m_texelAspectTries = 0;
     bool m_stereo = false;
     bool m_told = false;
+    VROverlayHandle_t m_dot = k_ulOverlayHandleInvalid;
+    int m_dotSaid = 0;
+    int64_t m_dotAt = 0;
 
     Stage m_stage = Looking;
     int m_lookTries = 0;
@@ -425,6 +432,18 @@ namespace
           }
         }
 
+        if (std::strstr(found.key, ".cursor.") != nullptr ||
+            std::strcmp(found.name, "Mouse Cursor") == 0)
+        {
+          if (m_dot != handle)
+          {
+            m_dot = handle;
+            m_dotSaid = 0;
+            note("pmp-xr-host: the mouse cursor is overlay %llu \"%s\"",
+                 static_cast<unsigned long long>(handle), found.key);
+          }
+        }
+
         note("pmp-xr-host: overlay %llu \"%s\" named \"%s\", %.2f m wide, texture %ux%u, %s, "
              "flags 0x%x, sort %u, transform %d, curve %.3f, pid %u",
              static_cast<unsigned long long>(handle), found.key, found.name, found.width,
@@ -560,6 +579,66 @@ namespace
          bounds.vMax, when);
   }
 
+  void Presenter::probeCursor()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!m_panel || m_dotSaid >= kDotSaidMax)
+      return;
+
+    if (m_dot == k_ulOverlayHandleInvalid && m_appid != 0 && ovl->FindOverlay)
+    {
+      char key[160] = {0};
+      std::snprintf(key, sizeof(key), "%s%u", kDotPrefix, m_appid);
+      VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
+      if (ovl->FindOverlay(key, &handle) == EVROverlayError_VROverlayError_None)
+      {
+        m_dot = handle;
+        note("pmp-xr-host: the mouse cursor is overlay %llu \"%s\", found by key",
+             static_cast<unsigned long long>(handle), key);
+      }
+    }
+
+    if (m_dot == k_ulOverlayHandleInvalid)
+      return;
+    if (!ovl->GetOverlayTransformAbsolute || !ovl->IsOverlayVisible)
+      return;
+    if (!ovl->IsOverlayVisible(m_dot))
+      return;
+
+    ETrackingUniverseOrigin dotOrigin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+    ETrackingUniverseOrigin panelOrigin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+    struct HmdMatrix34_t dotPose;
+    struct HmdMatrix34_t panelPose;
+
+    if (ovl->GetOverlayTransformAbsolute(m_dot, &dotOrigin, &dotPose) !=
+          EVROverlayError_VROverlayError_None ||
+        ovl->GetOverlayTransformAbsolute(m_panel, &panelOrigin, &panelPose) !=
+          EVROverlayError_VROverlayError_None)
+      return;
+
+    float gap[3];
+    for (int axis = 0; axis < 3; ++axis)
+      gap[axis] = dotPose.m[axis][3] - panelPose.m[axis][3];
+
+    float local[3] = { 0.0f, 0.0f, 0.0f };
+    for (int axis = 0; axis < 3; ++axis)
+      for (int term = 0; term < 3; ++term)
+        local[axis] += panelPose.m[term][axis] * gap[term];
+
+    float width = 0.0f;
+    float aspect = 0.0f;
+    if (ovl->GetOverlayWidthInMeters)
+      ovl->GetOverlayWidthInMeters(m_panel, &width);
+    if (ovl->GetOverlayTexelAspect)
+      ovl->GetOverlayTexelAspect(m_panel, &aspect);
+
+    ++m_dotSaid;
+    note("pmp-xr-host: the cursor sits at panel x %.4f y %.4f z %.4f m, panel %.3f m wide, "
+         "aspect %.3f, origins %d and %d",
+         local[0], local[1], local[2], width, aspect, static_cast<int>(dotOrigin),
+         static_cast<int>(panelOrigin));
+  }
+
   void Presenter::widenPanel()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -628,6 +707,12 @@ namespace
     {
       m_settled = true;
       measurePanel("a while after going side by side");
+    }
+
+    if (now - m_dotAt >= kDotGapMs)
+    {
+      m_dotAt = now;
+      probeCursor();
     }
 
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;

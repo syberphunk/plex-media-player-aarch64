@@ -46,8 +46,11 @@ namespace
   const int kCursorIdleMs = 4000;
   const int kCursorReportMs = 1000;
   const int kCursorReportMax = 40;
-  const int kCursorRestMs = 700;
+  const int kCursorRestMs = 200;
   const int kCursorRestMax = 80;
+  const int kCursorRestKeep = 4;
+  const double kCursorRestSpread = 10.0;
+  const double kCursorRestApart = 12.0;
   const int kRulerMs = 90000;
   const int kRulerBars = 5;
   const float kRulerWide = 10.0f;
@@ -988,7 +991,7 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
   m_cursorIdle->setSingleShot(true);
   m_cursorIdle->setInterval(kCursorIdleMs);
   connect(m_cursorIdle, &QTimer::timeout, this, &PlayerQuickItem::onCursorIdle);
-  m_cursorRest->setSingleShot(true);
+  m_cursorRest->setSingleShot(false);
   m_cursorRest->setInterval(kCursorRestMs);
   connect(m_cursorRest, &QTimer::timeout, this, &PlayerQuickItem::onCursorRest);
   connect(this, &QQuickItem::windowChanged, this, &PlayerQuickItem::onWindowChanged, Qt::DirectConnection);
@@ -1073,6 +1076,8 @@ void PlayerQuickItem::onPanelChanged()
     m_cursorHitBase = false;
     m_cursorRests = 0;
     m_cursorRestedAt = QPointF();
+    m_cursorTrail.clear();
+    m_cursorRest->start(kCursorRestMs);
     m_cursorIdle->start(kCursorIdleMs);
   }
   else
@@ -1132,16 +1137,41 @@ void PlayerQuickItem::notePointerRest()
   if (m_cursorAt.isNull() || m_cursorRests >= kCursorRestMax)
     return;
 
-  const QPointF moved = m_cursorAt - m_cursorRestedAt;
-  if (!m_cursorRestedAt.isNull() && qAbs(moved.x()) < 3.0 && qAbs(moved.y()) < 3.0)
+  m_cursorTrail.append(m_cursorAt);
+  while (m_cursorTrail.size() > kCursorRestKeep)
+    m_cursorTrail.removeFirst();
+  if (m_cursorTrail.size() < kCursorRestKeep)
     return;
 
-  m_cursorRestedAt = m_cursorAt;
-  ++m_cursorRests;
+  double lowX = m_cursorTrail.first().x();
+  double highX = lowX;
+  double lowY = m_cursorTrail.first().y();
+  double highY = lowY;
+  double sumX = 0.0;
+  double sumY = 0.0;
+  for (const QPointF& seen : m_cursorTrail)
+  {
+    lowX = qMin(lowX, seen.x());
+    highX = qMax(highX, seen.x());
+    lowY = qMin(lowY, seen.y());
+    highY = qMax(highY, seen.y());
+    sumX += seen.x();
+    sumY += seen.y();
+  }
+  if (highX - lowX > kCursorRestSpread || highY - lowY > kCursorRestSpread)
+    return;
 
+  const QPointF middle(sumX / double(m_cursorTrail.size()), sumY / double(m_cursorTrail.size()));
+  if (!m_cursorRestedAt.isNull() && qAbs(middle.x() - m_cursorRestedAt.x()) < kCursorRestApart
+      && qAbs(middle.y() - m_cursorRestedAt.y()) < kCursorRestApart)
+    return;
+
+  m_cursorRestedAt = middle;
+  ++m_cursorRests;
   const QQuickWindow* win = window();
-  QLOG_INFO() << "Stereoscopic: the pointer rests at x" << float(m_cursorAt.x()) << "y"
-              << float(m_cursorAt.y()) << "of" << (win ? win->width() : 0) << "by"
+  QLOG_INFO() << "Stereoscopic: the pointer rests at x" << float(middle.x()) << "y"
+              << float(middle.y()) << "spread" << float(highX - lowX) << "by"
+              << float(highY - lowY) << "of" << (win ? win->width() : 0) << "by"
               << (win ? win->height() : 0);
 }
 
@@ -1233,7 +1263,6 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         if (event->type() == QEvent::MouseButtonPress)
           reportPointerPress();
         m_cursorIdle->start(kCursorIdleMs);
-        m_cursorRest->start(kCursorRestMs);
         update();
       }
       break;
@@ -1243,7 +1272,6 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       {
         notePointerReach();
         m_cursorIdle->start(kCursorIdleMs);
-        m_cursorRest->start(kCursorRestMs);
         update();
       }
       break;

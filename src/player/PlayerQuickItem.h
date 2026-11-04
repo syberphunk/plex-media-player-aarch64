@@ -2,6 +2,7 @@
 #define PLAYERQUICKITEM_H
 
 #include <Qt>
+#include <QList>
 #include <QPointF>
 #include <QRect>
 #include <QtQuick/QQuickFramebufferObject>
@@ -130,6 +131,7 @@ private:
     QTimer* m_cursorIdle;
     QTimer* m_cursorRest;
     QPointF m_cursorRestedAt;
+    QList<QPointF> m_cursorTrail;
     int m_cursorRests;
     bool m_cursorHideLogged;
     float m_cursorSeenLow;
