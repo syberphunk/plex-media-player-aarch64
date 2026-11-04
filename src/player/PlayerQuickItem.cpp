@@ -43,6 +43,8 @@ namespace
   const int kDumpBudget = 6;
   const float kCursorHeight = 18.0f;
   const int kCursorIdleMs = 4000;
+  const int kCursorReportMs = 1000;
+  const int kCursorReportMax = 40;
 
   const char kArrowVertex[] = R"(
 uniform vec2 u_p0;
@@ -850,6 +852,7 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
   m_cursorIdle(new QTimer(this)), m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
+  m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
   m_captures(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "diagnostics").toBool()),
   m_renderer(nullptr)
 {
@@ -925,10 +928,14 @@ void PlayerQuickItem::onPanelChanged()
     m_cursorSeenLow = -1.0f;
     m_cursorSeenHigh = -1.0f;
     m_cursorReports = 0;
+    m_cursorReportedAt = 0;
+    m_cursorHitLeft = false;
+    m_cursorHitRight = false;
     m_cursorIdle->start(kCursorIdleMs);
   }
   else
   {
+    reportPointerReach("final");
     QGuiApplication::restoreOverrideCursor();
     m_cursorIdle->stop();
     m_cursorAt = QPointF();
@@ -971,30 +978,48 @@ void PlayerQuickItem::onCursorIdle()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::reportPointerReach(const char* when)
+{
+  if (m_cursorSeenLow < 0.0f)
+    return;
+
+  const QQuickWindow* win = window();
+  const float wide = win ? float(win->width()) : 0.0f;
+
+  QLOG_INFO() << "Stereoscopic: the pointer reaches x" << m_cursorSeenLow << "to"
+              << m_cursorSeenHigh << "in a window" << wide << "wide, touched left"
+              << m_cursorHitLeft << "right" << m_cursorHitRight << "-" << when;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerQuickItem::notePointerReach()
 {
   const float x = float(m_cursorAt.x());
   const QQuickWindow* win = window();
   const float wide = win ? float(win->width()) : 0.0f;
 
-  bool grew = false;
   if (m_cursorSeenLow < 0.0f || x < m_cursorSeenLow)
-  {
     m_cursorSeenLow = x;
-    grew = true;
-  }
-  if (m_cursorSeenHigh < 0.0f || x > m_cursorSeenHigh + 8.0f)
-  {
+  if (m_cursorSeenHigh < 0.0f || x > m_cursorSeenHigh)
     m_cursorSeenHigh = x;
-    grew = true;
+
+  if (wide > 2.0f)
+  {
+    if (x <= 1.0f)
+      m_cursorHitLeft = true;
+    if (x >= wide - 1.0f)
+      m_cursorHitRight = true;
   }
 
-  if (!grew || m_cursorReports >= 24)
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  if (m_cursorReports >= kCursorReportMax)
+    return;
+  if (m_cursorReportedAt != 0 && now - m_cursorReportedAt < kCursorReportMs)
     return;
 
+  m_cursorReportedAt = now;
   ++m_cursorReports;
-  QLOG_INFO() << "Stereoscopic: the pointer reaches x" << m_cursorSeenLow << "to"
-              << m_cursorSeenHigh << "in a window" << wide << "wide";
+  reportPointerReach("so far");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
