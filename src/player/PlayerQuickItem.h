@@ -94,6 +94,7 @@ public:
     Renderer* createRenderer() const override;
     void notePointerReach();
     void reportPointerReach(const char* when);
+    void reportPointerPress();
 
     bool eventFilter(QObject* watched, QEvent* event) override;
     void initMpv(PlayerComponent* player);
@@ -129,6 +130,10 @@ private:
     qint64 m_cursorReportedAt;
     bool m_cursorHitLeft;
     bool m_cursorHitRight;
+    float m_cursorSeenTop;
+    float m_cursorSeenBase;
+    bool m_cursorHitTop;
+    bool m_cursorHitBase;
     bool m_captures;
     PlayerRenderer* m_renderer;
 };

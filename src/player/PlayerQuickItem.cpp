@@ -853,6 +853,8 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
   m_cursorIdle(new QTimer(this)), m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
   m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
+    m_cursorSeenTop(-1.0f), m_cursorSeenBase(-1.0f), m_cursorHitTop(false),
+    m_cursorHitBase(false),
   m_captures(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "diagnostics").toBool()),
   m_renderer(nullptr)
 {
@@ -931,6 +933,10 @@ void PlayerQuickItem::onPanelChanged()
     m_cursorReportedAt = 0;
     m_cursorHitLeft = false;
     m_cursorHitRight = false;
+    m_cursorSeenTop = -1.0f;
+    m_cursorSeenBase = -1.0f;
+    m_cursorHitTop = false;
+    m_cursorHitBase = false;
     m_cursorIdle->start(kCursorIdleMs);
   }
   else
@@ -985,23 +991,43 @@ void PlayerQuickItem::reportPointerReach(const char* when)
 
   const QQuickWindow* win = window();
   const float wide = win ? float(win->width()) : 0.0f;
+  const float tall = win ? float(win->height()) : 0.0f;
 
   QLOG_INFO() << "Stereoscopic: the pointer reaches x" << m_cursorSeenLow << "to"
-              << m_cursorSeenHigh << "in a window" << wide << "wide, touched left"
-              << m_cursorHitLeft << "right" << m_cursorHitRight << "-" << when;
+              << m_cursorSeenHigh << "of" << wide << "and y" << m_cursorSeenTop << "to"
+              << m_cursorSeenBase << "of" << tall << ", edges left" << m_cursorHitLeft
+              << "right" << m_cursorHitRight << "top" << m_cursorHitTop << "bottom"
+              << m_cursorHitBase << "-" << when;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::reportPointerPress()
+{
+  const QQuickWindow* win = window();
+  const float wide = win ? float(win->width()) : 0.0f;
+  const float tall = win ? float(win->height()) : 0.0f;
+
+  QLOG_INFO() << "Stereoscopic: the pointer was pressed at x" << float(m_cursorAt.x()) << "y"
+              << float(m_cursorAt.y()) << "of" << wide << "by" << tall;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerQuickItem::notePointerReach()
 {
   const float x = float(m_cursorAt.x());
+  const float y = float(m_cursorAt.y());
   const QQuickWindow* win = window();
   const float wide = win ? float(win->width()) : 0.0f;
+  const float tall = win ? float(win->height()) : 0.0f;
 
   if (m_cursorSeenLow < 0.0f || x < m_cursorSeenLow)
     m_cursorSeenLow = x;
   if (m_cursorSeenHigh < 0.0f || x > m_cursorSeenHigh)
     m_cursorSeenHigh = x;
+  if (m_cursorSeenTop < 0.0f || y < m_cursorSeenTop)
+    m_cursorSeenTop = y;
+  if (m_cursorSeenBase < 0.0f || y > m_cursorSeenBase)
+    m_cursorSeenBase = y;
 
   if (wide > 2.0f)
   {
@@ -1009,6 +1035,14 @@ void PlayerQuickItem::notePointerReach()
       m_cursorHitLeft = true;
     if (x >= wide - 1.0f)
       m_cursorHitRight = true;
+  }
+
+  if (tall > 2.0f)
+  {
+    if (y <= 1.0f)
+      m_cursorHitTop = true;
+    if (y >= tall - 1.0f)
+      m_cursorHitBase = true;
   }
 
   const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -1034,6 +1068,8 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       if (m_stereoLive)
       {
         notePointerReach();
+        if (event->type() == QEvent::MouseButtonPress)
+          reportPointerPress();
         m_cursorIdle->start(kCursorIdleMs);
         update();
       }
