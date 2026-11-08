@@ -21,6 +21,8 @@
 #include <unistd.h>
 #endif
 
+static QMap<QString, QString>* g_hostOsRelease = nullptr;
+
 static QString g_graphicsEnvReport;
 static QString g_v4l2DecodeReport;
 static QStringList g_v4l2DecodeExcluded;
@@ -516,6 +518,77 @@ QString SessionEnv::steamEnvReport()
   return parts.join(" ");
 }
 
+QString SessionEnv::hostOsRelease(const QString& key)
+{
+  if (!g_hostOsRelease)
+  {
+    g_hostOsRelease = new QMap<QString, QString>();
+
+    QStringList candidates;
+    if (insideFlatpak())
+      candidates << QStringLiteral("/run/host/os-release");
+    candidates << QStringLiteral("/etc/os-release")
+               << QStringLiteral("/usr/lib/os-release");
+
+    for (const QString& path : candidates)
+    {
+      QFile file(path);
+      if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        continue;
+
+      while (!file.atEnd())
+      {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        const int split = line.indexOf('=');
+        if (split < 1 || line.startsWith('#'))
+          continue;
+
+        QString value = line.mid(split + 1).trimmed();
+        if (value.size() >= 2 && value.startsWith('"') && value.endsWith('"'))
+          value = value.mid(1, value.size() - 2);
+
+        g_hostOsRelease->insert(line.left(split).trimmed(), value);
+      }
+
+      if (!g_hostOsRelease->isEmpty())
+        break;
+    }
+  }
+
+  return g_hostOsRelease->value(key);
+}
+
+QString SessionEnv::hostOsVersion()
+{
+  return hostOsRelease(QStringLiteral("VERSION_ID"));
+}
+
+QString SessionEnv::hostOsBuild()
+{
+  return hostOsRelease(QStringLiteral("BUILD_ID"));
+}
+
+QString SessionEnv::hostOsReport()
+{
+  const QString name = hostOsRelease(QStringLiteral("NAME"));
+  const QString version = hostOsVersion();
+  const QString build = hostOsBuild();
+  const QString variant = hostOsRelease(QStringLiteral("VARIANT_ID"));
+
+  if (name.isEmpty() && version.isEmpty())
+    return QStringLiteral("unreadable");
+
+  QStringList parts;
+  parts << QString("%1 %2").arg(name.isEmpty() ? QStringLiteral("unnamed") : name,
+                                version.isEmpty() ? QStringLiteral("(no VERSION_ID)") : version)
+             .trimmed();
+  if (!build.isEmpty())
+    parts << QString("build %1").arg(build);
+  if (!variant.isEmpty())
+    parts << QString("variant %1").arg(variant);
+  return parts.join(", ");
+}
+
 QString SessionEnv::description()
 {
   QStringList parts;
@@ -525,6 +598,7 @@ QString SessionEnv::description()
   parts << QString("WAYLAND_DISPLAY=%1").arg(QString::fromLocal8Bit(qgetenv("WAYLAND_DISPLAY")));
   parts << QString("gamescope=%1").arg(insideGamescope() ? "yes" : "no");
   parts << QString("steam-launch=%1").arg(launchedFromSteam() ? "yes" : "no");
+  parts << QString("host-os=%1").arg(hostOsReport());
   const QString steam = steamEnvReport();
   if (!steam.isEmpty())
     parts << steam;

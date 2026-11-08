@@ -16,6 +16,14 @@ namespace SessionEnv
 
   QString drmDriver();
 
+  QString hostOsRelease(const QString& key);
+
+  QString hostOsVersion();
+
+  QString hostOsBuild();
+
+  QString hostOsReport();
+
   QStringList v4l2DecodeCodecs();
 
   // Highest bit depth the stateful decoder can emit on its CAPTURE side, or 0
