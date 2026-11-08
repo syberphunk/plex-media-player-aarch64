@@ -58,7 +58,7 @@ namespace
   const int kDotGapMs = 500;
   const int kDotSaidMax = 400;
   const int kReassertTries = 3;
-  const float kPackedEyes = 2.0f;
+  const float kShapeProbe = 1.5f;
   const float kShapeTolerance = 0.02f;
   const float kShapeInert = 0.01f;
   const int kShapeTries = 4;
@@ -703,7 +703,7 @@ namespace
   {
     if (m_fitAspect > 0.0f)
       return m_fitAspect;
-    return m_panelTexelAspect * (m_stereo ? kPackedEyes : 1.0f);
+    return m_panelTexelAspect;
   }
 
   bool Presenter::panelPointAt(float across, float up, float out[3]) const
@@ -736,40 +736,42 @@ namespace
 
   bool Presenter::measureShape(float& wide, float& tall)
   {
+    float origin[3];
+    float unit[3];
+    if (!panelPointAt(0.0f, 0.0f, origin) || !panelPointAt(1.0f, 0.0f, unit))
+      return false;
+
+    float across = 1.0f;
+    float up = 1.0f;
+    const char* how = "one coordinate step spans the panel";
+
+    if (m_panelMetres > 0.0f && gapBetween(origin, unit) < m_panelMetres * 0.5f &&
+        m_panelMouseWide > 0.0f && m_panelMouseTall > 0.0f)
+    {
+      across = m_panelMouseWide;
+      up = m_panelMouseTall;
+      how = "one coordinate step spans a texel";
+    }
+
     float left[3];
     float middle[3];
     float right[3];
     float top[3];
 
-    if (!panelPointAt(0.0f, 0.0f, left) || !panelPointAt(0.5f, 0.0f, middle) ||
-        !panelPointAt(1.0f, 0.0f, right) || !panelPointAt(0.0f, 1.0f, top))
+    if (!panelPointAt(0.0f, 0.0f, left) || !panelPointAt(across * 0.5f, 0.0f, middle) ||
+        !panelPointAt(across, 0.0f, right) || !panelPointAt(0.0f, up, top))
       return false;
 
-    const float perAcross = gapBetween(left, right);
-    const float perUp = gapBetween(left, top);
-    if (!(perAcross > 0.0f) || !(perUp > 0.0f))
-      return false;
-
-    const char* how = "a step spans the whole panel";
-    wide = perAcross;
-    tall = perUp;
-
-    if (m_panelMetres > 0.0f && perAcross < m_panelMetres * 0.5f && m_panelMouseWide > 0.0f &&
-        m_panelMouseTall > 0.0f)
-    {
-      wide = perAcross * m_panelMouseWide;
-      tall = perUp * m_panelMouseTall;
-      how = "a step spans one texel";
-    }
-
+    wide = gapBetween(left, right);
+    tall = gapBetween(left, top);
     if (!(wide > 0.0f) || !(tall > 0.0f))
       return false;
 
     note("pmp-xr-host: the panel runs from %.4f %.4f %.4f through %.4f %.4f %.4f to %.4f %.4f "
-         "%.4f and up to %.4f %.4f %.4f, bowing %.4f m, %.4f m across and %.4f m up per step, "
-         "%s, so it is %.3f by %.3f m, %.3f to 1",
+         "%.4f and up to %.4f %.4f %.4f, %s so the span is %.1f by %.1f, bowing %.4f m over "
+         "%.3f m, so it is %.3f by %.3f m, %.3f to 1",
          left[0], left[1], left[2], middle[0], middle[1], middle[2], right[0], right[1],
-         right[2], top[0], top[1], top[2], bowOf(left, middle, right), perAcross, perUp, how,
+         right[2], top[0], top[1], top[2], how, across, up, bowOf(left, middle, right), wide,
          wide, tall, wide / tall);
     return true;
   }
@@ -809,13 +811,23 @@ namespace
 
     ++m_shapeTries;
 
-    if (std::fabs(have - want) <= want * kShapeTolerance)
+    const bool fits = std::fabs(have - want) <= want * kShapeTolerance;
+
+    if (m_shapeTries == 1)
     {
-      note("pmp-xr-host: the panel is %.3f to 1 and the picture is %.3f to 1, so %.3f texels wide "
-           "per tall is right, measured %d time%s",
-           have, want, aspect, m_shapeTries, m_shapeTries == 1 ? "" : "s");
-      m_fitAspect = aspect;
-      m_shapeTries = kShapeTries;
+      m_shapeHad = have;
+      float probe = fits ? aspect * kShapeProbe : aspect * want / have;
+      if (probe < kAspectFloor)
+        probe = kAspectFloor;
+      if (probe > kAspectCeiling)
+        probe = kAspectCeiling;
+
+      note("pmp-xr-host: the panel is %.3f to 1 and the picture is %.3f to 1, %s; moving the "
+           "texel aspect from %.3f to %.3f to find out whether it shapes this panel at all",
+           have, want, fits ? "which fits" : "which does not fit", aspect, probe);
+
+      m_fitAspect = probe;
+      widenPanel();
       return;
     }
 
@@ -827,6 +839,16 @@ namespace
       m_fitAspect = m_shapeFrom;
       m_shapeTries = kShapeTries;
       widenPanel();
+      return;
+    }
+
+    if (fits)
+    {
+      note("pmp-xr-host: the panel is %.3f to 1 and the picture is %.3f to 1, so %.3f texels wide "
+           "per tall is right, measured %d time%s",
+           have, want, aspect, m_shapeTries, m_shapeTries == 1 ? "" : "s");
+      m_fitAspect = aspect;
+      m_shapeTries = kShapeTries;
       return;
     }
 
