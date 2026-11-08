@@ -13,6 +13,7 @@
 #include "player/PlayerComponent.h"
 #include "player/PlayerQuickItem.h"
 #include "display/DisplayComponent.h"
+#include "system/CapabilityComponent.h"
 #include "QsLog.h"
 #include "shared/SessionEnv.h"
 #include "shared/Watchdog.h"
@@ -292,6 +293,8 @@ void KonvergoWindow::enableVideoWindow()
 {
   PlayerComponent::Get().setWindow(this);
   DisplayComponent::Get().setApplicationWindow(this);
+
+  CapabilityComponent::Get().survey(QSize(width(), height()), QString(), QString(), 0, false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

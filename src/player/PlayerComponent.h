@@ -213,6 +213,7 @@ private:
   void updatePlaybackState();
   void handleMpvEvent(mpv_event *event);
   void resolveStereoFormat();
+  void surveyCapability(bool stereoWanted);
   // Potentially switch the display refresh rate, and return true if the refresh rate
   // was actually changed.
   bool switchDisplayFrameRate();

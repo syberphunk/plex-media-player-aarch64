@@ -9,6 +9,7 @@
 #include "input/InputComponent.h"
 #include "player/PlayerComponent.h"
 #include "display/DisplayComponent.h"
+#include "system/CapabilityComponent.h"
 #include "system/MenuComponent.h"
 #include "system/SteamComponent.h"
 #include "xr/XrComponent.h"
@@ -73,6 +74,7 @@ void ComponentManager::initialize()
   registerComponent(&UpdateManager::Get());
   registerComponent(&SteamComponent::Get());
   registerComponent(&XrComponent::Get());
+  registerComponent(&CapabilityComponent::Get());
 
   for(ComponentBase* component : m_components.values())
     component->componentPostInitialize();

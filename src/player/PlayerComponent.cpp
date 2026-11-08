@@ -5,6 +5,9 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QRegularExpression>
+#include <QWindow>
+
 #include "display/DisplayComponent.h"
 #include "settings/SettingsComponent.h"
 #include "system/SystemComponent.h"
@@ -17,6 +20,7 @@
 #include "input/InputComponent.h"
 #include "xr/StereoFormat.h"
 #include "xr/XrComponent.h"
+#include "system/CapabilityComponent.h"
 #include "xr/XrPresenter.h"
 #include "xr/XrProtocol.h"
 
@@ -1360,6 +1364,28 @@ void PlayerComponent::updateVideoAspectSettings()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::surveyCapability(bool stereoWanted)
+{
+  if (!m_mpv)
+    return;
+
+  const QString codec = mpv::qt::get_property(m_mpv, "video-codec").toString();
+  const QString format = mpv::qt::get_property(m_mpv, "video-format").toString();
+
+  int depth = 8;
+  const QRegularExpressionMatch bits =
+    QRegularExpression(QStringLiteral("p(1[0-6]|9)")).match(format);
+  if (bits.hasMatch())
+    depth = bits.captured(1).toInt();
+
+  QSize window;
+  if (QWindow* top = DisplayComponent::Get().applicationWindow())
+    window = QSize(top->width(), top->height());
+
+  CapabilityComponent::Get().survey(window, codec, format, depth, stereoWanted);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerComponent::resolveStereoFormat()
 {
   if (!m_mpv)
@@ -1414,6 +1440,8 @@ void PlayerComponent::resolveStereoFormat()
     active.swapped = !active.swapped;
 
   XrComponent::Get().setDetected(StereoFormat::label(active), source, active.isStereo());
+
+  surveyCapability(active.isStereo());
 
   QLOG_INFO() << "Stereoscopic:" << qPrintable(QStringLiteral(
                    "stereo-in=%1 size=%2x%3 detected=%4 from=%5 active=%6")
