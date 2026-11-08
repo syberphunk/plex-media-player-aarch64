@@ -24,8 +24,6 @@ namespace
 {
   const char kPanelPrefix[] = "valve.steam.desktopgame.";
   const uint32_t kStereoFlag = VROverlayFlags_SideBySide_Parallel;
-  const float kPackedEyes = 2.0f;
-
   bool differs(float left, float right)
   {
     return !(left > right - 0.001f && left < right + 0.001f);
@@ -164,6 +162,7 @@ namespace
 
     bool assertStereo(std::string& why);
     void widenPanel();
+    float wantedAspect() const;
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
     void dropStereo();
@@ -667,6 +666,11 @@ namespace
          static_cast<int>(panelOrigin));
   }
 
+  float Presenter::wantedAspect() const
+  {
+    return m_panelTexelAspect;
+  }
+
   void Presenter::widenPanel()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -676,7 +680,7 @@ namespace
       return;
     }
 
-    const float wanted = m_panelTexelAspect * kPackedEyes;
+    const float wanted = wantedAspect();
     const EVROverlayError set = ovl->SetOverlayTexelAspect(m_panel, wanted);
 
     float back = 0.0f;
@@ -766,7 +770,7 @@ namespace
     {
       if (m_texelAspectSet && ovl->GetOverlayTexelAspect)
       {
-        const float wanted = m_panelTexelAspect * kPackedEyes;
+        const float wanted = wantedAspect();
         float now = wanted;
         if (ovl->GetOverlayTexelAspect(m_panel, &now) == EVROverlayError_VROverlayError_None &&
             std::fabs(now - wanted) > 0.01f)
