@@ -1325,6 +1325,7 @@ QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
 void PlayerQuickItem::noteRawReach(const QPointF& at)
 {
   const float x = float(at.x());
+  m_cursorRaw = at;
 
   if (m_cursorRawLow < 0.0f || x < m_cursorRawLow)
     m_cursorRawLow = x;
@@ -1424,7 +1425,6 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         if (put != was->position())
         {
           const QPointF shift = put - was->position();
-          m_cursorRaw = was->position();
           QMouseEvent now(was->type(), put, was->scenePosition() + shift,
                           was->globalPosition() + shift, was->button(), was->buttons(),
                           was->modifiers(), was->pointingDevice());
@@ -1456,7 +1456,6 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         if (put != was->position())
         {
           const QPointF shift = put - was->position();
-          m_cursorRaw = was->position();
           QHoverEvent now(was->type(), put, was->globalPosition() + shift,
                           stretchPointer(was->oldPosF()), was->modifiers(),
                           was->pointingDevice());
