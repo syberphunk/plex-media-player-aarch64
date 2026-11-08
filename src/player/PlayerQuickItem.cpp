@@ -262,9 +262,9 @@ void PlayerRenderer::syncStereo()
   }
 
   m_stereoWanted = wanted;
-  m_packedSize = presenter.videoSize();
   m_stereoPacking = presenter.packing();
   m_stereoSwapped = presenter.swapped();
+  m_packedSize = packedFor(presenter.videoSize());
 
   const bool controls = presenter.controlsActive();
   if (controls && !m_stereoControls && m_stereoWanted)
@@ -368,10 +368,23 @@ void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
   for (int i = 0; i < 16 * 16; ++i)
     sum += 0.2126 * pixels[i * 4] + 0.7152 * pixels[i * 4 + 1] + 0.0722 * pixels[i * 4 + 2];
 
+  QRect rect = m_windowVideoRect.intersected(QRect(0, 0, m_windowSize.width(), m_windowSize.height()));
+  if (rect.width() < 4 || rect.height() < 4)
+    rect = QRect(0, 0, m_windowSize.width(), m_windowSize.height());
+
+  const int fromWide = m_stereoPacking == XrProtocol::SideBySide ? m_packedSize.width() / 2
+                                                                 : m_packedSize.width();
+  const int fromTall = m_stereoPacking == XrProtocol::OverUnder ? m_packedSize.height() / 2
+                                                                : m_packedSize.height();
+  const int toWide = rect.width() / 2;
+  const int toTall = rect.height();
+
   QLOG_INFO() << "Stereoscopic: squeezing the window" << w << "x" << h << "mean luminance"
               << qRound(sum / (16.0 * 16.0)) << "video rectangle" << m_windowVideoRect.x()
               << m_windowVideoRect.y() << m_windowVideoRect.width() << m_windowVideoRect.height()
-              << "packed" << m_packedSize.width() << "x" << m_packedSize.height();
+              << "packed" << m_packedSize.width() << "x" << m_packedSize.height() << "one eye"
+              << fromWide << "x" << fromTall << "to" << toWide << "x" << toTall
+              << (toWide >= fromWide && toTall >= fromTall ? "magnified" : "minified");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -803,6 +816,50 @@ void PlayerRenderer::composeWindow()
 
   if (m_dumpsLeft > 0 && showing)
     dumpFrames(gl);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QSize PlayerRenderer::packedFor(const QSize& native) const
+{
+  if (m_stereoPacking != XrProtocol::SideBySide && m_stereoPacking != XrProtocol::OverUnder)
+    return native;
+
+  const int w = m_windowSize.width();
+  const int h = m_windowSize.height();
+  if (native.width() < 8 || native.height() < 8 || w < 8 || h < 8)
+    return native;
+
+  QRect rect = m_windowVideoRect.intersected(QRect(0, 0, w, h));
+  if (rect.width() < 4 || rect.height() < 4)
+    rect = QRect(0, 0, w, h);
+
+  const int wantWide = rect.width() / 2;
+  const int wantTall = rect.height();
+  if (wantWide < 4 || wantTall < 4)
+    return native;
+
+  const int haveWide =
+    m_stereoPacking == XrProtocol::SideBySide ? native.width() / 2 : native.width();
+  const int haveTall =
+    m_stereoPacking == XrProtocol::OverUnder ? native.height() / 2 : native.height();
+  if (haveWide < 4 || haveTall < 4)
+    return native;
+
+  const double across = double(wantWide) / double(haveWide);
+  const double up = double(wantTall) / double(haveTall);
+  const double scale = qMin(across, up);
+  if (scale >= 1.0)
+    return native;
+
+  int eyeWide = across <= up ? wantWide : int(qRound(haveWide * scale));
+  int eyeTall = up < across ? wantTall : int(qRound(haveTall * scale));
+  if (eyeWide < 4)
+    eyeWide = 4;
+  if (eyeTall < 4)
+    eyeTall = 4;
+
+  return m_stereoPacking == XrProtocol::SideBySide ? QSize(eyeWide * 2, eyeTall)
+                                                   : QSize(eyeWide, eyeTall * 2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

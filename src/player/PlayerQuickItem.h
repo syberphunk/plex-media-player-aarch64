@@ -39,6 +39,7 @@ private:
 
   void syncStereo();
   bool renderPacked(QOpenGLFramebufferObject* target);
+  QSize packedFor(const QSize& native) const;
   void overlayVideo(QOpenGLExtraFunctions* gl, int half);
   bool prepareKey();
   void drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height);
