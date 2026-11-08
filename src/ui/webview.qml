@@ -274,14 +274,6 @@ KonvergoWindow
     onClosed: Qt.callLater(web.forceActiveFocus)
   }
 
-  CapabilityOverlay
-  {
-    id: capabilityOverlay
-    z: 10
-    anchors.fill: parent
-    onClosed: Qt.callLater(web.forceActiveFocus)
-  }
-
   MenuOverlay
   {
     id: menuOverlay
