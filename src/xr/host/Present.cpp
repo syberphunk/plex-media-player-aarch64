@@ -24,7 +24,7 @@ namespace
 {
   const char kPanelPrefix[] = "valve.steam.desktopgame.";
   const uint32_t kStereoFlag = VROverlayFlags_SideBySide_Parallel;
-  const float kPackedEyes = 2.0f;
+  const float kPackedEyes = 1.0f;
 
   const int kScanIndexes = 128;
   const int kScanAhead = 8;
