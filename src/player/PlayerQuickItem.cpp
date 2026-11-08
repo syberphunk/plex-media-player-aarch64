@@ -43,6 +43,8 @@ namespace
 {
   const int kFrameDumps = 2;
   const int kDumpBudget = 6;
+  const double kDumpLuma = 8.0;
+  const int kDumpWaits = 900;
   const float kCursorHeight = 18.0f;
   const int kCursorIdleMs = 4000;
   const int kCursorReportMs = 1000;
@@ -119,8 +121,8 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
-  m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
-  m_dumpBudget(kDumpBudget), m_rulerFrom(0), m_rulerSaid(0),
+  m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0), m_dumpWaits(0),
+  m_dumpBudget(kDumpBudget), m_captures(false), m_rulerFrom(0), m_rulerSaid(0),
   m_arrowProgram(nullptr), m_arrowVao(0),
   m_arrowFailed(false),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
@@ -257,6 +259,7 @@ void PlayerRenderer::syncStereo()
     if (wanted)
       m_dumpBudget = kDumpBudget;
     m_dumpsLeft = wanted ? qMin(kFrameDumps, m_dumpBudget) : 0;
+    m_dumpWaits = 0;
     m_rulerFrom = wanted ? QDateTime::currentMSecsSinceEpoch() : 0;
     m_rulerSaid = 0;
   }
@@ -268,7 +271,10 @@ void PlayerRenderer::syncStereo()
 
   const bool controls = presenter.controlsActive();
   if (controls && !m_stereoControls && m_stereoWanted)
+  {
     m_dumpsLeft = qMin(kFrameDumps, m_dumpBudget);
+    m_dumpWaits = 0;
+  }
   m_stereoControls = controls;
 }
 
@@ -342,6 +348,33 @@ void PlayerRenderer::probePicture(QOpenGLFramebufferObject* fbo)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+double PlayerRenderer::meanLuma(QOpenGLExtraFunctions* gl, QOpenGLFramebufferObject* fbo)
+{
+  if (!gl || !fbo || !fbo->isValid())
+    return -1.0;
+
+  QOpenGLFramebufferObject sample(16, 16);
+  if (!sample.isValid())
+    return -1.0;
+
+  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo->handle());
+  gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sample.handle());
+  gl->glBlitFramebuffer(0, 0, fbo->width(), fbo->height(), 0, 0, 16, 16, GL_COLOR_BUFFER_BIT,
+                        GL_LINEAR);
+
+  QVector<uint8_t> pixels(16 * 16 * 4, 0);
+  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, sample.handle());
+  gl->glReadPixels(0, 0, 16, 16, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+  gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  double sum = 0.0;
+  for (int i = 0; i < 16 * 16; ++i)
+    sum += 0.2126 * pixels[i * 4] + 0.7152 * pixels[i * 4 + 1] + 0.0722 * pixels[i * 4 + 2];
+
+  return sum / (16.0 * 16.0);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
 {
   if (m_shotReports >= 3 || !m_windowShot)
@@ -349,24 +382,10 @@ void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
 
   m_shotReports++;
 
-  QOpenGLFramebufferObject sample(16, 16);
-  if (!sample.isValid())
-    return;
-
   const int w = m_windowShot->width();
   const int h = m_windowShot->height();
-
-  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_windowShot->handle());
-  gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sample.handle());
-  gl->glBlitFramebuffer(0, 0, w, h, 0, 0, 16, 16, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-
-  QVector<uint8_t> pixels(16 * 16 * 4, 0);
-  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, sample.handle());
-  gl->glReadPixels(0, 0, 16, 16, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-  double sum = 0.0;
-  for (int i = 0; i < 16 * 16; ++i)
-    sum += 0.2126 * pixels[i * 4] + 0.7152 * pixels[i * 4 + 1] + 0.0722 * pixels[i * 4 + 2];
+  const double shotLuma = meanLuma(gl, m_windowShot);
+  const double videoLuma = meanLuma(gl, m_videoFbo);
 
   QRect rect = m_windowVideoRect.intersected(QRect(0, 0, m_windowSize.width(), m_windowSize.height()));
   if (rect.width() < 4 || rect.height() < 4)
@@ -379,8 +398,9 @@ void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
   const int toWide = rect.width() / 2;
   const int toTall = rect.height();
 
-  QLOG_INFO() << "Stereoscopic: squeezing the window" << w << "x" << h << "mean luminance"
-              << qRound(sum / (16.0 * 16.0)) << "video rectangle" << m_windowVideoRect.x()
+  QLOG_INFO() << "Stereoscopic: squeezing the window" << w << "x" << h
+              << "mean luminance" << qRound(shotLuma) << "picture luminance"
+              << qRound(videoLuma) << "video rectangle" << m_windowVideoRect.x()
               << m_windowVideoRect.y() << m_windowVideoRect.width() << m_windowVideoRect.height()
               << "packed" << m_packedSize.width() << "x" << m_packedSize.height() << "one eye"
               << fromWide << "x" << fromTall << "to" << toWide << "x" << toTall
@@ -494,14 +514,25 @@ void PlayerRenderer::drawShot(QOpenGLExtraFunctions* gl, int x, int width, int h
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::dumpFrames(QOpenGLExtraFunctions* gl)
 {
-  --m_dumpsLeft;
-
-  if (m_dumpBudget <= 0)
+  if (!m_captures || m_dumpBudget <= 0)
   {
     m_dumpsLeft = 0;
     return;
   }
 
+  const double luma = meanLuma(gl, m_videoFbo);
+  if (luma >= 0.0 && luma < kDumpLuma && m_dumpWaits < kDumpWaits)
+  {
+    ++m_dumpWaits;
+    if (m_dumpWaits == 1)
+      QLOG_INFO() << "Stereoscopic: the picture is still dark at" << qRound(luma)
+                  << "so the frame capture waits for something to see";
+    return;
+  }
+
+  const bool patient = m_dumpWaits >= kDumpWaits;
+  m_dumpWaits = 0;
+  --m_dumpsLeft;
   --m_dumpBudget;
   if (m_dumpBudget == 0)
     QLOG_INFO() << "Stereoscopic: that was the last frame capture of this run";
@@ -528,7 +559,9 @@ void PlayerRenderer::dumpFrames(QOpenGLExtraFunctions* gl)
     m_videoFbo->toImage().mirrored(false, true).save(dir + QDir::separator() + "stereo-" + stamp +
                                                      "-video.png");
 
-  QLOG_INFO() << "Stereoscopic: wrote the composite to" << dir << "as stereo-" << stamp << "-*.png";
+  QLOG_INFO() << "Stereoscopic: wrote the composite to" << dir << "as stereo-" << stamp
+              << "-*.png, picture luminance" << qRound(luma)
+              << (patient ? ", having given up waiting for a brighter frame" : "");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -997,10 +1030,15 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
     m_graphicsInfo.clear();
   }
 
+  m_captures = player->m_captures;
+
   const bool wasActive = m_playbackActive;
   m_playbackActive = player->m_playbackActive;
   if (m_playbackActive && !wasActive && m_stereoWanted)
+  {
     m_dumpsLeft = qMin(kFrameDumps, m_dumpBudget);
+    m_dumpWaits = 0;
+  }
 
   QQuickWindow* win = player->window();
   if (win)
@@ -1034,10 +1072,17 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
   m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
     m_cursorSeenTop(-1.0f), m_cursorSeenBase(-1.0f), m_cursorHitTop(false),
     m_cursorHitBase(false),
+  m_captures(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "diagnostics").toBool()),
   m_renderer(nullptr)
 {
-  QLOG_INFO() << "Stereoscopic: the first frame captures of a stereo run will be written to"
-              << Paths::logDir();
+  if (m_captures)
+    QLOG_INFO() << "Stereoscopic: diagnostics is on, so frame captures will be written to"
+                << Paths::logDir();
+  else
+    QLOG_INFO() << "Stereoscopic: diagnostics is off, so no frame captures will be written";
+
+  connect(&SettingsComponent::Get(), &SettingsComponent::sectionValueUpdate, this,
+          &PlayerQuickItem::onSettingsChanged);
 
   m_cursorIdle->setSingleShot(true);
   m_cursorIdle->setInterval(kCursorIdleMs);
@@ -1140,6 +1185,21 @@ void PlayerQuickItem::onPanelChanged()
     m_cursorAt = QPointF();
   }
 
+  update();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::onSettingsChanged(const QString& section, const QVariantMap& values)
+{
+  if (section != SETTINGS_SECTION_MAIN || !values.contains("diagnostics"))
+    return;
+
+  const bool on = values.value("diagnostics").toBool();
+  if (on == m_captures)
+    return;
+
+  m_captures = on;
+  QLOG_INFO() << "Stereoscopic: frame captures are now" << (on ? "on" : "off");
   update();
 }
 

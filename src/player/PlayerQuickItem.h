@@ -46,6 +46,7 @@ private:
   bool prepareArrow();
   void drawRuler(QOpenGLExtraFunctions* gl, int half);
   void drawCursor(QOpenGLExtraFunctions* gl, int half);
+  static double meanLuma(QOpenGLExtraFunctions* gl, QOpenGLFramebufferObject* fbo);
   void reportShot(QOpenGLExtraFunctions* gl);
   void dumpFrames(QOpenGLExtraFunctions* gl);
   void probePicture(QOpenGLFramebufferObject* fbo);
@@ -71,7 +72,9 @@ private:
   bool m_keyFailed;
   int m_shotReports;
   int m_dumpsLeft;
+  int m_dumpWaits;
   int m_dumpBudget;
+  bool m_captures;
   QPointF m_cursorAt;
   qint64 m_rulerFrom;
   int m_rulerSaid;
@@ -118,6 +121,7 @@ private slots:
     void onFrameSwapped();
     void onAfterRendering();
     void onPanelChanged();
+    void onSettingsChanged(const QString& section, const QVariantMap& values);
     void onCursorIdle();
     void onCursorRest();
     void updateVideoGeometry();
@@ -160,6 +164,7 @@ private:
     float m_cursorSeenBase;
     bool m_cursorHitTop;
     bool m_cursorHitBase;
+    bool m_captures;
     PlayerRenderer* m_renderer;
 };
 
