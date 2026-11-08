@@ -101,6 +101,7 @@ public:
     void reportPointerReach(const char* when);
     void reportPointerPress();
     QPointF stretchPointer(const QPointF& at) const;
+    bool deliveredSpan(float wide, float& low, float& high) const;
     void noteRawReach(const QPointF& at);
 
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -140,6 +141,11 @@ private:
     QPointF m_cursorRawLast;
     bool m_cursorRawSeen;
     bool m_cursorOffWindow;
+    bool m_cursorPinLeft;
+    bool m_cursorPinRight;
+    float m_cursorPinFloor;
+    float m_cursorPinCeiling;
+    bool m_cursorSpanSaid;
     int m_cursorPinned;
     int m_cursorPinSaid;
     QList<QPointF> m_cursorTrail;

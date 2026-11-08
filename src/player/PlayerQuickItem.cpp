@@ -977,6 +977,8 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
   m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorStretching(false),
   m_cursorRawLow(-1.0f), m_cursorRawHigh(-1.0f), m_cursorRawSeen(false), m_cursorOffWindow(false),
+  m_cursorPinLeft(false), m_cursorPinRight(false), m_cursorPinFloor(-1.0f),
+  m_cursorPinCeiling(-1.0f), m_cursorSpanSaid(false),
   m_cursorPinned(0), m_cursorPinSaid(0), m_cursorRests(0),
   m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
@@ -1258,6 +1260,33 @@ void PlayerQuickItem::notePointerReach()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+bool PlayerQuickItem::deliveredSpan(float wide, float& low, float& high) const
+{
+  low = -1.0f;
+  high = -1.0f;
+  if (wide <= 4.0f || m_cursorRawLow < 0.0f || m_cursorRawHigh < 0.0f)
+    return false;
+  if (!m_cursorPinLeft && !m_cursorPinRight)
+    return false;
+
+  const float edge = wide - 1.0f;
+  low = m_cursorPinLeft ? m_cursorRawLow : edge - m_cursorRawHigh;
+  high = m_cursorPinRight ? m_cursorRawHigh : edge - m_cursorRawLow;
+
+  if (low < 0.0f)
+    low = 0.0f;
+  if (high > edge)
+    high = edge;
+
+  if (high - low < wide * 0.25f)
+    return false;
+  if (low <= wide * 0.01f && high >= wide * 0.99f)
+    return false;
+
+  return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
 {
   const QQuickWindow* win = window();
@@ -1268,6 +1297,15 @@ QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
   const float tall = float(win->height());
   if (wide <= 0.0f || tall <= 0.0f)
     return at;
+
+  float low = 0.0f;
+  float high = 0.0f;
+  if (deliveredSpan(wide, low, high))
+  {
+    const float x =
+      qBound(0.0f, (float(at.x()) - low) * (wide - 1.0f) / (high - low), wide - 1.0f);
+    return QPointF(qreal(x), at.y());
+  }
 
   if (!m_cursorOffWindow)
     return at;
@@ -1292,6 +1330,21 @@ void PlayerQuickItem::noteRawReach(const QPointF& at)
     m_cursorRawLow = x;
   if (m_cursorRawHigh < 0.0f || x > m_cursorRawHigh)
     m_cursorRawHigh = x;
+
+  if (m_cursorPinLeft && m_cursorPinFloor >= 0.0f && x < m_cursorPinFloor - 2.0f)
+  {
+    m_cursorPinLeft = false;
+    m_cursorSpanSaid = false;
+    QLOG_INFO() << "Stereoscopic: the delivered x reached" << x << "below the" << m_cursorPinFloor
+                << "it had held at, so that was not the panel's left edge";
+  }
+  if (m_cursorPinRight && m_cursorPinCeiling >= 0.0f && x > m_cursorPinCeiling + 2.0f)
+  {
+    m_cursorPinRight = false;
+    m_cursorSpanSaid = false;
+    QLOG_INFO() << "Stereoscopic: the delivered x reached" << x << "above the"
+                << m_cursorPinCeiling << "it had held at, so that was not the panel's right edge";
+  }
 
   const QQuickWindow* win = window();
   const float wide = win ? float(win->width()) : 0.0f;
@@ -1318,13 +1371,40 @@ void PlayerQuickItem::noteRawReach(const QPointF& at)
   else if (!still)
     m_cursorPinned = 0;
 
-  if (m_cursorPinned == kCursorPinRun && m_cursorPinSaid < kCursorPinSaidMax)
+  if (m_cursorPinned == kCursorPinRun)
   {
-    ++m_cursorPinSaid;
-    QLOG_INFO() << "Stereoscopic: the delivered x held at" << x
-                << "over" << kCursorPinRun << "moves while y kept sliding, so the panel"
-                << "edge delivers" << x << ", delivered range so far" << m_cursorRawLow
-                << "to" << m_cursorRawHigh;
+    if (wide > 4.0f)
+    {
+      if (x < wide * 0.5f)
+      {
+        m_cursorPinLeft = true;
+        m_cursorPinFloor = m_cursorRawLow;
+      }
+      else
+      {
+        m_cursorPinRight = true;
+        m_cursorPinCeiling = m_cursorRawHigh;
+      }
+    }
+
+    if (m_cursorPinSaid < kCursorPinSaidMax)
+    {
+      ++m_cursorPinSaid;
+      QLOG_INFO() << "Stereoscopic: the delivered x held at" << x
+                  << "over" << kCursorPinRun << "moves while y kept sliding, so the panel"
+                  << "edge delivers" << x << ", delivered range so far" << m_cursorRawLow
+                  << "to" << m_cursorRawHigh;
+    }
+
+    float low = 0.0f;
+    float high = 0.0f;
+    if (!m_cursorSpanSaid && deliveredSpan(wide, low, high))
+    {
+      m_cursorSpanSaid = true;
+      QLOG_INFO() << "Stereoscopic: the panel delivers x" << low << "to" << high
+                  << "across a window" << wide << "wide, so the pointer is stretched by"
+                  << (wide - 1.0f) / (high - low) << "about" << low;
+    }
   }
 }
 
