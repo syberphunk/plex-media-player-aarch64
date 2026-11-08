@@ -56,6 +56,8 @@ namespace
   const int kRulerBars = 5;
   const float kRulerWide = 10.0f;
   const float kPointerStretch = 2.0f;
+  const int kCursorPinRun = 5;
+  const int kCursorPinSaidMax = 8;
 
   const char kArrowVertex[] = R"(
 uniform vec2 u_p0;
@@ -974,7 +976,9 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
-  m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorStretching(false), m_cursorRests(0),
+  m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorStretching(false),
+  m_cursorRawLow(-1.0f), m_cursorRawHigh(-1.0f), m_cursorRawSeen(false),
+  m_cursorPinned(0), m_cursorPinSaid(0), m_cursorRests(0),
   m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
   m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
@@ -1191,7 +1195,7 @@ void PlayerQuickItem::reportPointerReach(const char* when)
               << m_cursorSeenHigh << "of" << wide << "and y" << m_cursorSeenTop << "to"
               << m_cursorSeenBase << "of" << tall << ", edges left" << m_cursorHitLeft
               << "right" << m_cursorHitRight << "top" << m_cursorHitTop << "bottom"
-              << m_cursorHitBase << "-" << when;
+              << m_cursorHitBase << ", delivered x" << m_cursorRawLow << "to" << m_cursorRawHigh << "-" << when;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1267,6 +1271,36 @@ QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::noteRawReach(const QPointF& at)
+{
+  const float x = float(at.x());
+
+  if (m_cursorRawLow < 0.0f || x < m_cursorRawLow)
+    m_cursorRawLow = x;
+  if (m_cursorRawHigh < 0.0f || x > m_cursorRawHigh)
+    m_cursorRawHigh = x;
+
+  const bool still = m_cursorRawSeen && qAbs(x - float(m_cursorRawLast.x())) < 0.5f;
+  const bool slid = m_cursorRawSeen
+                    && qAbs(float(at.y()) - float(m_cursorRawLast.y())) > 2.0f;
+  m_cursorRawLast = at;
+  m_cursorRawSeen = true;
+
+  if (still && slid)
+    ++m_cursorPinned;
+  else if (!still)
+    m_cursorPinned = 0;
+
+  if (m_cursorPinned == kCursorPinRun && m_cursorPinSaid < kCursorPinSaidMax)
+  {
+    ++m_cursorPinSaid;
+    QLOG_INFO() << "Stereoscopic: the delivered x held at" << x
+                << "over" << kCursorPinRun << "moves while y kept sliding, so the panel"
+                << "edge delivers" << x << ", delivered range so far" << m_cursorRawLow
+                << "to" << m_cursorRawHigh;
+  }
+}
+
 bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
 {
   switch (event->type())
@@ -1278,6 +1312,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       QMouseEvent* was = static_cast<QMouseEvent*>(event);
       if (m_stereoLive && !m_cursorStretching)
       {
+        noteRawReach(was->position());
         const QPointF put = stretchPointer(was->position());
         if (put != was->position())
         {
@@ -1309,6 +1344,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       QHoverEvent* was = static_cast<QHoverEvent*>(event);
       if (m_stereoLive && !m_cursorStretching)
       {
+        noteRawReach(was->position());
         const QPointF put = stretchPointer(was->position());
         if (put != was->position())
         {
