@@ -60,6 +60,7 @@ namespace
   const int kReassertTries = 3;
   const float kPackedEyes = 2.0f;
   const float kShapeTolerance = 0.02f;
+  const float kShapeInert = 0.01f;
   const int kShapeTries = 4;
   const float kAspectFloor = 0.05f;
   const float kAspectCeiling = 32.0f;
@@ -210,6 +211,8 @@ namespace
     float m_seenAspect = -1.0f;
     float m_seenMetres = -1.0f;
     float m_fitAspect = 0.0f;
+    float m_shapeHad = 0.0f;
+    float m_shapeFrom = 0.0f;
     int m_shapeTries = 0;
     bool m_shapeFailed = false;
     bool m_texelAspectKnown = false;
@@ -792,8 +795,6 @@ namespace
       return;
     }
 
-    ++m_shapeTries;
-
     const float want = m_panelMouseWide / m_panelMouseTall;
     const float have = wide / tall;
 
@@ -802,6 +803,11 @@ namespace
         ovl->GetOverlayTexelAspect(m_panel, &aspect) != EVROverlayError_VROverlayError_None ||
         !(aspect > 0.0f))
       aspect = wantedAspect();
+
+    if (m_shapeTries == 0)
+      m_shapeFrom = aspect;
+
+    ++m_shapeTries;
 
     if (std::fabs(have - want) <= want * kShapeTolerance)
     {
@@ -812,6 +818,19 @@ namespace
       m_shapeTries = kShapeTries;
       return;
     }
+
+    if (m_shapeHad > 0.0f && std::fabs(have - m_shapeHad) <= m_shapeHad * kShapeInert)
+    {
+      note("pmp-xr-host: the panel stayed %.3f to 1 after the texel aspect moved to %.3f, so the "
+           "texel aspect does not shape this panel, putting it back to %.3f",
+           have, aspect, m_shapeFrom);
+      m_fitAspect = m_shapeFrom;
+      m_shapeTries = kShapeTries;
+      widenPanel();
+      return;
+    }
+
+    m_shapeHad = have;
 
     float next = aspect * want / have;
     if (next < kAspectFloor)
@@ -867,6 +886,8 @@ namespace
 
     m_stereo = false;
     m_fitAspect = 0.0f;
+    m_shapeHad = 0.0f;
+    m_shapeFrom = 0.0f;
     m_shapeTries = 0;
     m_shapeFailed = false;
 
