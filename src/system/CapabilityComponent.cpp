@@ -1,8 +1,10 @@
 #include "CapabilityComponent.h"
 
 #include <QStringList>
+#include <QWindow>
 
 #include "QsLog.h"
+#include "display/DisplayComponent.h"
 #include "shared/SessionEnv.h"
 #include "xr/XrPresenter.h"
 
@@ -267,8 +269,15 @@ void CapabilityComponent::survey(const QSize& window, const QString& codec,
 
 void CapabilityComponent::resurvey()
 {
-  if (m_surveyed)
-    survey(m_lastWindow, m_lastCodec, m_lastFormat, m_lastDepth, m_lastStereo);
+  if (!m_surveyed)
+    return;
+
+  QSize window = m_lastWindow;
+  const QWindow* live = DisplayComponent::Get().applicationWindow();
+  if (live && live->width() > 0 && live->height() > 0)
+    window = QSize(live->width(), live->height());
+
+  survey(window, m_lastCodec, m_lastFormat, m_lastDepth, m_lastStereo);
 }
 
 QString CapabilityComponent::report() const

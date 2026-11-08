@@ -139,6 +139,7 @@ private:
     float m_cursorRawHigh;
     QPointF m_cursorRawLast;
     bool m_cursorRawSeen;
+    bool m_cursorOffWindow;
     int m_cursorPinned;
     int m_cursorPinSaid;
     QList<QPointF> m_cursorTrail;

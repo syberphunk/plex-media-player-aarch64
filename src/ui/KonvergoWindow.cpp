@@ -600,6 +600,8 @@ void KonvergoWindow::resizeEvent(QResizeEvent* event)
 {
   QLOG_DEBUG() << "resize event:" << event->size();
 
+  CapabilityComponent::Get().resurvey();
+
   // This next block was added at some point to workaround a problem with
   // resizing on windows. Unfortunately it broke the desktop client behavior
   // and when retried on Windows 10 with Qt5.7 the original bug seems to be

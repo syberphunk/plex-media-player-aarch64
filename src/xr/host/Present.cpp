@@ -26,6 +26,11 @@ namespace
   const uint32_t kStereoFlag = VROverlayFlags_SideBySide_Parallel;
   const float kPackedEyes = 2.0f;
 
+  bool differs(float left, float right)
+  {
+    return !(left > right - 0.001f && left < right + 0.001f);
+  }
+
   const int kScanIndexes = 128;
   const int kScanAhead = 8;
   const int kScanSlice = 512;
@@ -159,7 +164,7 @@ namespace
 
     bool assertStereo(std::string& why);
     void widenPanel();
-    void measurePanel(const char* when);
+    void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
     void dropStereo();
     void hold();
@@ -175,6 +180,9 @@ namespace
     float m_panelMouseWide = 0.0f;
     float m_panelMouseTall = 0.0f;
     float m_panelMetres = 0.0f;
+    float m_seenCurve = -1.0f;
+    float m_seenAspect = -1.0f;
+    float m_seenMetres = -1.0f;
     bool m_texelAspectKnown = false;
     bool m_texelAspectSet = false;
     int m_texelAspectTries = 0;
@@ -553,7 +561,7 @@ namespace
     return true;
   }
 
-  void Presenter::measurePanel(const char* when)
+  void Presenter::measurePanel(const char* when, bool onlyIfChanged)
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
     if (!m_panel)
@@ -583,6 +591,15 @@ namespace
     }
     if (width > 0.0f)
       m_panelMetres = width;
+
+    const bool changed = differs(curve, m_seenCurve) || differs(aspect, m_seenAspect) ||
+                         differs(width, m_seenMetres);
+    m_seenCurve = curve;
+    m_seenAspect = aspect;
+    m_seenMetres = width;
+
+    if (onlyIfChanged && !changed)
+      return;
 
     note("pmp-xr-host: the panel measures %.3f m wide, curve %.3f, aspect %.3f, "
          "mouse %.1f by %.1f, texture u %.4f to %.4f v %.4f to %.4f, %s",
@@ -719,6 +736,8 @@ namespace
       m_settled = true;
       measurePanel("a while after going side by side");
     }
+
+    measurePanel("while the panel is live", true);
 
     if (now - m_dotAt >= kDotGapMs)
     {

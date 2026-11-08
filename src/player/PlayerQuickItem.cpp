@@ -55,7 +55,6 @@ namespace
   const int kRulerMs = 90000;
   const int kRulerBars = 5;
   const float kRulerWide = 10.0f;
-  const float kPointerStretch = 2.0f;
   const int kCursorPinRun = 5;
   const int kCursorPinSaidMax = 8;
 
@@ -977,7 +976,7 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
   m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorStretching(false),
-  m_cursorRawLow(-1.0f), m_cursorRawHigh(-1.0f), m_cursorRawSeen(false),
+  m_cursorRawLow(-1.0f), m_cursorRawHigh(-1.0f), m_cursorRawSeen(false), m_cursorOffWindow(false),
   m_cursorPinned(0), m_cursorPinSaid(0), m_cursorRests(0),
   m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
@@ -1266,12 +1265,22 @@ QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
     return at;
 
   const float wide = float(win->width());
-  if (wide <= 0.0f)
+  const float tall = float(win->height());
+  if (wide <= 0.0f || tall <= 0.0f)
     return at;
 
-  const float middle = wide * 0.5f;
-  const float x = qBound(0.0f, middle + (float(at.x()) - middle) * kPointerStretch, wide - 1.0f);
-  return QPointF(qreal(x), at.y());
+  if (!m_cursorOffWindow)
+    return at;
+
+  const QSize panel = XrPresenter::exists() ? XrPresenter::Get().panelPointer() : QSize();
+  if (panel.width() <= 0 || panel.height() <= 0)
+    return at;
+  if (panel.width() == int(wide) && panel.height() == int(tall))
+    return at;
+
+  const float x = qBound(0.0f, float(at.x()) * wide / float(panel.width()), wide - 1.0f);
+  const float y = qBound(0.0f, float(at.y()) * tall / float(panel.height()), tall - 1.0f);
+  return QPointF(qreal(x), qreal(y));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1283,6 +1292,20 @@ void PlayerQuickItem::noteRawReach(const QPointF& at)
     m_cursorRawLow = x;
   if (m_cursorRawHigh < 0.0f || x > m_cursorRawHigh)
     m_cursorRawHigh = x;
+
+  const QQuickWindow* win = window();
+  const float wide = win ? float(win->width()) : 0.0f;
+  const float tall = win ? float(win->height()) : 0.0f;
+  if (!m_cursorOffWindow && wide > 0.0f && tall > 0.0f
+      && (x > wide - 1.0f || float(at.y()) > tall - 1.0f))
+  {
+    m_cursorOffWindow = true;
+    const QSize panel = XrPresenter::exists() ? XrPresenter::Get().panelPointer() : QSize();
+    QLOG_INFO() << "Stereoscopic: the pointer arrived at x" << x << "y" << float(at.y())
+                << "which is outside the window" << wide << "by" << tall
+                << ", so events are in the panel's pointer space" << panel.width() << "by"
+                << panel.height() << "and will be scaled into window pixels";
+  }
 
   const bool still = m_cursorRawSeen && qAbs(x - float(m_cursorRawLast.x())) < 0.5f;
   const bool slid = m_cursorRawSeen
