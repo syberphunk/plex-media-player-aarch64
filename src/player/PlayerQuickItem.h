@@ -72,7 +72,6 @@ private:
   int m_shotReports;
   int m_dumpsLeft;
   int m_dumpBudget;
-  bool m_captures;
   QPointF m_cursorAt;
   qint64 m_rulerFrom;
   int m_rulerSaid;
@@ -121,7 +120,6 @@ private slots:
     void onPanelChanged();
     void onCursorIdle();
     void onCursorRest();
-    void onSettingsChanged(const QString& section, const QVariantMap& values);
     void updateVideoGeometry();
 
 private:
@@ -162,7 +160,6 @@ private:
     float m_cursorSeenBase;
     bool m_cursorHitTop;
     bool m_cursorHitBase;
-    bool m_captures;
     PlayerRenderer* m_renderer;
 };
 

@@ -120,7 +120,7 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
   m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
-  m_dumpBudget(kDumpBudget), m_captures(false), m_rulerFrom(0), m_rulerSaid(0),
+  m_dumpBudget(kDumpBudget), m_rulerFrom(0), m_rulerSaid(0),
   m_arrowProgram(nullptr), m_arrowVao(0),
   m_arrowFailed(false),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
@@ -495,12 +495,6 @@ void PlayerRenderer::drawShot(QOpenGLExtraFunctions* gl, int x, int width, int h
 void PlayerRenderer::dumpFrames(QOpenGLExtraFunctions* gl)
 {
   --m_dumpsLeft;
-
-  if (!m_captures)
-  {
-    m_dumpsLeft = 0;
-    return;
-  }
 
   if (m_dumpBudget <= 0)
   {
@@ -1003,8 +997,6 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
     m_graphicsInfo.clear();
   }
 
-  m_captures = player->m_captures;
-
   const bool wasActive = m_playbackActive;
   m_playbackActive = player->m_playbackActive;
   if (m_playbackActive && !wasActive && m_stereoWanted)
@@ -1042,15 +1034,10 @@ PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
   m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
     m_cursorSeenTop(-1.0f), m_cursorSeenBase(-1.0f), m_cursorHitTop(false),
     m_cursorHitBase(false),
-  m_captures(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "diagnostics").toBool()),
   m_renderer(nullptr)
 {
-  if (m_captures)
-    QLOG_INFO() << "Stereoscopic: diagnostics is on, so frame captures will be written to"
-                << Paths::logDir();
-
-  connect(&SettingsComponent::Get(), &SettingsComponent::sectionValueUpdate, this,
-          &PlayerQuickItem::onSettingsChanged);
+  QLOG_INFO() << "Stereoscopic: the first frame captures of a stereo run will be written to"
+              << Paths::logDir();
 
   m_cursorIdle->setSingleShot(true);
   m_cursorIdle->setInterval(kCursorIdleMs);
@@ -1153,21 +1140,6 @@ void PlayerQuickItem::onPanelChanged()
     m_cursorAt = QPointF();
   }
 
-  update();
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerQuickItem::onSettingsChanged(const QString& section, const QVariantMap& values)
-{
-  if (section != SETTINGS_SECTION_MAIN || !values.contains("diagnostics"))
-    return;
-
-  const bool on = values.value("diagnostics").toBool();
-  if (on == m_captures)
-    return;
-
-  m_captures = on;
-  QLOG_INFO() << "Stereoscopic: frame captures are now" << (on ? "on" : "off");
   update();
 }
 
