@@ -1190,12 +1190,16 @@ void PlayerQuickItem::reportPointerReach(const char* when)
   const QQuickWindow* win = window();
   const float wide = win ? float(win->width()) : 0.0f;
   const float tall = win ? float(win->height()) : 0.0f;
+  const QSize panelPointer =
+    XrPresenter::exists() ? XrPresenter::Get().panelPointer() : QSize();
 
   QLOG_INFO() << "Stereoscopic: the pointer reaches x" << m_cursorSeenLow << "to"
               << m_cursorSeenHigh << "of" << wide << "and y" << m_cursorSeenTop << "to"
               << m_cursorSeenBase << "of" << tall << ", edges left" << m_cursorHitLeft
               << "right" << m_cursorHitRight << "top" << m_cursorHitTop << "bottom"
-              << m_cursorHitBase << ", delivered x" << m_cursorRawLow << "to" << m_cursorRawHigh << "-" << when;
+              << m_cursorHitBase << ", delivered x" << m_cursorRawLow << "to" << m_cursorRawHigh
+              << ", panel pointer space" << panelPointer.width() << "by" << panelPointer.height()
+              << "-" << when;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

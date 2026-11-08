@@ -25,6 +25,10 @@ public:
   bool wanted() const { return m_wanted; }
   bool panelStereo() const { return m_panelStereo; }
 
+  QSize panelPointer() const { return m_panelPointer; }
+  int panelMillimetres() const { return m_panelMillimetres; }
+  float panelTexelAspect() const { return m_panelTexelAspect; }
+
   const QSize& videoSize() const { return m_videoSize; }
   uint32_t packing() const { return m_packing; }
   bool swapped() const { return m_swapped; }
@@ -76,6 +80,9 @@ private:
 
   QString m_lastFailure;
   QSize m_videoSize;
+  QSize m_panelPointer;
+  int m_panelMillimetres = 0;
+  float m_panelTexelAspect = 0.0f;
   uint32_t m_packing = 0;
   bool m_swapped = false;
 };

@@ -172,6 +172,9 @@ namespace
     uint32_t m_panelFlags = 0;
     bool m_panelWasStereo = false;
     float m_panelTexelAspect = 1.0f;
+    float m_panelMouseWide = 0.0f;
+    float m_panelMouseTall = 0.0f;
+    float m_panelMetres = 0.0f;
     bool m_texelAspectKnown = false;
     bool m_texelAspectSet = false;
     int m_texelAspectTries = 0;
@@ -573,6 +576,14 @@ namespace
     if (ovl->GetOverlayTextureBounds)
       ovl->GetOverlayTextureBounds(m_panel, &bounds);
 
+    if (scale.v[0] > 0.0f && scale.v[1] > 0.0f)
+    {
+      m_panelMouseWide = scale.v[0];
+      m_panelMouseTall = scale.v[1];
+    }
+    if (width > 0.0f)
+      m_panelMetres = width;
+
     note("pmp-xr-host: the panel measures %.3f m wide, curve %.3f, aspect %.3f, "
          "mouse %.1f by %.1f, texture u %.4f to %.4f v %.4f to %.4f, %s",
          width, curve, aspect, scale.v[0], scale.v[1], bounds.uMin, bounds.uMax, bounds.vMin,
@@ -779,6 +790,11 @@ namespace
     XrProtocol::Message message = XrProtocol::make(type);
     message.flags = m_panelFlags;
     message.appid = m_appid;
+    message.mouseWide = static_cast<uint32_t>(m_panelMouseWide + 0.5f);
+    message.mouseTall = static_cast<uint32_t>(m_panelMouseTall + 0.5f);
+    message.panelMillimetres = static_cast<uint32_t>(m_panelMetres * 1000.0f + 0.5f);
+    message.texelAspectThousandths =
+      static_cast<uint32_t>(m_panelTexelAspect * 1000.0f + 0.5f);
     if (reason && *reason)
       std::snprintf(message.reason, sizeof(message.reason), "%s", reason);
 

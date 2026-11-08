@@ -6,7 +6,7 @@
 namespace XrProtocol
 {
   const uint32_t kMagic = 0x58504d50;
-  const uint32_t kVersion = 4;
+  const uint32_t kVersion = 5;
   const int kSocketFd = 3;
   const int kReasonLength = 96;
 
@@ -36,6 +36,12 @@ namespace XrProtocol
     uint32_t swapped;
     uint32_t flags;
     uint32_t appid;
+
+    uint32_t mouseWide;
+    uint32_t mouseTall;
+
+    uint32_t panelMillimetres;
+    uint32_t texelAspectThousandths;
 
     char reason[kReasonLength];
   };

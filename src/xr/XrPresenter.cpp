@@ -1,5 +1,7 @@
 #include "XrPresenter.h"
 
+#include "system/CapabilityComponent.h"
+
 #include <QProcess>
 #include <QSocketNotifier>
 #include <QThread>
@@ -120,6 +122,23 @@ void XrPresenter::readHost()
 
     message.reason[XrProtocol::kReasonLength - 1] = '\0';
     const QString reason = QString::fromUtf8(message.reason);
+
+    if (message.mouseWide > 0 && message.mouseTall > 0)
+    {
+      const QSize pointer(int(message.mouseWide), int(message.mouseTall));
+      if (pointer != m_panelPointer)
+      {
+        m_panelPointer = pointer;
+        QLOG_INFO() << "Stereoscopic: the panel's pointer space is" << pointer.width() << "by"
+                    << pointer.height() << "pixels";
+        QMetaObject::invokeMethod(&CapabilityComponent::Get(), "resurvey",
+                                  Qt::QueuedConnection);
+      }
+    }
+    if (message.panelMillimetres > 0)
+      m_panelMillimetres = int(message.panelMillimetres);
+    if (message.texelAspectThousandths > 0)
+      m_panelTexelAspect = float(message.texelAspectThousandths) / 1000.0f;
 
     switch (message.type)
     {
