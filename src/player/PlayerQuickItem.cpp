@@ -1,5 +1,6 @@
 #include "PlayerQuickItem.h"
 
+#include <QCoreApplication>
 #include <QCursor>
 #include <QGuiApplication>
 #include <QHoverEvent>
@@ -54,6 +55,7 @@ namespace
   const int kRulerMs = 90000;
   const int kRulerBars = 5;
   const float kRulerWide = 10.0f;
+  const float kPointerStretch = 2.0f;
 
   const char kArrowVertex[] = R"(
 uniform vec2 u_p0;
@@ -972,7 +974,7 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 PlayerQuickItem::PlayerQuickItem(QQuickItem* parent)
 : QQuickFramebufferObject(parent), m_playbackActive(false), m_stereoLive(false),
-  m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorRests(0),
+  m_cursorIdle(new QTimer(this)), m_cursorRest(new QTimer(this)), m_cursorStretching(false), m_cursorRests(0),
   m_cursorHideLogged(false),
   m_cursorSeenLow(-1.0f), m_cursorSeenHigh(-1.0f), m_cursorReports(0),
   m_cursorReportedAt(0), m_cursorHitLeft(false), m_cursorHitRight(false),
@@ -1172,7 +1174,7 @@ void PlayerQuickItem::notePointerRest()
   QLOG_INFO() << "Stereoscopic: the pointer rests at x" << float(middle.x()) << "y"
               << float(middle.y()) << "spread" << float(highX - lowX) << "by"
               << float(highY - lowY) << "of" << (win ? win->width() : 0) << "by"
-              << (win ? win->height() : 0);
+              << (win ? win->height() : 0) << ", raw x" << float(m_cursorRaw.x());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1249,6 +1251,22 @@ void PlayerQuickItem::notePointerReach()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
+{
+  const QQuickWindow* win = window();
+  if (!win)
+    return at;
+
+  const float wide = float(win->width());
+  if (wide <= 0.0f)
+    return at;
+
+  const float middle = wide * 0.5f;
+  const float x = qBound(0.0f, middle + (float(at.x()) - middle) * kPointerStretch, wide - 1.0f);
+  return QPointF(qreal(x), at.y());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
 {
   switch (event->type())
@@ -1256,7 +1274,26 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
     case QEvent::MouseMove:
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonRelease:
-      m_cursorAt = static_cast<QMouseEvent*>(event)->position();
+    {
+      QMouseEvent* was = static_cast<QMouseEvent*>(event);
+      if (m_stereoLive && !m_cursorStretching)
+      {
+        const QPointF put = stretchPointer(was->position());
+        if (put != was->position())
+        {
+          const QPointF shift = put - was->position();
+          m_cursorRaw = was->position();
+          QMouseEvent now(was->type(), put, was->scenePosition() + shift,
+                          was->globalPosition() + shift, was->button(), was->buttons(),
+                          was->modifiers(), was->pointingDevice());
+          now.setTimestamp(was->timestamp());
+          m_cursorStretching = true;
+          QCoreApplication::sendEvent(watched, &now);
+          m_cursorStretching = false;
+          return true;
+        }
+      }
+      m_cursorAt = was->position();
       if (m_stereoLive)
       {
         notePointerReach();
@@ -1266,8 +1303,28 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         update();
       }
       break;
+    }
     case QEvent::HoverMove:
-      m_cursorAt = static_cast<QHoverEvent*>(event)->position();
+    {
+      QHoverEvent* was = static_cast<QHoverEvent*>(event);
+      if (m_stereoLive && !m_cursorStretching)
+      {
+        const QPointF put = stretchPointer(was->position());
+        if (put != was->position())
+        {
+          const QPointF shift = put - was->position();
+          m_cursorRaw = was->position();
+          QHoverEvent now(was->type(), put, was->globalPosition() + shift,
+                          stretchPointer(was->oldPosF()), was->modifiers(),
+                          was->pointingDevice());
+          now.setTimestamp(was->timestamp());
+          m_cursorStretching = true;
+          QCoreApplication::sendEvent(watched, &now);
+          m_cursorStretching = false;
+          return true;
+        }
+      }
+      m_cursorAt = was->position();
       if (m_stereoLive)
       {
         notePointerReach();
@@ -1275,6 +1332,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         update();
       }
       break;
+    }
     default:
       break;
   }

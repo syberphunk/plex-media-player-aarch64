@@ -100,6 +100,7 @@ public:
     void notePointerRest();
     void reportPointerReach(const char* when);
     void reportPointerPress();
+    QPointF stretchPointer(const QPointF& at) const;
 
     bool eventFilter(QObject* watched, QEvent* event) override;
     void initMpv(PlayerComponent* player);
@@ -131,6 +132,8 @@ private:
     QTimer* m_cursorIdle;
     QTimer* m_cursorRest;
     QPointF m_cursorRestedAt;
+    QPointF m_cursorRaw;
+    bool m_cursorStretching;
     QList<QPointF> m_cursorTrail;
     int m_cursorRests;
     bool m_cursorHideLogged;
