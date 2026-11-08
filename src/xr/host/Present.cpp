@@ -29,6 +29,25 @@ namespace
     return !(left > right - 0.001f && left < right + 0.001f);
   }
 
+  float gapBetween(const float left[3], const float right[3])
+  {
+    float sum = 0.0f;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+      const float term = left[axis] - right[axis];
+      sum += term * term;
+    }
+    return std::sqrt(sum);
+  }
+
+  float bowOf(const float from[3], const float middle[3], const float to[3])
+  {
+    float chord[3];
+    for (int axis = 0; axis < 3; ++axis)
+      chord[axis] = (from[axis] + to[axis]) * 0.5f;
+    return gapBetween(middle, chord);
+  }
+
   const int kScanIndexes = 128;
   const int kScanAhead = 8;
   const int kScanSlice = 512;
@@ -39,6 +58,11 @@ namespace
   const int kDotGapMs = 500;
   const int kDotSaidMax = 400;
   const int kReassertTries = 3;
+  const float kPackedEyes = 2.0f;
+  const float kShapeTolerance = 0.02f;
+  const int kShapeTries = 4;
+  const float kAspectFloor = 0.05f;
+  const float kAspectCeiling = 32.0f;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
 
@@ -163,6 +187,9 @@ namespace
     bool assertStereo(std::string& why);
     void widenPanel();
     float wantedAspect() const;
+    bool panelPointAt(float across, float up, float out[3]) const;
+    bool measureShape(float& wide, float& tall);
+    void fitPanel();
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
     void dropStereo();
@@ -182,6 +209,9 @@ namespace
     float m_seenCurve = -1.0f;
     float m_seenAspect = -1.0f;
     float m_seenMetres = -1.0f;
+    float m_fitAspect = 0.0f;
+    int m_shapeTries = 0;
+    bool m_shapeFailed = false;
     bool m_texelAspectKnown = false;
     bool m_texelAspectSet = false;
     int m_texelAspectTries = 0;
@@ -668,7 +698,133 @@ namespace
 
   float Presenter::wantedAspect() const
   {
-    return m_panelTexelAspect;
+    if (m_fitAspect > 0.0f)
+      return m_fitAspect;
+    return m_panelTexelAspect * (m_stereo ? kPackedEyes : 1.0f);
+  }
+
+  bool Presenter::panelPointAt(float across, float up, float out[3]) const
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->GetTransformForOverlayCoordinates)
+      return false;
+
+    struct HmdVector2_t at;
+    at.v[0] = across;
+    at.v[1] = up;
+
+    struct HmdMatrix34_t pose;
+    std::memset(&pose, 0, sizeof(pose));
+
+    const EVROverlayError error = ovl->GetTransformForOverlayCoordinates(
+      m_panel, ETrackingUniverseOrigin_TrackingUniverseStanding, at, &pose);
+    if (error != EVROverlayError_VROverlayError_None)
+    {
+      note("pmp-xr-host: the headset will not place panel point %.2f %.2f: %s", across, up,
+           errorName(error));
+      return false;
+    }
+
+    out[0] = pose.m[0][3];
+    out[1] = pose.m[1][3];
+    out[2] = pose.m[2][3];
+    return true;
+  }
+
+  bool Presenter::measureShape(float& wide, float& tall)
+  {
+    float left[3];
+    float middle[3];
+    float right[3];
+    float top[3];
+
+    if (!panelPointAt(0.0f, 0.0f, left) || !panelPointAt(0.5f, 0.0f, middle) ||
+        !panelPointAt(1.0f, 0.0f, right) || !panelPointAt(0.0f, 1.0f, top))
+      return false;
+
+    const float perAcross = gapBetween(left, right);
+    const float perUp = gapBetween(left, top);
+    if (!(perAcross > 0.0f) || !(perUp > 0.0f))
+      return false;
+
+    const char* how = "a step spans the whole panel";
+    wide = perAcross;
+    tall = perUp;
+
+    if (m_panelMetres > 0.0f && perAcross < m_panelMetres * 0.5f && m_panelMouseWide > 0.0f &&
+        m_panelMouseTall > 0.0f)
+    {
+      wide = perAcross * m_panelMouseWide;
+      tall = perUp * m_panelMouseTall;
+      how = "a step spans one texel";
+    }
+
+    if (!(wide > 0.0f) || !(tall > 0.0f))
+      return false;
+
+    note("pmp-xr-host: the panel runs from %.4f %.4f %.4f through %.4f %.4f %.4f to %.4f %.4f "
+         "%.4f and up to %.4f %.4f %.4f, bowing %.4f m, %.4f m across and %.4f m up per step, "
+         "%s, so it is %.3f by %.3f m, %.3f to 1",
+         left[0], left[1], left[2], middle[0], middle[1], middle[2], right[0], right[1],
+         right[2], top[0], top[1], top[2], bowOf(left, middle, right), perAcross, perUp, how,
+         wide, tall, wide / tall);
+    return true;
+  }
+
+  void Presenter::fitPanel()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!m_panel || !ovl || !ovl->SetOverlayTexelAspect)
+      return;
+    if (m_shapeFailed || m_shapeTries >= kShapeTries)
+      return;
+    if (!(m_panelMouseWide > 0.0f) || !(m_panelMouseTall > 0.0f))
+      return;
+
+    float wide = 0.0f;
+    float tall = 0.0f;
+    if (!measureShape(wide, tall))
+    {
+      m_shapeFailed = true;
+      note("pmp-xr-host: the panel's shape cannot be measured, so it keeps %.3f texels wide per "
+           "tall",
+           wantedAspect());
+      return;
+    }
+
+    ++m_shapeTries;
+
+    const float want = m_panelMouseWide / m_panelMouseTall;
+    const float have = wide / tall;
+
+    float aspect = 0.0f;
+    if (!ovl->GetOverlayTexelAspect ||
+        ovl->GetOverlayTexelAspect(m_panel, &aspect) != EVROverlayError_VROverlayError_None ||
+        !(aspect > 0.0f))
+      aspect = wantedAspect();
+
+    if (std::fabs(have - want) <= want * kShapeTolerance)
+    {
+      note("pmp-xr-host: the panel is %.3f to 1 and the picture is %.3f to 1, so %.3f texels wide "
+           "per tall is right, measured %d time%s",
+           have, want, aspect, m_shapeTries, m_shapeTries == 1 ? "" : "s");
+      m_fitAspect = aspect;
+      m_shapeTries = kShapeTries;
+      return;
+    }
+
+    float next = aspect * want / have;
+    if (next < kAspectFloor)
+      next = kAspectFloor;
+    if (next > kAspectCeiling)
+      next = kAspectCeiling;
+
+    note("pmp-xr-host: the panel is %.3f to 1 and the picture is %.3f to 1, so the texel aspect "
+         "goes from %.3f to %.3f, try %d of %d",
+         have, want, aspect, next, m_shapeTries, kShapeTries);
+
+    m_fitAspect = next;
+    widenPanel();
   }
 
   void Presenter::widenPanel()
@@ -710,6 +866,9 @@ namespace
     }
 
     m_stereo = false;
+    m_fitAspect = 0.0f;
+    m_shapeTries = 0;
+    m_shapeFailed = false;
 
     if (m_texelAspectSet && ovl->SetOverlayTexelAspect)
     {
@@ -768,6 +927,8 @@ namespace
 
     if (enabled)
     {
+      fitPanel();
+
       if (m_texelAspectSet && ovl->GetOverlayTexelAspect)
       {
         const float wanted = wantedAspect();
