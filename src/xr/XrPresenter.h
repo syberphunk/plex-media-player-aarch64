@@ -28,6 +28,7 @@ public:
   QSize panelPointer() const { return m_panelPointer; }
   int panelMillimetres() const { return m_panelMillimetres; }
   float panelTexelAspect() const { return m_panelTexelAspect; }
+  float panelPointerWide() const { return float(m_panelPointerWide.load()) / 1000.0f; }
 
   const QSize& videoSize() const { return m_videoSize; }
   uint32_t packing() const { return m_packing; }
@@ -80,6 +81,7 @@ private:
 
   std::atomic<int> m_windowWide{0};
   std::atomic<int> m_windowTall{0};
+  std::atomic<int> m_panelPointerWide{1000};
 
   int m_socket = -1;
   QSocketNotifier* m_notifier = nullptr;

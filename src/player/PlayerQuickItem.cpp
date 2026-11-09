@@ -8,6 +8,7 @@
 #include <QOpenGLContext>
 #include <QPointF>
 #include <QSizeF>
+#include <QWheelEvent>
 
 #include <QtOpenGL/QOpenGLFramebufferObject>
 #include <QtOpenGL/QOpenGLShaderProgram>
@@ -1327,7 +1328,8 @@ void PlayerQuickItem::reportPointerPress()
   const float tall = win ? float(win->height()) : 0.0f;
 
   QLOG_INFO() << "Stereoscopic: the pointer was pressed at x" << float(m_cursorAt.x()) << "y"
-              << float(m_cursorAt.y()) << "of" << wide << "by" << tall;
+              << float(m_cursorAt.y()) << "of" << wide << "by" << tall << ", raw x"
+              << float(m_cursorRaw.x());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1387,18 +1389,31 @@ QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
   if (wide <= 0.0f || tall <= 0.0f)
     return at;
 
-  if (!m_cursorOffWindow)
+  const bool known = XrPresenter::exists();
+  float x = float(at.x());
+  float y = float(at.y());
+  bool moved = false;
+
+  const QSize panel = known ? XrPresenter::Get().panelPointer() : QSize();
+  if (m_cursorOffWindow && panel.width() > 0 && panel.height() > 0
+      && (panel.width() != int(wide) || panel.height() != int(tall)))
+  {
+    x = x * wide / float(panel.width());
+    y = y * tall / float(panel.height());
+    moved = true;
+  }
+
+  const float spread = known ? XrPresenter::Get().panelPointerWide() : 1.0f;
+  if (spread > 1.0f)
+  {
+    x = wide * 0.5f + (x - wide * 0.5f) * spread;
+    moved = true;
+  }
+
+  if (!moved)
     return at;
 
-  const QSize panel = XrPresenter::exists() ? XrPresenter::Get().panelPointer() : QSize();
-  if (panel.width() <= 0 || panel.height() <= 0)
-    return at;
-  if (panel.width() == int(wide) && panel.height() == int(tall))
-    return at;
-
-  const float x = qBound(0.0f, float(at.x()) * wide / float(panel.width()), wide - 1.0f);
-  const float y = qBound(0.0f, float(at.y()) * tall / float(panel.height()), tall - 1.0f);
-  return QPointF(qreal(x), qreal(y));
+  return QPointF(qreal(qBound(0.0f, x, wide - 1.0f)), qreal(qBound(0.0f, y, tall - 1.0f)));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1416,7 +1431,7 @@ void PlayerQuickItem::noteRawReach(const QPointF& at)
   const float wide = win ? float(win->width()) : 0.0f;
   const float tall = win ? float(win->height()) : 0.0f;
   if (!m_cursorOffWindow && wide > 0.0f && tall > 0.0f
-      && (x > wide - 1.0f || float(at.y()) > tall - 1.0f))
+      && (x >= wide || float(at.y()) >= tall))
   {
     m_cursorOffWindow = true;
     const QSize panel = XrPresenter::exists() ? XrPresenter::Get().panelPointer() : QSize();
@@ -1434,6 +1449,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
     case QEvent::MouseMove:
     case QEvent::MouseButtonPress:
     case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
     {
       QMouseEvent* was = static_cast<QMouseEvent*>(event);
       if (m_stereoLive && !m_cursorStretching)
@@ -1490,6 +1506,27 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
         notePointerReach();
         m_cursorIdle->start(kCursorIdleMs);
         update();
+      }
+      break;
+    }
+    case QEvent::Wheel:
+    {
+      QWheelEvent* was = static_cast<QWheelEvent*>(event);
+      if (m_stereoLive && !m_cursorStretching)
+      {
+        const QPointF put = stretchPointer(was->position());
+        if (put != was->position())
+        {
+          QWheelEvent now(put, was->globalPosition() + (put - was->position()),
+                          was->pixelDelta(), was->angleDelta(), was->buttons(),
+                          was->modifiers(), was->phase(), was->inverted(), was->source(),
+                          was->pointingDevice());
+          now.setTimestamp(was->timestamp());
+          m_cursorStretching = true;
+          QCoreApplication::sendEvent(watched, &now);
+          m_cursorStretching = false;
+          return true;
+        }
       }
       break;
     }

@@ -28,6 +28,7 @@ namespace
   const char kPanelPrefix[] = "valve.steam.desktopgame.";
   const uint32_t kStereoFlag = VROverlayFlags_SideBySide_Parallel;
   const uint32_t kOpaqueFlag = VROverlayFlags_IgnoreTextureAlpha;
+  const float kStereoHalves = 2.0f;
   const char kComposeName[] = "GAMESCOPE_COMPOSITE_FORCE";
   const char kComposeOurs[] = "PLEXMEDIAPLAYER_COMPOSITE_FORCE";
   bool differs(float left, float right)
@@ -205,6 +206,8 @@ namespace
     bool measureShape(float& wide, float& tall, float& bow, bool speak);
     void setTexelAspect(float want);
     float texelWanted() const;
+    float pointerWide() const;
+    void tellPointer();
     void probeCover();
     bool windowScaled() const;
     void askComposite();
@@ -226,6 +229,7 @@ namespace
     uint32_t m_panelFlags = 0;
     bool m_panelWasStereo = false;
     float m_panelTexelAspect = 1.0f;
+    float m_pointerWideTold = 0.0f;
     float m_panelMouseWide = 0.0f;
     float m_panelMouseTall = 0.0f;
     float m_panelMetres = 0.0f;
@@ -1024,6 +1028,19 @@ namespace
     return m_packing == XrProtocol::SideBySide ? 2.0f : 0.5f;
   }
 
+  float Presenter::pointerWide() const
+  {
+    return m_stereo && m_carrierLayer == 0 && !m_backed ? kStereoHalves : 1.0f;
+  }
+
+  void Presenter::tellPointer()
+  {
+    if (!m_told || m_stage != Holding || pointerWide() == m_pointerWideTold)
+      return;
+
+    send(XrProtocol::Stereo, nullptr);
+  }
+
   VROverlayHandle_t Presenter::layerHandle(int which) const
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -1705,6 +1722,23 @@ namespace
     message.panelMillimetres = static_cast<uint32_t>(m_panelMetres * 1000.0f + 0.5f);
     message.texelAspectThousandths =
       static_cast<uint32_t>(m_panelTexelAspect * 1000.0f + 0.5f);
+
+    const float pointer = type == XrProtocol::Stereo ? pointerWide() : 1.0f;
+    message.pointerWideThousandths = static_cast<uint32_t>(pointer * 1000.0f + 0.5f);
+    if (type != XrProtocol::Stereo)
+      m_pointerWideTold = 0.0f;
+    else if (pointer != m_pointerWideTold)
+    {
+      m_pointerWideTold = pointer;
+      char where[32];
+      if (m_carrierLayer != 0)
+        std::snprintf(where, sizeof(where), "layer %d", m_carrierLayer);
+      else
+        std::snprintf(where, sizeof(where), "the panel");
+      note("pmp-xr-host: the laser lands on a surface %.3f times as wide as the picture, with "
+           "side by side on %s and the window on %s",
+           pointer, where, m_backed ? "a layer" : "the panel");
+    }
     if (reason && *reason)
       std::snprintf(message.reason, sizeof(message.reason), "%s", reason);
 
@@ -1848,7 +1882,10 @@ namespace
         surveySlice();
 
       if (m_stage == Holding)
+      {
         watchLayers();
+        tellPointer();
+      }
 
       if (m_stage == Giving)
         break;

@@ -6,7 +6,7 @@
 namespace XrProtocol
 {
   const uint32_t kMagic = 0x58504d50;
-  const uint32_t kVersion = 6;
+  const uint32_t kVersion = 7;
   const int kSocketFd = 3;
   const int kReasonLength = 96;
 
@@ -45,6 +45,7 @@ namespace XrProtocol
 
     uint32_t panelMillimetres;
     uint32_t texelAspectThousandths;
+    uint32_t pointerWideThousandths;
 
     char reason[kReasonLength];
   };

@@ -170,6 +170,19 @@ void XrPresenter::readHost()
     if (message.texelAspectThousandths > 0)
       m_panelTexelAspect = float(message.texelAspectThousandths) / 1000.0f;
 
+    const int pointerWide = message.type == XrProtocol::Stereo &&
+                            message.pointerWideThousandths >= 1000
+                              ? int(message.pointerWideThousandths)
+                              : 1000;
+    const bool pointerNews = message.type == XrProtocol::Stereo &&
+                             (pointerWide != m_panelPointerWide.load() || !m_panelStereo);
+    m_panelPointerWide = pointerWide;
+    if (pointerNews)
+      QLOG_INFO() << "Stereoscopic: the laser's surface is" << float(pointerWide) / 1000.0f
+                  << "times as wide as the picture, so the pointer is"
+                  << (pointerWide > 1000 ? "spread about the middle of the window"
+                                         : "used as delivered");
+
     switch (message.type)
     {
       case XrProtocol::Stereo:
