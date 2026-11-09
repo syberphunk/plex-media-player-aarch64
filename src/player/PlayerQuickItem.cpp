@@ -121,6 +121,7 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
   m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
   m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0), m_dumpWaits(0),
   m_dumpBudget(kDumpBudget), m_captures(false), m_rulerFrom(0), m_rulerSaid(0),
+  m_rulerShots(0),
   m_arrowProgram(nullptr), m_arrowVao(0),
   m_arrowFailed(false),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
@@ -260,6 +261,7 @@ void PlayerRenderer::syncStereo()
     m_dumpWaits = 0;
     m_rulerFrom = wanted ? QDateTime::currentMSecsSinceEpoch() : 0;
     m_rulerSaid = 0;
+    m_rulerShots = 0;
   }
 
   m_stereoWanted = wanted;
@@ -708,6 +710,39 @@ void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::dumpRuler(QOpenGLExtraFunctions* gl)
+{
+  if (m_rulerFrom == 0 || m_rulerShots >= 2)
+    return;
+
+  const qint64 since = QDateTime::currentMSecsSinceEpoch() - m_rulerFrom;
+  const int phase = since < qint64(kRulerMs) ? 1 : (since < qint64(kRulerMs) * 2 ? 2 : 0);
+  if (phase == 0 || phase <= m_rulerShots || since % qint64(kRulerMs) < 10000)
+    return;
+
+  m_rulerShots = phase;
+
+  QOpenGLFramebufferObject screen(m_windowSize);
+  if (!screen.isValid())
+    return;
+
+  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+  gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, screen.handle());
+  gl->glBlitFramebuffer(0, 0, m_windowSize.width(), m_windowSize.height(), 0, 0,
+                        m_windowSize.width(), m_windowSize.height(), GL_COLOR_BUFFER_BIT,
+                        GL_NEAREST);
+  gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  const QString name = QStringLiteral("stereo-ruler-%1-%2-screen.png")
+                         .arg(phase == 1 ? "upright" : "flat")
+                         .arg(QDateTime::currentDateTime().toString("HHmmss-zzz"));
+  screen.toImage().save(Paths::logDir() + QDir::separator() + name);
+
+  QLOG_INFO() << "Stereoscopic: wrote the measuring bars as" << name << "from a"
+              << m_windowSize.width() << "by" << m_windowSize.height() << "window";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
 {
   if (m_cursorAt.isNull())
@@ -821,6 +856,7 @@ void PlayerRenderer::composeWindow()
     gl->glViewport(0, 0, w, h);
     drawRuler(gl, half);
     drawCursor(gl, half);
+    dumpRuler(gl);
   }
   else
   {
@@ -835,6 +871,7 @@ void PlayerRenderer::composeWindow()
     gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
     drawRuler(gl, half);
     drawCursor(gl, half);
+    dumpRuler(gl);
   }
 
   gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
