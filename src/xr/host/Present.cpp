@@ -58,6 +58,7 @@ namespace
   const int kSettleMs = 20000;
   const char* const kDotPrefix = "gamescope.gamescope-0.cursor.";
   const int kDotGapMs = 500;
+  const int kLayerGapMs = 2000;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
@@ -198,6 +199,9 @@ namespace
     float texelWanted() const;
     void probeCover();
     void liftPanel();
+    void watchLayers();
+    bool overlayPointAt(VROverlayHandle_t overlay, float across, float up,
+                        float out[3]) const;
     void fitPanel();
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
@@ -228,6 +232,9 @@ namespace
     uint32_t m_packing = 0;
     uint32_t m_topSort = 0;
     uint32_t m_sortSaid = 0xffffffffu;
+    uint32_t m_sortWant = 0;
+    int64_t m_layerAt = 0;
+    uint32_t m_layerWas[9] = {0};
     uint32_t m_windowWide = 0;
     uint32_t m_windowTall = 0;
     int64_t m_coverAt = 0;
@@ -769,6 +776,31 @@ namespace
            EVROverlayError_VROverlayError_None;
   }
 
+  bool Presenter::overlayPointAt(VROverlayHandle_t overlay, float across, float up,
+                                 float out[3]) const
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->GetTransformForOverlayCoordinates || overlay == k_ulOverlayHandleInvalid)
+      return false;
+
+    struct HmdVector2_t at;
+    at.v[0] = across;
+    at.v[1] = up;
+
+    struct HmdMatrix34_t pose;
+    std::memset(&pose, 0, sizeof(pose));
+
+    if (ovl->GetTransformForOverlayCoordinates(
+          overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, at, &pose) !=
+        EVROverlayError_VROverlayError_None)
+      return false;
+
+    for (int axis = 0; axis < 3; ++axis)
+      out[axis] = pose.m[axis][3];
+
+    return true;
+  }
+
   bool Presenter::castAt(const float from[3], const float along[3], float hit[3], float uv[2],
                          float& away) const
   {
@@ -1013,6 +1045,7 @@ namespace
     }
 
     const uint32_t want = m_topSort + 1;
+    m_sortWant = want;
     const EVROverlayError set = ovl->SetOverlaySortOrder(m_panel, want);
 
     uint32_t now = mine;
@@ -1024,6 +1057,99 @@ namespace
          mine, m_topSort, want, now, errorName(set));
 
     m_sortSaid = now;
+  }
+
+  void Presenter::watchLayers()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->FindOverlay || m_appid == 0)
+      return;
+
+    const int64_t now = nowMs();
+    if (m_layerAt != 0 && now - m_layerAt < kLayerGapMs)
+      return;
+    m_layerAt = now;
+
+    if (m_sortWant > 0 && m_panel != k_ulOverlayHandleInvalid && ovl->GetOverlaySortOrder &&
+        ovl->SetOverlaySortOrder)
+    {
+      uint32_t mine = 0;
+      ovl->GetOverlaySortOrder(m_panel, &mine);
+      if (mine != m_sortWant)
+      {
+        const EVROverlayError set = ovl->SetOverlaySortOrder(m_panel, m_sortWant);
+        uint32_t back = mine;
+        ovl->GetOverlaySortOrder(m_panel, &back);
+        note("pmp-xr-host: the panel's sort order had fallen back to %u, so it was set to %u "
+             "again and now reads %u, %s",
+             mine, m_sortWant, back, errorName(set));
+      }
+    }
+
+    for (int which = 1; which <= 8; ++which)
+    {
+      char key[192];
+      std::snprintf(key, sizeof(key), "%s%u.layer%d", kPanelPrefix, m_appid, which);
+
+      VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
+      if (ovl->FindOverlay(key, &handle) != EVROverlayError_VROverlayError_None ||
+          handle == k_ulOverlayHandleInvalid)
+        continue;
+
+      Neighbour found;
+      if (!readNeighbour(handle, found))
+        continue;
+
+      struct VRTextureBounds_t bounds = {0.0f, 0.0f, 1.0f, 1.0f};
+      if (ovl->GetOverlayTextureBounds)
+        ovl->GetOverlayTextureBounds(handle, &bounds);
+
+      const uint32_t state = found.flags | (found.visible ? 0x80000000u : 0u);
+      if (state != m_layerWas[which])
+      {
+        m_layerWas[which] = state;
+        note("pmp-xr-host: layer %d is %s, %.2f m wide, flags 0x%x, sort %u, transform %d, "
+             "texture u %.4f to %.4f v %.4f to %.4f",
+             which, found.visible ? "showing" : "hidden", found.width, found.flags,
+             found.sortOrder, found.transformType, bounds.uMin, bounds.uMax, bounds.vMin,
+             bounds.vMax);
+
+        const float wide = m_panelMouseWide > 0.0f ? m_panelMouseWide : 1920.0f;
+        const float tall = m_panelMouseTall > 0.0f ? m_panelMouseTall : 1080.0f;
+
+        float a[3];
+        float b[3];
+        float c[3];
+        float d[3];
+        if (overlayPointAt(handle, 0.0f, tall * 0.5f, a) &&
+            overlayPointAt(handle, wide, tall * 0.5f, b) &&
+            overlayPointAt(m_panel, 0.0f, tall * 0.5f, c) &&
+            overlayPointAt(m_panel, wide, tall * 0.5f, d))
+          note("pmp-xr-host: layer %d runs from %.3f %.3f %.3f to %.3f %.3f %.3f while the "
+               "panel runs from %.3f %.3f %.3f to %.3f %.3f %.3f",
+               which, a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]);
+        else
+          note("pmp-xr-host: layer %d would not give its coordinates", which);
+      }
+
+      if (!found.visible || !ovl->SetOverlayFlag)
+        continue;
+      if ((found.flags & VROverlayFlags_IgnoreTextureAlpha) == 0)
+        continue;
+
+      const EVROverlayError cleared =
+        ovl->SetOverlayFlag(handle, VROverlayFlags_IgnoreTextureAlpha, false);
+
+      uint32_t after = found.flags;
+      if (ovl->GetOverlayFlags)
+        ovl->GetOverlayFlags(handle, &after);
+
+      note("pmp-xr-host: layer %d paints its transparent parts opaque, so that was cleared; "
+           "flags went from 0x%x to 0x%x, %s",
+           which, found.flags, after, errorName(cleared));
+
+      m_layerWas[which] = after | 0x80000000u;
+    }
   }
 
   void Presenter::probeCover()
@@ -1503,6 +1629,9 @@ namespace
 
       if ((m_stage == Looking && m_lookTries >= 1) || (m_stage == Holding && !m_surveyDone))
         surveySlice();
+
+      if (m_stage == Holding)
+        watchLayers();
 
       if (m_stage == Giving)
         break;
