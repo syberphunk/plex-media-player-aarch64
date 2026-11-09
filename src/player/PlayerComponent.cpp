@@ -774,6 +774,27 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
       if (len > 0 && msg->text[len - 1] == '\n')
         len -= 1;
       QString logline = QString::fromUtf8(msg->prefix) + ": " + QString::fromUtf8(msg->text, (int)len);
+
+      if (logline == m_lastLogLine)
+      {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        ++m_lastLogRepeats;
+        if (now - m_lastLogSaid < 5000)
+          break;
+        m_lastLogSaid = now;
+        logline += QStringLiteral(" (repeated %1 times)").arg(m_lastLogRepeats);
+      }
+      else
+      {
+        if (m_lastLogRepeats > 1)
+          QLOG_INFO() << qPrintable(m_lastLogLine)
+                      << qPrintable(QStringLiteral("(repeated %1 times in all)")
+                                      .arg(m_lastLogRepeats));
+        m_lastLogLine = logline;
+        m_lastLogRepeats = 1;
+        m_lastLogSaid = QDateTime::currentMSecsSinceEpoch();
+      }
+
       if (msg->log_level >= MPV_LOG_LEVEL_V)
         QLOG_DEBUG() << qPrintable(logline);
       else if (msg->log_level >= MPV_LOG_LEVEL_INFO)

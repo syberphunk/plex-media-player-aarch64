@@ -268,6 +268,9 @@ private:
   QSize m_videoSize;
   QVariantList m_seekableRanges;
   qint64 m_lastSeekableRangesEmit = 0;
+  QString m_lastLogLine;
+  qint64 m_lastLogRepeats = 0;
+  qint64 m_lastLogSaid = 0;
   qint64 m_seekAskedAt = 0;
   qint64 m_seekRestartedAt = 0;
   double m_seekFromVideoPts = 0.0;
