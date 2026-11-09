@@ -197,6 +197,7 @@ namespace
     void setTexelAspect(float want);
     float texelWanted() const;
     void probeCover();
+    void liftPanel();
     void fitPanel();
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
@@ -225,6 +226,8 @@ namespace
     int m_bentAgree = 0;
     int64_t m_bowSaidAt = 0;
     uint32_t m_packing = 0;
+    uint32_t m_topSort = 0;
+    uint32_t m_sortSaid = 0xffffffffu;
     uint32_t m_windowWide = 0;
     uint32_t m_windowTall = 0;
     int64_t m_coverAt = 0;
@@ -434,6 +437,7 @@ namespace
 
       m_surveyRunning = true;
       m_neighbours.clear();
+      m_topSort = 0;
       note("pmp-xr-host: listing the overlays in the session, generation %u down to 0",
            m_scanGeneration);
     }
@@ -501,6 +505,9 @@ namespace
           }
         }
 
+        if (handle != m_panel && found.sortOrder > m_topSort)
+          m_topSort = found.sortOrder;
+
         if (found.visible && handle != m_panel && m_neighbours.size() < 64)
           m_neighbours.push_back(std::make_pair(handle, std::string(found.key)));
 
@@ -516,6 +523,7 @@ namespace
         m_surveyRunning = false;
         m_surveyDone = true;
         note("pmp-xr-host: %d of %d handles are live overlays", m_scanSeen, m_scanProbes);
+        liftPanel();
         return;
       }
     }
@@ -982,6 +990,42 @@ namespace
     return m_packing == XrProtocol::SideBySide ? 2.0f : 0.5f;
   }
 
+  void Presenter::liftPanel()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->SetOverlaySortOrder || m_panel == k_ulOverlayHandleInvalid)
+      return;
+
+    uint32_t mine = 0;
+    if (ovl->GetOverlaySortOrder)
+      ovl->GetOverlaySortOrder(m_panel, &mine);
+
+    if (mine > m_topSort)
+    {
+      if (m_sortSaid != mine)
+      {
+        m_sortSaid = mine;
+        note("pmp-xr-host: the panel sorts at %u and the highest other overlay at %u, so nothing "
+             "of the compositor's is drawn over it",
+             mine, m_topSort);
+      }
+      return;
+    }
+
+    const uint32_t want = m_topSort + 1;
+    const EVROverlayError set = ovl->SetOverlaySortOrder(m_panel, want);
+
+    uint32_t now = mine;
+    if (ovl->GetOverlaySortOrder)
+      ovl->GetOverlaySortOrder(m_panel, &now);
+
+    note("pmp-xr-host: the panel sorted at %u while other overlays reach %u, so it was asked for "
+         "%u and now reads %u, %s",
+         mine, m_topSort, want, now, errorName(set));
+
+    m_sortSaid = now;
+  }
+
   void Presenter::probeCover()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -1043,10 +1087,7 @@ namespace
     const float span = m_panelMetres > 0.0f ? m_panelMetres : 2.0f;
 
     const int kSamples = 9;
-    char line[512];
-    int wrote = 0;
-    wrote += std::snprintf(line + wrote, sizeof(line) - wrote,
-                           "pmp-xr-host: across the panel the eye meets");
+    note("pmp-xr-host: probing straight through the panel at nine points across %.3f m", span);
 
     for (int sample = 0; sample < kSamples; ++sample)
     {
@@ -1064,7 +1105,7 @@ namespace
       float mine = 0.0f;
       const bool onPanel = castAt(from, along, hit, uv, mine);
 
-      const char* nearest = onPanel ? "panel" : "nothing";
+      const char* nearest = nullptr;
       float best = onPanel ? mine : 1.0e9f;
 
       for (size_t other = 0; other < m_neighbours.size(); ++other)
@@ -1078,11 +1119,19 @@ namespace
         nearest = m_neighbours[other].second.c_str();
       }
 
-      if (wrote < static_cast<int>(sizeof(line)) - 1)
-        wrote += std::snprintf(line + wrote, sizeof(line) - wrote, " %s", nearest);
+      if (!onPanel && !nearest)
+        note("pmp-xr-host:   %+.3f m across: nothing is there", at);
+      else if (!onPanel)
+        note("pmp-xr-host:   %+.3f m across: the panel is not there, but %s is, at %.3f m", at,
+             nearest, best);
+      else if (!nearest)
+        note("pmp-xr-host:   %+.3f m across: the panel at %.3f m, nothing in front of it", at,
+             mine);
+      else
+        note("pmp-xr-host:   %+.3f m across: %s at %.3f m, standing %.3f m in front of the panel "
+             "at %.3f m",
+             at, nearest, best, mine - best, mine);
     }
-
-    note("%s", line);
   }
 
   bool Presenter::measureShape(float& wide, float& tall, float& bow, bool speak)
