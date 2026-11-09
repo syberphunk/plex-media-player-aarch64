@@ -57,9 +57,7 @@ namespace
   const char* const kDotPrefix = "gamescope.gamescope-0.cursor.";
   const int kDotGapMs = 500;
   const int kDotSaidMax = 400;
-  const float kShapeTolerance = 0.02f;
-  const float kShapeInert = 0.01f;
-  const float kBowFlat = 0.005f;
+  const float kBowCurved = 0.05f;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
 
@@ -183,7 +181,14 @@ namespace
 
     bool assertStereo(std::string& why);
     bool panelPointAt(float across, float up, float out[3]) const;
+    bool panelPoseAt(float across, float up, struct HmdMatrix34_t& pose) const;
+    bool castAt(const float from[3], const float along[3], float hit[3], float uv[2],
+                float& away) const;
+    float edgeAlong(const float from[3], const float along[3], const float step[3],
+                    float reach) const;
+    bool measureBow(float& bow, float& wide, float& tall, bool speak);
     bool measureShape(float& wide, float& tall, float& bow, bool speak);
+    void setTexelAspect(float want);
     void fitPanel();
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
@@ -207,6 +212,7 @@ namespace
     float m_shapeHad = 0.0f;
     bool m_shapeBent = false;
     float m_shapeBow = 0.0f;
+    float m_texelWant = 0.0f;
     bool m_shapeFailed = false;
     bool m_texelAspectKnown = false;
     int m_relists = 0;
@@ -719,6 +725,197 @@ namespace
     return true;
   }
 
+  bool Presenter::panelPoseAt(float across, float up, struct HmdMatrix34_t& pose) const
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->GetTransformForOverlayCoordinates)
+      return false;
+
+    struct HmdVector2_t at;
+    at.v[0] = across;
+    at.v[1] = up;
+    std::memset(&pose, 0, sizeof(pose));
+
+    return ovl->GetTransformForOverlayCoordinates(
+             m_panel, ETrackingUniverseOrigin_TrackingUniverseStanding, at, &pose) ==
+           EVROverlayError_VROverlayError_None;
+  }
+
+  bool Presenter::castAt(const float from[3], const float along[3], float hit[3], float uv[2],
+                         float& away) const
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->ComputeOverlayIntersection)
+      return false;
+
+    struct VROverlayIntersectionParams_t ask;
+    std::memset(&ask, 0, sizeof(ask));
+    for (int axis = 0; axis < 3; ++axis)
+    {
+      ask.vSource.v[axis] = from[axis];
+      ask.vDirection.v[axis] = along[axis];
+    }
+    ask.eOrigin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+
+    struct VROverlayIntersectionResults_t got;
+    std::memset(&got, 0, sizeof(got));
+
+    if (!ovl->ComputeOverlayIntersection(m_panel, &ask, &got))
+      return false;
+
+    for (int axis = 0; axis < 3; ++axis)
+      hit[axis] = got.vPoint.v[axis];
+    uv[0] = got.vUVs.v[0];
+    uv[1] = got.vUVs.v[1];
+    away = got.fDistance;
+    return true;
+  }
+
+  float Presenter::edgeAlong(const float from[3], const float along[3], const float step[3],
+                             float reach) const
+  {
+    float hit[3];
+    float uv[2];
+    float away = 0.0f;
+    float start[3];
+
+    for (int axis = 0; axis < 3; ++axis)
+      start[axis] = from[axis] + step[axis] * reach;
+    if (castAt(start, along, hit, uv, away))
+      return reach;
+
+    float near = 0.0f;
+    float far = reach;
+    for (int tries = 0; tries < 20; ++tries)
+    {
+      const float middle = (near + far) * 0.5f;
+      for (int axis = 0; axis < 3; ++axis)
+        start[axis] = from[axis] + step[axis] * middle;
+      if (castAt(start, along, hit, uv, away))
+        near = middle;
+      else
+        far = middle;
+    }
+    return near;
+  }
+
+  bool Presenter::measureBow(float& bow, float& wide, float& tall, bool speak)
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->ComputeOverlayIntersection)
+      return false;
+
+    float corner[3];
+    float unit[3];
+    if (!panelPointAt(0.0f, 0.0f, corner) || !panelPointAt(1.0f, 0.0f, unit))
+      return false;
+
+    float across = 1.0f;
+    float up = 1.0f;
+    if (m_panelMetres > 0.0f && gapBetween(corner, unit) < m_panelMetres * 0.5f &&
+        m_panelMouseWide > 0.0f && m_panelMouseTall > 0.0f)
+    {
+      across = m_panelMouseWide;
+      up = m_panelMouseTall;
+    }
+
+    struct HmdMatrix34_t pose;
+    if (!panelPoseAt(across * 0.5f, up * 0.5f, pose))
+      return false;
+
+    float right[3];
+    float over[3];
+    float back[3];
+    float middle[3];
+    for (int axis = 0; axis < 3; ++axis)
+    {
+      right[axis] = pose.m[axis][0];
+      over[axis] = pose.m[axis][1];
+      back[axis] = pose.m[axis][2];
+      middle[axis] = pose.m[axis][3];
+    }
+
+    const float standoff = 2.0f;
+    float from[3];
+    float along[3];
+    float hit[3];
+    float uv[2] = { -1.0f, -1.0f };
+    float away = 0.0f;
+    bool reached = false;
+
+    for (int facing = 0; facing < 2 && !reached; ++facing)
+    {
+      const float sign = facing == 0 ? 1.0f : -1.0f;
+      for (int axis = 0; axis < 3; ++axis)
+      {
+        from[axis] = middle[axis] + back[axis] * standoff * sign;
+        along[axis] = -back[axis] * sign;
+      }
+      reached = castAt(from, along, hit, uv, away);
+    }
+
+    if (!reached)
+      return false;
+
+    float step[3];
+    const float reach = 4.0f;
+
+    for (int axis = 0; axis < 3; ++axis)
+      step[axis] = -right[axis];
+    const float toLeft = edgeAlong(from, along, step, reach);
+
+    for (int axis = 0; axis < 3; ++axis)
+      step[axis] = right[axis];
+    const float toRight = edgeAlong(from, along, step, reach);
+
+    for (int axis = 0; axis < 3; ++axis)
+      step[axis] = -over[axis];
+    const float toBase = edgeAlong(from, along, step, reach);
+
+    for (int axis = 0; axis < 3; ++axis)
+      step[axis] = over[axis];
+    const float toTop = edgeAlong(from, along, step, reach);
+
+    float edgeUv[2] = { -1.0f, -1.0f };
+    float edgeHit[3];
+    float leftAway = away;
+    float rightAway = away;
+    float at[3];
+
+    for (int axis = 0; axis < 3; ++axis)
+      at[axis] = from[axis] - right[axis] * toLeft * 0.98f;
+    castAt(at, along, edgeHit, edgeUv, leftAway);
+
+    for (int axis = 0; axis < 3; ++axis)
+      at[axis] = from[axis] + right[axis] * toRight * 0.98f;
+    castAt(at, along, edgeHit, edgeUv, rightAway);
+
+    wide = toLeft + toRight;
+    tall = toBase + toTop;
+    const float edgeAway = (leftAway + rightAway) * 0.5f;
+    bow = edgeAway - away;
+
+    if (speak)
+      note("pmp-xr-host: the panel the headset can touch is %.3f by %.3f m, %.3f m away in the "
+           "middle and %.3f m at the edges, bowing %.4f m",
+           wide, tall, away, edgeAway, bow);
+    return true;
+  }
+
+  void Presenter::setTexelAspect(float want)
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->SetOverlayTexelAspect)
+      return;
+
+    const EVROverlayError error = ovl->SetOverlayTexelAspect(m_panel, want);
+    if (error == EVROverlayError_VROverlayError_None)
+      m_panelTexelAspect = want;
+
+    note("pmp-xr-host: the panel is %.3f texels wide per tall%s", want,
+         error == EVROverlayError_VROverlayError_None ? "" : " (the runtime complained)");
+  }
+
   bool Presenter::measureShape(float& wide, float& tall, float& bow, bool speak)
   {
     float origin[3];
@@ -770,34 +967,41 @@ namespace
     if (!(m_panelMouseWide > 0.0f) || !(m_panelMouseTall > 0.0f))
       return;
 
+    float bow = 0.0f;
     float wide = 0.0f;
     float tall = 0.0f;
-    float bow = 0.0f;
-    if (!measureShape(wide, tall, bow, false))
+    if (!measureBow(bow, wide, tall, false))
     {
       m_shapeFailed = true;
       note("pmp-xr-host: the panel's shape cannot be measured");
       return;
     }
 
-    const float want = m_panelMouseWide / m_panelMouseTall;
-    const float have = wide / tall;
-    const bool bent = std::fabs(bow) > wide * kBowFlat;
+    const bool bent = std::fabs(bow) > kBowCurved;
+    const float want = bent ? 2.0f : 1.0f;
+    const bool first = !(m_shapeHad > 0.0f);
 
-    if (m_shapeHad > 0.0f && std::fabs(have - m_shapeHad) <= m_shapeHad * kShapeInert &&
-        bent == m_shapeBent && std::fabs(bow - m_shapeBow) <= wide * kBowFlat)
+    if (!first && bent == m_shapeBent && m_texelWant == want)
       return;
 
-    m_shapeHad = have;
+    m_shapeHad = wide / tall;
     m_shapeBent = bent;
     m_shapeBow = bow;
-    measureShape(wide, tall, bow, true);
+    m_texelWant = want;
 
-    const bool fits = std::fabs(have - want) <= want * kShapeTolerance;
-    note("pmp-xr-host: the panel is %.3f to 1 and the picture is %.3f to 1, %s; it is %s, "
-         "bowing %.4f m over %.3f m",
-         have, want, fits ? "which fits" : "which does not fit", bent ? "curved" : "flat", bow,
-         wide);
+    measureBow(bow, wide, tall, true);
+
+    float flatWide = 0.0f;
+    float flatTall = 0.0f;
+    float flatBow = 0.0f;
+    if (measureShape(flatWide, flatTall, flatBow, true))
+      note("pmp-xr-host: the panel's own transform still says %.3f by %.3f m, %.3f to 1",
+           flatWide, flatTall, flatWide / flatTall);
+
+    note("pmp-xr-host: the panel is %s, bowing %.4f m over %.3f m, so the picture needs "
+         "%.3f texels wide per tall",
+         bent ? "curved" : "flat", bow, wide, want);
+    setTexelAspect(want);
   }
 
   void Presenter::dropStereo()
@@ -814,6 +1018,10 @@ namespace
     m_shapeBent = false;
     m_shapeBow = 0.0f;
     m_shapeFailed = false;
+
+    if (m_texelWant > 1.0f)
+      setTexelAspect(1.0f);
+    m_texelWant = 0.0f;
 
     if (m_panelWasStereo)
       return;
