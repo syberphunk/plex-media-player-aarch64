@@ -613,20 +613,11 @@ void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
     return;
 
   const qint64 since = QDateTime::currentMSecsSinceEpoch() - m_rulerFrom;
-  if (since >= qint64(kRulerMs) * 2)
-  {
-    if (m_rulerSaid < 3)
-    {
-      m_rulerSaid = 3;
-      QLOG_INFO() << "Stereoscopic: the measuring bars are finished";
-    }
-    return;
-  }
 
   if (!prepareArrow())
     return;
 
-  const bool upright = since < kRulerMs;
+  const bool upright = (since / qint64(kRulerMs)) % 2 == 0;
   const float span = upright ? float(w) : float(h);
   const float edge = kRulerWide;
 
@@ -635,7 +626,7 @@ void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
     at[bar] = edge + float(bar) * (span - 2.0f * edge) / float(kRulerBars - 1);
 
   const int want = upright ? 1 : 2;
-  if (m_rulerSaid < want)
+  if (m_rulerSaid != want)
   {
     m_rulerSaid = want;
     QString where;
