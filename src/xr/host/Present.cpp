@@ -59,8 +59,11 @@ namespace
   const char* const kDotPrefix = "gamescope.gamescope-0.cursor.";
   const int kDotGapMs = 500;
   const int kLayerGapMs = 2000;
-  const int kTrialMs = 15000;
+  const int kTrialMs = 10000;
   const int kTrials = 4;
+  const int kTrialHide = 0;
+  const int kTrialTexel = 1;
+  const int kTrialFlag = 2;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
@@ -72,14 +75,14 @@ namespace
   {
     switch (trial)
     {
-      case 0:
-        return "everything as it ships";
-      case 1:
+      case kTrialHide:
         return "the layer overlays hidden";
-      case 2:
+      case kTrialTexel:
+        return "the texel aspect flipped";
+      case kTrialFlag:
         return "the side by side flag off";
       default:
-        return "the texel aspect flipped";
+        return "everything as it ships";
     }
   }
 
@@ -1114,7 +1117,7 @@ namespace
       m_trialAt = now;
       m_trial = before < 0 ? 0 : (before + 1) % kTrials;
 
-      if (before == 1 && ovl->ShowOverlay)
+      if (before == kTrialHide && ovl->ShowOverlay)
       {
         for (int which = 1; which <= 8; ++which)
         {
@@ -1131,14 +1134,14 @@ namespace
         }
       }
 
-      if (before == 3 && m_panel != k_ulOverlayHandleInvalid)
+      if (before == kTrialTexel && m_panel != k_ulOverlayHandleInvalid)
       {
         const float back = texelWanted();
         note("pmp-xr-host: the texel aspect goes back to %.3f", back);
         setTexelAspect(back);
       }
 
-      if (m_trial == 3 && m_panel != k_ulOverlayHandleInvalid)
+      if (m_trial == kTrialTexel && m_panel != k_ulOverlayHandleInvalid)
       {
         const float mine = texelWanted();
         const float other = mine > 1.5f ? 1.0f : 2.0f;
@@ -1150,7 +1153,7 @@ namespace
 
       if (ovl->SetOverlayFlag && m_panel != k_ulOverlayHandleInvalid)
       {
-        const bool wanted = m_trial != 2;
+        const bool wanted = m_trial != kTrialFlag;
         const EVROverlayError told = ovl->SetOverlayFlag(m_panel, VROverlayFlags_SideBySide_Parallel, wanted);
         note("pmp-xr-host: trial %d of %d starts now, %s, and the side by side flag was turned "
              "%s, %s",
@@ -1184,7 +1187,7 @@ namespace
       if (!found.visible && !m_trialHid[which])
         continue;
 
-      if (m_trial == 1 && found.visible && ovl->HideOverlay)
+      if (m_trial == kTrialHide && found.visible && ovl->HideOverlay)
       {
         const EVROverlayError hidden = ovl->HideOverlay(handle);
         const bool still = ovl->IsOverlayVisible ? ovl->IsOverlayVisible(handle) : true;
@@ -1606,7 +1609,7 @@ namespace
       return;
     }
 
-    if (m_trial == 2)
+    if (m_trial == kTrialFlag)
       return;
 
     note("pmp-xr-host: something cleared the side by side flag, setting it again");
