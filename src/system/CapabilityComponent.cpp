@@ -129,20 +129,6 @@ void CapabilityComponent::survey(const QSize& window, const QString& codec,
             .arg(Capability::Minimum::kWindowTall));
     }
 
-    if (panelPointer.isValid() && panelPointer != window)
-    {
-      add(found, "pointer-space", stereoWanted ? Weight::Warning : Weight::Note,
-          QStringLiteral("The headset points at a %1 by %2 panel while the window is %3 by %4, "
-                         "so the pointer and the picture are in different spaces.")
-            .arg(panelPointer.width())
-            .arg(panelPointer.height())
-            .arg(window.width())
-            .arg(window.height()),
-          QStringLiteral("Set the display resolution to %1 by %2.")
-            .arg(panelPointer.width())
-            .arg(panelPointer.height()));
-    }
-
     if (stereoWanted)
     {
       const int eyeWide = window.width() / 2;
