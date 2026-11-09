@@ -61,9 +61,10 @@ namespace
   const int kLayerGapMs = 2000;
   const int kTrialMs = 10000;
   const int kTrials = 4;
-  const int kTrialHide = 0;
-  const int kTrialTexel = 1;
-  const int kTrialFlag = 2;
+  const int kTrialSort = 0;
+  const int kTrialAlpha = 1;
+  const int kTrialNarrow = 2;
+  const int kTrialShip = 3;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
@@ -75,12 +76,12 @@ namespace
   {
     switch (trial)
     {
-      case kTrialHide:
-        return "the layer overlays hidden";
-      case kTrialTexel:
-        return "the texel aspect flipped";
-      case kTrialFlag:
-        return "the side by side flag off";
+      case kTrialSort:
+        return "the layer overlays sorted under the panel";
+      case kTrialAlpha:
+        return "the layer overlays made transparent";
+      case kTrialNarrow:
+        return "the layer overlays shrunk to nothing";
       default:
         return "everything as it ships";
     }
@@ -259,6 +260,10 @@ namespace
     int m_trial = -1;
     int64_t m_trialAt = 0;
     bool m_trialHid[9] = {false};
+    bool m_layerKept[9] = {false};
+    uint32_t m_layerSortWas[9] = {0};
+    float m_layerAlphaWas[9] = {0.0f};
+    float m_layerWideWas[9] = {0.0f};
     uint32_t m_windowWide = 0;
     uint32_t m_windowTall = 0;
     int64_t m_coverAt = 0;
@@ -1117,47 +1122,36 @@ namespace
       m_trialAt = now;
       m_trial = before < 0 ? 0 : (before + 1) % kTrials;
 
-      if (before == kTrialHide && ovl->ShowOverlay)
+      if (before >= 0 && before != kTrialShip)
       {
+        int put = 0;
         for (int which = 1; which <= 8; ++which)
         {
-          if (!m_trialHid[which])
+          if (!m_layerKept[which])
             continue;
-          m_trialHid[which] = false;
 
           const VROverlayHandle_t handle = layerHandle(which);
           if (handle == k_ulOverlayHandleInvalid)
             continue;
 
-          const EVROverlayError shown = ovl->ShowOverlay(handle);
-          note("pmp-xr-host: layer %d was shown again, %s", which, errorName(shown));
+          if (ovl->SetOverlaySortOrder)
+            ovl->SetOverlaySortOrder(handle, m_layerSortWas[which]);
+          if (ovl->SetOverlayAlpha)
+            ovl->SetOverlayAlpha(handle, m_layerAlphaWas[which]);
+          if (ovl->SetOverlayWidthInMeters && m_layerWideWas[which] > 0.0f)
+            ovl->SetOverlayWidthInMeters(handle, m_layerWideWas[which]);
+          ++put;
         }
-      }
-
-      if (before == kTrialTexel && m_panel != k_ulOverlayHandleInvalid)
-      {
-        const float back = texelWanted();
-        note("pmp-xr-host: the texel aspect goes back to %.3f", back);
-        setTexelAspect(back);
-      }
-
-      if (m_trial == kTrialTexel && m_panel != k_ulOverlayHandleInvalid)
-      {
-        const float mine = texelWanted();
-        const float other = mine > 1.5f ? 1.0f : 2.0f;
-        note("pmp-xr-host: the window is %u by %u inside a %.0f by %.0f plane and asks for %.3f "
-             "texels wide per tall, so this trial tries %.3f instead",
-             m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall, mine, other);
-        setTexelAspect(other);
+        note("pmp-xr-host: %d layer overlays were put back as they were", put);
       }
 
       if (ovl->SetOverlayFlag && m_panel != k_ulOverlayHandleInvalid)
       {
-        const bool wanted = m_trial != kTrialFlag;
-        const EVROverlayError told = ovl->SetOverlayFlag(m_panel, VROverlayFlags_SideBySide_Parallel, wanted);
+        const EVROverlayError told =
+          ovl->SetOverlayFlag(m_panel, VROverlayFlags_SideBySide_Parallel, true);
         note("pmp-xr-host: trial %d of %d starts now, %s, and the side by side flag was turned "
-             "%s, %s",
-             m_trial + 1, kTrials, trialName(m_trial), wanted ? "on" : "off", errorName(told));
+             "on, %s",
+             m_trial + 1, kTrials, trialName(m_trial), errorName(told));
       }
       else
         note("pmp-xr-host: trial %d of %d starts now, %s", m_trial + 1, kTrials,
@@ -1187,14 +1181,44 @@ namespace
       if (!found.visible && !m_trialHid[which])
         continue;
 
-      if (m_trial == kTrialHide && found.visible && ovl->HideOverlay)
+      if (!m_layerKept[which])
       {
-        const EVROverlayError hidden = ovl->HideOverlay(handle);
-        const bool still = ovl->IsOverlayVisible ? ovl->IsOverlayVisible(handle) : true;
-        note("pmp-xr-host: layer %d was asked to hide, %s, and is now %s", which,
-             errorName(hidden), still ? "still showing" : "hidden");
-        m_trialHid[which] = true;
-        found.visible = still;
+        m_layerKept[which] = true;
+        m_layerSortWas[which] = found.sortOrder;
+        m_layerAlphaWas[which] = 1.0f;
+        if (ovl->GetOverlayAlpha)
+          ovl->GetOverlayAlpha(handle, &m_layerAlphaWas[which]);
+        m_layerWideWas[which] = found.width;
+        note("pmp-xr-host: layer %d as it ships: sort order %u, alpha %.3f, %.4f m wide", which,
+             m_layerSortWas[which], m_layerAlphaWas[which], m_layerWideWas[which]);
+      }
+
+      if (m_trial == kTrialSort && ovl->SetOverlaySortOrder)
+      {
+        const EVROverlayError set = ovl->SetOverlaySortOrder(handle, 0);
+        uint32_t reads = 0xffffffffu;
+        if (ovl->GetOverlaySortOrder)
+          ovl->GetOverlaySortOrder(handle, &reads);
+        note("pmp-xr-host: layer %d was asked for sort order 0, %s, and now reads %u", which,
+             errorName(set), reads);
+      }
+      else if (m_trial == kTrialAlpha && ovl->SetOverlayAlpha)
+      {
+        const EVROverlayError set = ovl->SetOverlayAlpha(handle, 0.0f);
+        float reads = -1.0f;
+        if (ovl->GetOverlayAlpha)
+          ovl->GetOverlayAlpha(handle, &reads);
+        note("pmp-xr-host: layer %d was asked for alpha 0, %s, and now reads %.3f", which,
+             errorName(set), reads);
+      }
+      else if (m_trial == kTrialNarrow && ovl->SetOverlayWidthInMeters)
+      {
+        const EVROverlayError set = ovl->SetOverlayWidthInMeters(handle, 0.01f);
+        float reads = -1.0f;
+        if (ovl->GetOverlayWidthInMeters)
+          ovl->GetOverlayWidthInMeters(handle, &reads);
+        note("pmp-xr-host: layer %d was asked for 0.010 m wide, %s, and now reads %.4f m", which,
+             errorName(set), reads);
       }
 
       char piece[96];
@@ -1608,9 +1632,6 @@ namespace
       fitPanel();
       return;
     }
-
-    if (m_trial == kTrialFlag)
-      return;
 
     note("pmp-xr-host: something cleared the side by side flag, setting it again");
 
