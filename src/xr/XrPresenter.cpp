@@ -85,9 +85,39 @@ void XrPresenter::tell(uint32_t type)
   XrProtocol::Message message = XrProtocol::make(XrProtocol::Type(type));
   message.packing = m_packing;
   message.swapped = m_swapped ? 1 : 0;
+  message.windowWide = uint32_t(qMax(0, m_windowWide.load()));
+  message.windowTall = uint32_t(qMax(0, m_windowTall.load()));
 
   if (::send(m_socket, &message, sizeof(message), MSG_NOSIGNAL) < 0)
     QLOG_WARN() << "Stereoscopic: the presenter did not take the message:" << strerror(errno);
+}
+
+QSize XrPresenter::windowPixels() const
+{
+  return QSize(m_windowWide.load(), m_windowTall.load());
+}
+
+void XrPresenter::setWindowPixels(const QSize& pixels)
+{
+  if (pixels.width() < 2 || pixels.height() < 2)
+    return;
+  if (pixels.width() == m_windowWide.load() && pixels.height() == m_windowTall.load())
+    return;
+
+  m_windowWide = pixels.width();
+  m_windowTall = pixels.height();
+
+  QMetaObject::invokeMethod(this, "pushWindow", Qt::QueuedConnection);
+}
+
+void XrPresenter::pushWindow()
+{
+  if (!m_wanted || m_socket < 0)
+    return;
+
+  QLOG_INFO() << "Stereoscopic: the window is now" << m_windowWide.load() << "by"
+              << m_windowTall.load() << "pixels, telling the presenter";
+  tell(XrProtocol::Panel);
 }
 
 void XrPresenter::readHost()

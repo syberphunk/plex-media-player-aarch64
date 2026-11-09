@@ -1080,6 +1080,9 @@ void PlayerRenderer::synchronize(QQuickFramebufferObject* item)
     m_windowVideoRect = QRect(int(qRound(at.x() * dpr)), int(qRound(at.y() * dpr)),
                               int(qRound(player->width() * dpr)),
                               int(qRound(player->height() * dpr)));
+
+    if (XrPresenter::exists())
+      XrPresenter::Get().setWindowPixels(m_windowSize);
   }
 
   syncStereo();

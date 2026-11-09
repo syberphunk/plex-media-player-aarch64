@@ -35,6 +35,9 @@ public:
 
   const QString& lastFailure() const { return m_lastFailure; }
 
+  void setWindowPixels(const QSize& pixels);
+  QSize windowPixels() const;
+
   void setControlsActive(bool active) { m_controlsActive = active; }
   bool controlsActive() const { return m_controlsActive; }
 
@@ -55,6 +58,7 @@ public:
 private Q_SLOTS:
   void shutdown();
   void readHost();
+  void pushWindow();
 
 private:
   explicit XrPresenter(QObject* parent = nullptr);
@@ -73,6 +77,9 @@ private:
   std::atomic<int> m_probeResult{-1};
   std::atomic<int> m_probeWidth{0};
   std::atomic<int> m_probeHeight{0};
+
+  std::atomic<int> m_windowWide{0};
+  std::atomic<int> m_windowTall{0};
 
   int m_socket = -1;
   QSocketNotifier* m_notifier = nullptr;
