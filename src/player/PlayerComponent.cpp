@@ -573,6 +573,71 @@ void PlayerComponent::updatePlaybackState()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::reportSeekProgress(double sound)
+{
+  if (!m_seekWatching || m_seekRestartedAt == 0)
+    return;
+
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  if (now - m_seekRestartedAt < 2000)
+    return;
+
+  m_seekWatching = false;
+
+  const double picture = mpv::qt::get_property(m_mpv, "video-pts").toDouble();
+  const int64_t decoded = mpv::qt::get_property(m_mpv, "decoder-frame-count").toLongLong();
+  const int64_t dropped = mpv::qt::get_property(m_mpv, "decoder-frame-drop-count").toLongLong();
+  const int64_t late = mpv::qt::get_property(m_mpv, "frame-drop-count").toLongLong();
+
+  QLOG_INFO() << "Seeking: two seconds after the restart the sound is at" << sound
+              << "seconds and the picture at" << picture << "seconds, having moved"
+              << picture - m_seekRestartVideoPts << "seconds on"
+              << decoded - m_seekRestartDecoded << "newly decoded frames;" << dropped
+              << "frames the decoder threw away and" << late << "the display threw away";
+
+  if (decoded - m_seekRestartDecoded <= 0)
+  {
+    QLOG_WARN() << "Seeking: the decoder has produced nothing since the seek, so the picture is "
+                   "frozen at the decoder, not in the renderer";
+    restartDecoder();
+  }
+  else if (picture - m_seekRestartVideoPts < 0.1)
+  {
+    QLOG_WARN() << "Seeking: frames are being decoded but the picture timestamp is not moving";
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::restartDecoder()
+{
+  const QString mode = m_videoProperties.value("hwdec", "auto-copy").toString();
+  if (mode == "no")
+  {
+    QLOG_INFO() << "Seeking: the decoder is already in software, so there is nothing to restart";
+    return;
+  }
+
+  if (m_seekRecoveries >= 3)
+  {
+    QLOG_WARN() << "Seeking: the decoder has been restarted three times in this file already, "
+                   "leaving it alone";
+    return;
+  }
+
+  ++m_seekRecoveries;
+  QLOG_INFO() << "Seeking: restarting the decoder by taking hardware decoding away and giving it "
+                 "back as" << qPrintable(mode) << ", attempt" << m_seekRecoveries << "of 3";
+
+  mpv::qt::set_property(m_mpv, "hwdec", QStringLiteral("no"));
+  mpv::qt::set_property(m_mpv, "hwdec", mode);
+
+  const int64_t decoded = mpv::qt::get_property(m_mpv, "decoder-frame-count").toLongLong();
+  QLOG_INFO() << "Seeking: after the restart the decoder reports"
+              << qPrintable(mpv::qt::get_property(m_mpv, "hwdec-current").toString()) << "and"
+              << decoded << "decoded frames; watching the next seek will say whether it took";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerComponent::handleMpvEvent(mpv_event *event)
 {
   switch (event->event_id)
@@ -580,6 +645,8 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
     case MPV_EVENT_START_FILE:
     {
       m_inPlayback = true;
+      m_seekRecoveries = 0;
+      m_seekWatching = false;
       XrPresenter::Get().resetProbe();
       break;
     }
@@ -614,6 +681,31 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
       m_streamSwitchImminent = false;
       break;
     }
+    case MPV_EVENT_SEEK:
+    {
+      m_seekAskedAt = QDateTime::currentMSecsSinceEpoch();
+      m_seekRestartedAt = 0;
+      m_seekWatching = true;
+      m_seekFromVideoPts = mpv::qt::get_property(m_mpv, "video-pts").toDouble();
+      m_seekFromDecoded = mpv::qt::get_property(m_mpv, "decoder-frame-count").toLongLong();
+      QLOG_INFO() << "Seeking: the picture was at" << m_seekFromVideoPts
+                  << "seconds after" << m_seekFromDecoded << "decoded frames when the seek began";
+      break;
+    }
+    case MPV_EVENT_PLAYBACK_RESTART:
+    {
+      if (m_seekWatching && m_seekRestartedAt == 0)
+      {
+        m_seekRestartedAt = QDateTime::currentMSecsSinceEpoch();
+        m_seekRestartVideoPts = mpv::qt::get_property(m_mpv, "video-pts").toDouble();
+        m_seekRestartDecoded = mpv::qt::get_property(m_mpv, "decoder-frame-count").toLongLong();
+        QLOG_INFO() << "Seeking: playback restarted" << m_seekRestartedAt - m_seekAskedAt
+                    << "ms later with the picture at" << m_seekRestartVideoPts
+                    << "seconds after" << m_seekRestartDecoded << "decoded frames, decoder"
+                    << qPrintable(mpv::qt::get_property(m_mpv, "hwdec-current").toString());
+      }
+      break;
+    }
     case MPV_EVENT_PROPERTY_CHANGE:
     {
       mpv_event_property *prop = (mpv_event_property *)event->data;
@@ -638,6 +730,7 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
           emit positionUpdate(ms);
           m_lastPositionUpdate = pos;
         }
+        reportSeekProgress(pos);
       }
       else if (strcmp(prop->name, "vo-configured") == 0)
       {

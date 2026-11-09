@@ -212,6 +212,8 @@ private:
   void setQtQuickWindow(QQuickWindow* window);
   void updatePlaybackState();
   void handleMpvEvent(mpv_event *event);
+  void reportSeekProgress(double sound);
+  void restartDecoder();
   void resolveStereoFormat();
   void surveyCapability(bool stereoWanted);
   // Potentially switch the display refresh rate, and return true if the refresh rate
@@ -267,6 +269,14 @@ private:
   QSize m_videoSize;
   QVariantList m_seekableRanges;
   qint64 m_lastSeekableRangesEmit = 0;
+  qint64 m_seekAskedAt = 0;
+  qint64 m_seekRestartedAt = 0;
+  double m_seekFromVideoPts = 0.0;
+  double m_seekRestartVideoPts = 0.0;
+  int64_t m_seekFromDecoded = 0;
+  int64_t m_seekRestartDecoded = 0;
+  bool m_seekWatching = false;
+  int m_seekRecoveries = 0;
 
   int m_loadfileIndexArg = -1;
 };
