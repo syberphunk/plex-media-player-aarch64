@@ -59,12 +59,27 @@ namespace
   const char* const kDotPrefix = "gamescope.gamescope-0.cursor.";
   const int kDotGapMs = 500;
   const int kLayerGapMs = 2000;
+  const int kTrialMs = 15000;
+  const int kTrials = 3;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
   const int kBowSayGapMs = 30000;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
+
+  const char* trialName(int trial)
+  {
+    switch (trial)
+    {
+      case 0:
+        return "everything as it ships";
+      case 1:
+        return "the layer overlays hidden";
+      default:
+        return "the side by side flag off";
+    }
+  }
 
   char kSeedKey[] = "io.github.syberphunk.PlexMediaPlayer.seed";
   char kSeedName[] = "Plex Media Player seed";
@@ -200,6 +215,7 @@ namespace
     void probeCover();
     void liftPanel();
     void watchLayers();
+    VROverlayHandle_t layerHandle(int which) const;
     bool overlayPointAt(VROverlayHandle_t overlay, float across, float up,
                         float out[3]) const;
     void fitPanel();
@@ -235,6 +251,9 @@ namespace
     uint32_t m_sortWant = 0;
     int64_t m_layerAt = 0;
     uint32_t m_layerWas[9] = {0};
+    int m_trial = -1;
+    int64_t m_trialAt = 0;
+    bool m_trialHid[9] = {false};
     uint32_t m_windowWide = 0;
     uint32_t m_windowTall = 0;
     int64_t m_coverAt = 0;
@@ -1059,6 +1078,22 @@ namespace
     m_sortSaid = now;
   }
 
+  VROverlayHandle_t Presenter::layerHandle(int which) const
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->FindOverlay || m_appid == 0)
+      return k_ulOverlayHandleInvalid;
+
+    char key[192];
+    std::snprintf(key, sizeof(key), "%s%u.layer%d", kPanelPrefix, m_appid, which);
+
+    VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
+    if (ovl->FindOverlay(key, &handle) != EVROverlayError_VROverlayError_None)
+      return k_ulOverlayHandleInvalid;
+
+    return handle;
+  }
+
   void Presenter::watchLayers()
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
@@ -1069,6 +1104,144 @@ namespace
     if (m_layerAt != 0 && now - m_layerAt < kLayerGapMs)
       return;
     m_layerAt = now;
+
+    const bool fresh = m_trialAt == 0 || now - m_trialAt >= kTrialMs;
+    if (fresh)
+    {
+      const int before = m_trial;
+      m_trialAt = now;
+      m_trial = before < 0 ? 0 : (before + 1) % kTrials;
+
+      if (before == 1 && ovl->ShowOverlay)
+      {
+        for (int which = 1; which <= 8; ++which)
+        {
+          if (!m_trialHid[which])
+            continue;
+          m_trialHid[which] = false;
+
+          const VROverlayHandle_t handle = layerHandle(which);
+          if (handle == k_ulOverlayHandleInvalid)
+            continue;
+
+          const EVROverlayError shown = ovl->ShowOverlay(handle);
+          note("pmp-xr-host: layer %d was shown again, %s", which, errorName(shown));
+        }
+      }
+
+      if (ovl->SetOverlayFlag && m_panel != k_ulOverlayHandleInvalid)
+      {
+        const bool wanted = m_trial != 2;
+        const EVROverlayError told = ovl->SetOverlayFlag(m_panel, VROverlayFlags_SideBySide_Parallel, wanted);
+        note("pmp-xr-host: trial %d of %d starts now, %s, and the side by side flag was turned "
+             "%s, %s",
+             m_trial + 1, kTrials, trialName(m_trial), wanted ? "on" : "off", errorName(told));
+      }
+      else
+        note("pmp-xr-host: trial %d of %d starts now, %s", m_trial + 1, kTrials,
+             trialName(m_trial));
+    }
+
+    std::string line("pmp-xr-host: trial ");
+    {
+      char head[160];
+      std::snprintf(head, sizeof(head), "%d (%s) holds:", m_trial + 1, trialName(m_trial));
+      line += head;
+    }
+
+    for (int which = 1; which <= 8; ++which)
+    {
+      const VROverlayHandle_t handle = layerHandle(which);
+      if (handle == k_ulOverlayHandleInvalid)
+        continue;
+
+      Neighbour found;
+      if (!readNeighbour(handle, found))
+        continue;
+
+      if (!found.visible && !m_trialHid[which])
+        continue;
+
+      if (m_trial == 1 && found.visible && ovl->HideOverlay)
+      {
+        const EVROverlayError hidden = ovl->HideOverlay(handle);
+        const bool still = ovl->IsOverlayVisible ? ovl->IsOverlayVisible(handle) : true;
+        note("pmp-xr-host: layer %d was asked to hide, %s, and is now %s", which,
+             errorName(hidden), still ? "still showing" : "hidden");
+        m_trialHid[which] = true;
+        found.visible = still;
+      }
+
+      char piece[96];
+      std::snprintf(piece, sizeof(piece), " layer %d %s flags 0x%x,", which,
+                    found.visible ? "showing" : "hidden", found.flags);
+      line += piece;
+
+      if (!fresh)
+        continue;
+
+      struct HmdVector2_t scale;
+      scale.v[0] = 0.0f;
+      scale.v[1] = 0.0f;
+      if (ovl->GetOverlayMouseScale)
+        ovl->GetOverlayMouseScale(handle, &scale);
+
+      const float wide = scale.v[0] > 1.0f ? scale.v[0] : 1920.0f;
+      const float tall = scale.v[1] > 1.0f ? scale.v[1] : 1080.0f;
+
+      float metres = 0.0f;
+      if (ovl->GetOverlayWidthInMeters)
+        ovl->GetOverlayWidthInMeters(handle, &metres);
+
+      float left[3];
+      float right[3];
+      if (overlayPointAt(handle, 0.0f, tall * 0.5f, left) &&
+          overlayPointAt(handle, wide, tall * 0.5f, right))
+        note("pmp-xr-host: layer %d is %.4f m wide over %.0f by %.0f texels and runs from "
+             "%.4f %.4f %.4f to %.4f %.4f %.4f",
+             which, metres, wide, tall, left[0], left[1], left[2], right[0], right[1], right[2]);
+      else
+        note("pmp-xr-host: layer %d is %.4f m wide over %.0f by %.0f texels and would not give "
+             "its coordinates",
+             which, metres, wide, tall);
+    }
+
+    if (fresh && m_panel != k_ulOverlayHandleInvalid)
+    {
+      struct HmdVector2_t scale;
+      scale.v[0] = m_panelMouseWide;
+      scale.v[1] = m_panelMouseTall;
+      if (ovl->GetOverlayMouseScale)
+        ovl->GetOverlayMouseScale(m_panel, &scale);
+
+      const float wide = scale.v[0] > 1.0f ? scale.v[0] : 1920.0f;
+      const float tall = scale.v[1] > 1.0f ? scale.v[1] : 1080.0f;
+
+      float metres = 0.0f;
+      if (ovl->GetOverlayWidthInMeters)
+        ovl->GetOverlayWidthInMeters(m_panel, &metres);
+
+      float left[3];
+      float right[3];
+      if (overlayPointAt(m_panel, 0.0f, tall * 0.5f, left) &&
+          overlayPointAt(m_panel, wide, tall * 0.5f, right))
+        note("pmp-xr-host: the panel is %.4f m wide over %.0f by %.0f texels and runs from "
+             "%.4f %.4f %.4f to %.4f %.4f %.4f",
+             metres, wide, tall, left[0], left[1], left[2], right[0], right[1], right[2]);
+    }
+
+    if (ovl->GetOverlayFlags && m_panel != k_ulOverlayHandleInvalid)
+    {
+      uint32_t flags = 0;
+      ovl->GetOverlayFlags(m_panel, &flags);
+
+      char tail[64];
+      std::snprintf(tail, sizeof(tail), " the panel is side by side %s",
+                    (flags & kStereoFlag) != 0 ? "on" : "off");
+      line += tail;
+    }
+
+    note("%s", line.c_str());
 
     if (m_sortWant > 0 && m_panel != k_ulOverlayHandleInvalid && ovl->GetOverlaySortOrder &&
         ovl->SetOverlaySortOrder)
@@ -1084,71 +1257,6 @@ namespace
              "again and now reads %u, %s",
              mine, m_sortWant, back, errorName(set));
       }
-    }
-
-    for (int which = 1; which <= 8; ++which)
-    {
-      char key[192];
-      std::snprintf(key, sizeof(key), "%s%u.layer%d", kPanelPrefix, m_appid, which);
-
-      VROverlayHandle_t handle = k_ulOverlayHandleInvalid;
-      if (ovl->FindOverlay(key, &handle) != EVROverlayError_VROverlayError_None ||
-          handle == k_ulOverlayHandleInvalid)
-        continue;
-
-      Neighbour found;
-      if (!readNeighbour(handle, found))
-        continue;
-
-      struct VRTextureBounds_t bounds = {0.0f, 0.0f, 1.0f, 1.0f};
-      if (ovl->GetOverlayTextureBounds)
-        ovl->GetOverlayTextureBounds(handle, &bounds);
-
-      const uint32_t state = found.flags | (found.visible ? 0x80000000u : 0u);
-      if (state != m_layerWas[which])
-      {
-        m_layerWas[which] = state;
-        note("pmp-xr-host: layer %d is %s, %.2f m wide, flags 0x%x, sort %u, transform %d, "
-             "texture u %.4f to %.4f v %.4f to %.4f",
-             which, found.visible ? "showing" : "hidden", found.width, found.flags,
-             found.sortOrder, found.transformType, bounds.uMin, bounds.uMax, bounds.vMin,
-             bounds.vMax);
-
-        const float wide = m_panelMouseWide > 0.0f ? m_panelMouseWide : 1920.0f;
-        const float tall = m_panelMouseTall > 0.0f ? m_panelMouseTall : 1080.0f;
-
-        float a[3];
-        float b[3];
-        float c[3];
-        float d[3];
-        if (overlayPointAt(handle, 0.0f, tall * 0.5f, a) &&
-            overlayPointAt(handle, wide, tall * 0.5f, b) &&
-            overlayPointAt(m_panel, 0.0f, tall * 0.5f, c) &&
-            overlayPointAt(m_panel, wide, tall * 0.5f, d))
-          note("pmp-xr-host: layer %d runs from %.3f %.3f %.3f to %.3f %.3f %.3f while the "
-               "panel runs from %.3f %.3f %.3f to %.3f %.3f %.3f",
-               which, a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]);
-        else
-          note("pmp-xr-host: layer %d would not give its coordinates", which);
-      }
-
-      if (!found.visible || !ovl->SetOverlayFlag)
-        continue;
-      if ((found.flags & VROverlayFlags_IgnoreTextureAlpha) == 0)
-        continue;
-
-      const EVROverlayError cleared =
-        ovl->SetOverlayFlag(handle, VROverlayFlags_IgnoreTextureAlpha, false);
-
-      uint32_t after = found.flags;
-      if (ovl->GetOverlayFlags)
-        ovl->GetOverlayFlags(handle, &after);
-
-      note("pmp-xr-host: layer %d paints its transparent parts opaque, so that was cleared; "
-           "flags went from 0x%x to 0x%x, %s",
-           which, found.flags, after, errorName(cleared));
-
-      m_layerWas[which] = after | 0x80000000u;
     }
   }
 
@@ -1475,6 +1583,9 @@ namespace
       fitPanel();
       return;
     }
+
+    if (m_trial == 2)
+      return;
 
     note("pmp-xr-host: something cleared the side by side flag, setting it again");
 
