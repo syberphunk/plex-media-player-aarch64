@@ -60,7 +60,7 @@ namespace
   const int kDotGapMs = 500;
   const int kLayerGapMs = 2000;
   const int kTrialMs = 15000;
-  const int kTrials = 3;
+  const int kTrials = 4;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
@@ -76,8 +76,10 @@ namespace
         return "everything as it ships";
       case 1:
         return "the layer overlays hidden";
-      default:
+      case 2:
         return "the side by side flag off";
+      default:
+        return "the texel aspect flipped";
     }
   }
 
@@ -1129,6 +1131,23 @@ namespace
         }
       }
 
+      if (before == 3 && m_panel != k_ulOverlayHandleInvalid)
+      {
+        const float back = texelWanted();
+        note("pmp-xr-host: the texel aspect goes back to %.3f", back);
+        setTexelAspect(back);
+      }
+
+      if (m_trial == 3 && m_panel != k_ulOverlayHandleInvalid)
+      {
+        const float mine = texelWanted();
+        const float other = mine > 1.5f ? 1.0f : 2.0f;
+        note("pmp-xr-host: the window is %u by %u inside a %.0f by %.0f plane and asks for %.3f "
+             "texels wide per tall, so this trial tries %.3f instead",
+             m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall, mine, other);
+        setTexelAspect(other);
+      }
+
       if (ovl->SetOverlayFlag && m_panel != k_ulOverlayHandleInvalid)
       {
         const bool wanted = m_trial != 2;
@@ -1144,8 +1163,11 @@ namespace
 
     std::string line("pmp-xr-host: trial ");
     {
-      char head[160];
-      std::snprintf(head, sizeof(head), "%d (%s) holds:", m_trial + 1, trialName(m_trial));
+      char head[224];
+      std::snprintf(head, sizeof(head), "%d (%s) holds: window %u by %u, plane %.0f by %.0f, "
+                    "texel aspect %.3f,",
+                    m_trial + 1, trialName(m_trial), m_windowWide, m_windowTall, m_panelMouseWide,
+                    m_panelMouseTall, m_panelTexelAspect);
       line += head;
     }
 
