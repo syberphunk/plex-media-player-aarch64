@@ -58,6 +58,8 @@ namespace
   const int kDotGapMs = 500;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
+  const int kBowAgree = 2;
+  const int kBowSayGapMs = 30000;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
 
@@ -213,6 +215,9 @@ namespace
     bool m_shapeBent = false;
     float m_shapeBow = 0.0f;
     float m_texelWant = 0.0f;
+    bool m_bentSeen = false;
+    int m_bentAgree = 0;
+    int64_t m_bowSaidAt = 0;
     bool m_shapeFailed = false;
     bool m_texelAspectKnown = false;
     int m_relists = 0;
@@ -981,13 +986,34 @@ namespace
     const float want = bent ? 2.0f : 1.0f;
     const bool first = !(m_shapeHad > 0.0f);
 
-    if (!first && bent == m_shapeBent && m_texelWant == want)
+    if (bent == m_bentSeen)
+      ++m_bentAgree;
+    else
+    {
+      m_bentSeen = bent;
+      m_bentAgree = 1;
+    }
+    if (m_bentAgree < kBowAgree)
       return;
+
+    if (!first && bent == m_shapeBent && m_texelWant == want)
+    {
+      const int64_t now = nowMs();
+      if (now - m_bowSaidAt >= kBowSayGapMs)
+      {
+        m_bowSaidAt = now;
+        note("pmp-xr-host: the panel is still %s, bowing %.4f m over %.3f m, at %.3f texels "
+             "wide per tall",
+             bent ? "curved" : "flat", bow, wide, m_texelWant);
+      }
+      return;
+    }
 
     m_shapeHad = wide / tall;
     m_shapeBent = bent;
     m_shapeBow = bow;
     m_texelWant = want;
+    m_bowSaidAt = nowMs();
 
     measureBow(bow, wide, tall, true);
 
@@ -1022,6 +1048,9 @@ namespace
     if (m_texelWant > 1.0f)
       setTexelAspect(1.0f);
     m_texelWant = 0.0f;
+    m_bentSeen = false;
+    m_bentAgree = 0;
+    m_bowSaidAt = 0;
 
     if (m_panelWasStereo)
       return;
