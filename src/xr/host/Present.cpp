@@ -1,6 +1,7 @@
 #include "Present.h"
 
 #include "OpenVr.h"
+#include "RootProperty.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -26,6 +27,9 @@ namespace
 {
   const char kPanelPrefix[] = "valve.steam.desktopgame.";
   const uint32_t kStereoFlag = VROverlayFlags_SideBySide_Parallel;
+  const uint32_t kOpaqueFlag = VROverlayFlags_IgnoreTextureAlpha;
+  const char kComposeName[] = "GAMESCOPE_COMPOSITE_FORCE";
+  const char kComposeOurs[] = "PLEXMEDIAPLAYER_COMPOSITE_FORCE";
   bool differs(float left, float right)
   {
     return !(left > right - 0.001f && left < right + 0.001f);
@@ -58,34 +62,17 @@ namespace
   const int kSettleMs = 20000;
   const char* const kDotPrefix = "gamescope.gamescope-0.cursor.";
   const int kDotGapMs = 500;
-  const int kLayerGapMs = 2000;
-  const int kTrialMs = 10000;
-  const int kTrials = 4;
-  const int kTrialSort = 0;
-  const int kTrialAlpha = 1;
-  const int kTrialNarrow = 2;
-  const int kTrialShip = 3;
+  const int kLayerGapMs = 500;
+  const int kLayerSayGapMs = 30000;
+  const int kLayers = 7;
+  const int kComposeWaitMs = 3000;
+  const int kComposeAsks = 3;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
   const int kBowSayGapMs = 30000;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
-
-  const char* trialName(int trial)
-  {
-    switch (trial)
-    {
-      case kTrialSort:
-        return "the layer overlays sorted under the panel";
-      case kTrialAlpha:
-        return "the layer overlays made transparent";
-      case kTrialNarrow:
-        return "the layer overlays shrunk to nothing";
-      default:
-        return "everything as it ships";
-    }
-  }
 
   char kSeedKey[] = "io.github.syberphunk.PlexMediaPlayer.seed";
   char kSeedName[] = "Plex Media Player seed";
@@ -219,11 +206,12 @@ namespace
     void setTexelAspect(float want);
     float texelWanted() const;
     void probeCover();
-    void liftPanel();
-    void watchLayers();
+    bool windowScaled() const;
+    void askComposite();
+    void dropComposite();
+    void carry(int layer);
+    void watchLayers(bool atOnce = false);
     VROverlayHandle_t layerHandle(int which) const;
-    bool overlayPointAt(VROverlayHandle_t overlay, float across, float up,
-                        float out[3]) const;
     void fitPanel();
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
@@ -252,18 +240,22 @@ namespace
     int m_bentAgree = 0;
     int64_t m_bowSaidAt = 0;
     uint32_t m_packing = 0;
-    uint32_t m_topSort = 0;
-    uint32_t m_sortSaid = 0xffffffffu;
-    uint32_t m_sortWant = 0;
     int64_t m_layerAt = 0;
-    uint32_t m_layerWas[9] = {0};
-    int m_trial = -1;
-    int64_t m_trialAt = 0;
-    bool m_trialHid[9] = {false};
-    bool m_layerKept[9] = {false};
-    uint32_t m_layerSortWas[9] = {0};
-    float m_layerAlphaWas[9] = {0.0f};
-    float m_layerWideWas[9] = {0.0f};
+    int64_t m_layerSaidAt = 0;
+    std::string m_layerSaid;
+    VROverlayHandle_t m_layers[kLayers + 1] = {0};
+    bool m_panelHidden = false;
+    int m_backedSeen = -1;
+    bool m_backed = false;
+    int m_backedLayer = 0;
+    int m_carrierLayer = 0;
+    bool m_carryFailed = false;
+    bool m_composeAsked = false;
+    bool m_composeOurs = false;
+    bool m_composeHad = false;
+    uint32_t m_composeWas = 0;
+    int m_composeAsks = 0;
+    int64_t m_composeUntil = 0;
     uint32_t m_windowWide = 0;
     uint32_t m_windowTall = 0;
     int64_t m_coverAt = 0;
@@ -405,6 +397,15 @@ namespace
     m_panelFlags = found.flags;
     m_panelWasStereo = (found.flags & kStereoFlag) != 0;
 
+    for (int which = 0; which <= kLayers; ++which)
+      m_layers[which] = k_ulOverlayHandleInvalid;
+    m_backedSeen = -1;
+    m_backed = false;
+    m_backedLayer = 0;
+    m_carrierLayer = 0;
+    m_carryFailed = false;
+    m_layerSaid.clear();
+
     m_panelTexelAspect = 1.0f;
     m_texelAspectKnown = false;
     if (m_ovr.overlay->GetOverlayTexelAspect)
@@ -473,7 +474,6 @@ namespace
 
       m_surveyRunning = true;
       m_neighbours.clear();
-      m_topSort = 0;
       note("pmp-xr-host: listing the overlays in the session, generation %u down to 0",
            m_scanGeneration);
     }
@@ -541,9 +541,6 @@ namespace
           }
         }
 
-        if (handle != m_panel && found.sortOrder > m_topSort)
-          m_topSort = found.sortOrder;
-
         if (found.visible && handle != m_panel && m_neighbours.size() < 64)
           m_neighbours.push_back(std::make_pair(handle, std::string(found.key)));
 
@@ -559,7 +556,6 @@ namespace
         m_surveyRunning = false;
         m_surveyDone = true;
         note("pmp-xr-host: %d of %d handles are live overlays", m_scanSeen, m_scanProbes);
-        liftPanel();
         return;
       }
     }
@@ -576,6 +572,13 @@ namespace
 
     if (m_panel != k_ulOverlayHandleInvalid || findByKey())
     {
+      watchLayers(true);
+      if (m_backed && m_composeOurs && m_composeAsks < 2 && nowMs() < m_composeUntil)
+      {
+        m_lookAt = now - kLookGapMs + kLayerGapMs;
+        return;
+      }
+
       std::string why;
       if (assertStereo(why))
       {
@@ -805,31 +808,6 @@ namespace
            EVROverlayError_VROverlayError_None;
   }
 
-  bool Presenter::overlayPointAt(VROverlayHandle_t overlay, float across, float up,
-                                 float out[3]) const
-  {
-    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->GetTransformForOverlayCoordinates || overlay == k_ulOverlayHandleInvalid)
-      return false;
-
-    struct HmdVector2_t at;
-    at.v[0] = across;
-    at.v[1] = up;
-
-    struct HmdMatrix34_t pose;
-    std::memset(&pose, 0, sizeof(pose));
-
-    if (ovl->GetTransformForOverlayCoordinates(
-          overlay, ETrackingUniverseOrigin_TrackingUniverseStanding, at, &pose) !=
-        EVROverlayError_VROverlayError_None)
-      return false;
-
-    for (int axis = 0; axis < 3; ++axis)
-      out[axis] = pose.m[axis][3];
-
-    return true;
-  }
-
   bool Presenter::castAt(const float from[3], const float along[3], float hit[3], float uv[2],
                          float& away) const
   {
@@ -1040,52 +1018,10 @@ namespace
     if (m_windowWide < 2 || m_windowTall < 2)
       return 1.0f;
 
-    const float planeWide = m_panelMouseWide;
-    const float planeTall = m_panelMouseTall;
-    const bool scaled = std::fabs(planeWide - static_cast<float>(m_windowWide)) > 1.0f ||
-                        std::fabs(planeTall - static_cast<float>(m_windowTall)) > 1.0f;
-
-    if (scaled)
+    if (m_backed || m_carrierLayer != 0)
       return 1.0f;
 
     return m_packing == XrProtocol::SideBySide ? 2.0f : 0.5f;
-  }
-
-  void Presenter::liftPanel()
-  {
-    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->SetOverlaySortOrder || m_panel == k_ulOverlayHandleInvalid)
-      return;
-
-    uint32_t mine = 0;
-    if (ovl->GetOverlaySortOrder)
-      ovl->GetOverlaySortOrder(m_panel, &mine);
-
-    if (mine > m_topSort)
-    {
-      if (m_sortSaid != mine)
-      {
-        m_sortSaid = mine;
-        note("pmp-xr-host: the panel sorts at %u and the highest other overlay at %u, so nothing "
-             "of the compositor's is drawn over it",
-             mine, m_topSort);
-      }
-      return;
-    }
-
-    const uint32_t want = m_topSort + 1;
-    m_sortWant = want;
-    const EVROverlayError set = ovl->SetOverlaySortOrder(m_panel, want);
-
-    uint32_t now = mine;
-    if (ovl->GetOverlaySortOrder)
-      ovl->GetOverlaySortOrder(m_panel, &now);
-
-    note("pmp-xr-host: the panel sorted at %u while other overlays reach %u, so it was asked for "
-         "%u and now reads %u, %s",
-         mine, m_topSort, want, now, errorName(set));
-
-    m_sortSaid = now;
   }
 
   VROverlayHandle_t Presenter::layerHandle(int which) const
@@ -1104,209 +1040,273 @@ namespace
     return handle;
   }
 
-  void Presenter::watchLayers()
+  bool Presenter::windowScaled() const
+  {
+    if (!(m_panelMouseWide > 0.0f) || !(m_panelMouseTall > 0.0f))
+      return false;
+    if (m_windowWide < 2 || m_windowTall < 2)
+      return false;
+
+    return std::fabs(m_panelMouseWide - static_cast<float>(m_windowWide)) > 1.0f ||
+           std::fabs(m_panelMouseTall - static_cast<float>(m_windowTall)) > 1.0f;
+  }
+
+  void Presenter::askComposite()
+  {
+    const bool again = m_composeOurs;
+    m_composeAsked = true;
+
+    if (!again)
+    {
+      const RootProperty::Reading was = RootProperty::read(kComposeName);
+      if (!was.reached)
+      {
+        note("pmp-xr-host: %s cannot be read, %s, so the compositor is left as it is",
+             kComposeName, was.trouble.c_str());
+        return;
+      }
+
+      m_composeHad = was.present;
+      m_composeWas = was.value;
+      RootProperty::write(kComposeOurs, 1);
+    }
+
+    ++m_composeAsks;
+    m_composeUntil = nowMs() + kComposeWaitMs;
+
+    const RootProperty::Reading now = RootProperty::write(kComposeName, 1);
+    if (!now.reached || !now.present || now.value != 1)
+    {
+      note("pmp-xr-host: %s would not be set, %s", kComposeName,
+           now.reached ? "it does not read back" : now.trouble.c_str());
+      if (!again)
+        RootProperty::remove(kComposeOurs);
+      return;
+    }
+
+    m_composeOurs = true;
+
+    if (again)
+      note("pmp-xr-host: %s was written again, time %d of %d, and reads %u", kComposeName,
+           m_composeAsks, kComposeAsks, now.value);
+    else if (m_composeHad)
+      note("pmp-xr-host: %s was %u and now reads %u, so the compositor is asked to draw the "
+           "window onto the panel",
+           kComposeName, m_composeWas, now.value);
+    else
+      note("pmp-xr-host: %s was absent and now reads %u, so the compositor is asked to draw the "
+           "window onto the panel",
+           kComposeName, now.value);
+  }
+
+  void Presenter::dropComposite()
+  {
+    if (!m_composeOurs)
+      return;
+    m_composeOurs = false;
+
+    const RootProperty::Reading now = m_composeHad
+                                        ? RootProperty::write(kComposeName, m_composeWas)
+                                        : RootProperty::remove(kComposeName);
+    RootProperty::remove(kComposeOurs);
+
+    if (!now.reached)
+      note("pmp-xr-host: %s could not be put back, %s", kComposeName, now.trouble.c_str());
+    else if (now.present)
+      note("pmp-xr-host: %s was put back and reads %u", kComposeName, now.value);
+    else
+      note("pmp-xr-host: %s was taken away again", kComposeName);
+  }
+
+  void Presenter::carry(int layer)
   {
     struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
-    if (!ovl || !ovl->FindOverlay || m_appid == 0)
+    if (!ovl || !ovl->SetOverlayFlag || !ovl->GetOverlayFlag || layer == m_carrierLayer)
+      return;
+
+    const VROverlayHandle_t from = m_carrierLayer != 0 ? m_layers[m_carrierLayer] : m_panel;
+    const VROverlayHandle_t to = layer != 0 ? m_layers[layer] : m_panel;
+    if (to == k_ulOverlayHandleInvalid)
+      return;
+
+    const EVROverlayError set = ovl->SetOverlayFlag(to, VROverlayFlags_SideBySide_Parallel, true);
+
+    bool enabled = false;
+    const EVROverlayError read =
+      ovl->GetOverlayFlag(to, VROverlayFlags_SideBySide_Parallel, &enabled);
+
+    if (set != EVROverlayError_VROverlayError_None ||
+        read != EVROverlayError_VROverlayError_None || !enabled)
+    {
+      m_carryFailed = true;
+      ovl->SetOverlayFlag(to, VROverlayFlags_SideBySide_Parallel, false);
+      if (layer != 0)
+        note("pmp-xr-host: layer %d would not take the side by side flag (%s), so it stays "
+             "where it was",
+             layer, errorName(set));
+      else
+        note("pmp-xr-host: the panel would not take the side by side flag back (%s)",
+             errorName(set));
+      return;
+    }
+
+    const bool keep = m_carrierLayer == 0 && m_panelWasStereo;
+    const char* left = "was left where it had been";
+    if (from != k_ulOverlayHandleInvalid && !keep)
+    {
+      const EVROverlayError cleared =
+        ovl->SetOverlayFlag(from, VROverlayFlags_SideBySide_Parallel, false);
+      left = cleared == EVROverlayError_VROverlayError_None
+               ? "was cleared where it had been"
+               : "would not clear where it had been";
+    }
+
+    m_carrierLayer = layer;
+
+    if (ovl->GetOverlayFlags)
+      ovl->GetOverlayFlags(m_panel, &m_panelFlags);
+
+    if (layer != 0)
+      note("pmp-xr-host: the side by side flag now sits on layer %d, which holds the picture, "
+           "and %s",
+           layer, left);
+    else
+      note("pmp-xr-host: the side by side flag now sits on the panel again, and %s", left);
+  }
+
+  void Presenter::watchLayers(bool atOnce)
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->FindOverlay || !ovl->IsOverlayVisible || !ovl->GetOverlayFlags ||
+        m_appid == 0 || m_panel == k_ulOverlayHandleInvalid)
       return;
 
     const int64_t now = nowMs();
-    if (m_layerAt != 0 && now - m_layerAt < kLayerGapMs)
+    if (!atOnce && m_layerAt != 0 && now - m_layerAt < kLayerGapMs)
       return;
     m_layerAt = now;
 
-    const bool fresh = m_trialAt == 0 || now - m_trialAt >= kTrialMs;
-    if (fresh)
+    const bool hidden = !ovl->IsOverlayVisible(m_panel);
+    if (hidden != m_panelHidden)
     {
-      const int before = m_trial;
-      m_trialAt = now;
-      m_trial = before < 0 ? 0 : (before + 1) % kTrials;
-
-      if (before >= 0 && before != kTrialShip)
-      {
-        int put = 0;
-        for (int which = 1; which <= 8; ++which)
-        {
-          if (!m_layerKept[which])
-            continue;
-
-          const VROverlayHandle_t handle = layerHandle(which);
-          if (handle == k_ulOverlayHandleInvalid)
-            continue;
-
-          if (ovl->SetOverlaySortOrder)
-            ovl->SetOverlaySortOrder(handle, m_layerSortWas[which]);
-          if (ovl->SetOverlayAlpha)
-            ovl->SetOverlayAlpha(handle, m_layerAlphaWas[which]);
-          if (ovl->SetOverlayWidthInMeters && m_layerWideWas[which] > 0.0f)
-            ovl->SetOverlayWidthInMeters(handle, m_layerWideWas[which]);
-          ++put;
-        }
-        note("pmp-xr-host: %d layer overlays were put back as they were", put);
-      }
-
-      if (ovl->SetOverlayFlag && m_panel != k_ulOverlayHandleInvalid)
-      {
-        const EVROverlayError told =
-          ovl->SetOverlayFlag(m_panel, VROverlayFlags_SideBySide_Parallel, true);
-        note("pmp-xr-host: trial %d of %d starts now, %s, and the side by side flag was turned "
-             "on, %s",
-             m_trial + 1, kTrials, trialName(m_trial), errorName(told));
-      }
-      else
-        note("pmp-xr-host: trial %d of %d starts now, %s", m_trial + 1, kTrials,
-             trialName(m_trial));
+      m_panelHidden = hidden;
+      note("pmp-xr-host: the panel is %s, so the layers are %s", hidden ? "hidden" : "showing",
+           hidden ? "left unread" : "read");
     }
+    if (hidden)
+      return;
 
-    std::string line("pmp-xr-host: trial ");
-    {
-      char head[224];
-      std::snprintf(head, sizeof(head), "%d (%s) holds: window %u by %u, plane %.0f by %.0f, "
-                    "texel aspect %.3f,",
-                    m_trial + 1, trialName(m_trial), m_windowWide, m_windowTall, m_panelMouseWide,
-                    m_panelMouseTall, m_panelTexelAspect);
-      line += head;
-    }
+    int lowest = 0;
+    uint32_t lowestFlags = 0;
+    std::string showing;
 
-    for (int which = 1; which <= 8; ++which)
+    for (int which = 1; which <= kLayers; ++which)
     {
-      const VROverlayHandle_t handle = layerHandle(which);
+      if (m_layers[which] == k_ulOverlayHandleInvalid)
+        m_layers[which] = layerHandle(which);
+
+      const VROverlayHandle_t handle = m_layers[which];
       if (handle == k_ulOverlayHandleInvalid)
         continue;
 
-      Neighbour found;
-      if (!readNeighbour(handle, found))
-        continue;
-
-      if (!found.visible && !m_trialHid[which])
-        continue;
-
-      if (!m_layerKept[which])
-      {
-        m_layerKept[which] = true;
-        m_layerSortWas[which] = found.sortOrder;
-        m_layerAlphaWas[which] = 1.0f;
-        if (ovl->GetOverlayAlpha)
-          ovl->GetOverlayAlpha(handle, &m_layerAlphaWas[which]);
-        m_layerWideWas[which] = found.width;
-        note("pmp-xr-host: layer %d as it ships: sort order %u, alpha %.3f, %.4f m wide", which,
-             m_layerSortWas[which], m_layerAlphaWas[which], m_layerWideWas[which]);
-      }
-
-      if (m_trial == kTrialSort && ovl->SetOverlaySortOrder)
-      {
-        const EVROverlayError set = ovl->SetOverlaySortOrder(handle, 0);
-        uint32_t reads = 0xffffffffu;
-        if (ovl->GetOverlaySortOrder)
-          ovl->GetOverlaySortOrder(handle, &reads);
-        note("pmp-xr-host: layer %d was asked for sort order 0, %s, and now reads %u", which,
-             errorName(set), reads);
-      }
-      else if (m_trial == kTrialAlpha && ovl->SetOverlayAlpha)
-      {
-        const EVROverlayError set = ovl->SetOverlayAlpha(handle, 0.0f);
-        float reads = -1.0f;
-        if (ovl->GetOverlayAlpha)
-          ovl->GetOverlayAlpha(handle, &reads);
-        note("pmp-xr-host: layer %d was asked for alpha 0, %s, and now reads %.3f", which,
-             errorName(set), reads);
-      }
-      else if (m_trial == kTrialNarrow && ovl->SetOverlayWidthInMeters)
-      {
-        const EVROverlayError set = ovl->SetOverlayWidthInMeters(handle, 0.01f);
-        float reads = -1.0f;
-        if (ovl->GetOverlayWidthInMeters)
-          ovl->GetOverlayWidthInMeters(handle, &reads);
-        note("pmp-xr-host: layer %d was asked for 0.010 m wide, %s, and now reads %.4f m", which,
-             errorName(set), reads);
-      }
-
-      char piece[96];
-      std::snprintf(piece, sizeof(piece), " layer %d %s flags 0x%x,", which,
-                    found.visible ? "showing" : "hidden", found.flags);
-      line += piece;
-
-      if (!fresh)
-        continue;
-
-      struct HmdVector2_t scale;
-      scale.v[0] = 0.0f;
-      scale.v[1] = 0.0f;
-      if (ovl->GetOverlayMouseScale)
-        ovl->GetOverlayMouseScale(handle, &scale);
-
-      const float wide = scale.v[0] > 1.0f ? scale.v[0] : 1920.0f;
-      const float tall = scale.v[1] > 1.0f ? scale.v[1] : 1080.0f;
-
-      float metres = 0.0f;
-      if (ovl->GetOverlayWidthInMeters)
-        ovl->GetOverlayWidthInMeters(handle, &metres);
-
-      float left[3];
-      float right[3];
-      if (overlayPointAt(handle, 0.0f, tall * 0.5f, left) &&
-          overlayPointAt(handle, wide, tall * 0.5f, right))
-        note("pmp-xr-host: layer %d is %.4f m wide over %.0f by %.0f texels and runs from "
-             "%.4f %.4f %.4f to %.4f %.4f %.4f",
-             which, metres, wide, tall, left[0], left[1], left[2], right[0], right[1], right[2]);
-      else
-        note("pmp-xr-host: layer %d is %.4f m wide over %.0f by %.0f texels and would not give "
-             "its coordinates",
-             which, metres, wide, tall);
-    }
-
-    if (fresh && m_panel != k_ulOverlayHandleInvalid)
-    {
-      struct HmdVector2_t scale;
-      scale.v[0] = m_panelMouseWide;
-      scale.v[1] = m_panelMouseTall;
-      if (ovl->GetOverlayMouseScale)
-        ovl->GetOverlayMouseScale(m_panel, &scale);
-
-      const float wide = scale.v[0] > 1.0f ? scale.v[0] : 1920.0f;
-      const float tall = scale.v[1] > 1.0f ? scale.v[1] : 1080.0f;
-
-      float metres = 0.0f;
-      if (ovl->GetOverlayWidthInMeters)
-        ovl->GetOverlayWidthInMeters(m_panel, &metres);
-
-      float left[3];
-      float right[3];
-      if (overlayPointAt(m_panel, 0.0f, tall * 0.5f, left) &&
-          overlayPointAt(m_panel, wide, tall * 0.5f, right))
-        note("pmp-xr-host: the panel is %.4f m wide over %.0f by %.0f texels and runs from "
-             "%.4f %.4f %.4f to %.4f %.4f %.4f",
-             metres, wide, tall, left[0], left[1], left[2], right[0], right[1], right[2]);
-    }
-
-    if (ovl->GetOverlayFlags && m_panel != k_ulOverlayHandleInvalid)
-    {
       uint32_t flags = 0;
-      ovl->GetOverlayFlags(m_panel, &flags);
-
-      char tail[64];
-      std::snprintf(tail, sizeof(tail), " the panel is side by side %s",
-                    (flags & kStereoFlag) != 0 ? "on" : "off");
-      line += tail;
-    }
-
-    note("%s", line.c_str());
-
-    if (m_sortWant > 0 && m_panel != k_ulOverlayHandleInvalid && ovl->GetOverlaySortOrder &&
-        ovl->SetOverlaySortOrder)
-    {
-      uint32_t mine = 0;
-      ovl->GetOverlaySortOrder(m_panel, &mine);
-      if (mine != m_sortWant)
+      if (ovl->GetOverlayFlags(handle, &flags) != EVROverlayError_VROverlayError_None)
       {
-        const EVROverlayError set = ovl->SetOverlaySortOrder(m_panel, m_sortWant);
-        uint32_t back = mine;
-        ovl->GetOverlaySortOrder(m_panel, &back);
-        note("pmp-xr-host: the panel's sort order had fallen back to %u, so it was set to %u "
-             "again and now reads %u, %s",
-             mine, m_sortWant, back, errorName(set));
+        m_layers[which] = k_ulOverlayHandleInvalid;
+        continue;
+      }
+
+      if (!ovl->IsOverlayVisible(handle))
+        continue;
+
+      char piece[64];
+      std::snprintf(piece, sizeof(piece), " layer %d flags 0x%x,", which, flags);
+      showing += piece;
+
+      if (lowest == 0)
+      {
+        lowest = which;
+        lowestFlags = flags;
       }
     }
+
+    const bool backed = lowest != 0 && (lowestFlags & kOpaqueFlag) != 0 && windowScaled();
+    m_backed = backed;
+    m_backedLayer = backed ? lowest : 0;
+
+    const int carriedBy = m_carrierLayer;
+    const bool turned = m_backedSeen != (backed ? 1 : 0);
+    if (turned)
+    {
+      m_backedSeen = backed ? 1 : 0;
+      if (backed)
+        note("pmp-xr-host: the compositor draws the %u by %u window on layer %d and leaves the "
+             "%.0f by %.0f panel black behind it",
+             m_windowWide, m_windowTall, lowest, m_panelMouseWide, m_panelMouseTall);
+      else
+        note("pmp-xr-host: the compositor draws the %u by %u window on the %.0f by %.0f panel "
+             "itself",
+             m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall);
+    }
+
+    if (backed && !m_composeAsked)
+      askComposite();
+
+    if (m_stereo && !m_carryFailed)
+    {
+      const bool waiting = m_composeOurs && now < m_composeUntil;
+
+      if (backed && m_carrierLayer != 0 && m_carrierLayer != lowest)
+        carry(lowest);
+      else if (!backed && m_carrierLayer != 0)
+        carry(0);
+      else if (backed && m_carrierLayer == 0 && !waiting)
+      {
+        if (m_composeOurs && m_composeAsks < kComposeAsks)
+          askComposite();
+        else
+        {
+          if (m_composeOurs)
+            note("pmp-xr-host: the compositor still draws the window on layer %d after %s was "
+                 "written %d times",
+                 lowest, kComposeName, m_composeAsks);
+          dropComposite();
+          carry(lowest);
+        }
+      }
+    }
+
+    if (m_stereo && (turned || carriedBy != m_carrierLayer))
+      fitPanel();
+
+    char carrier[32];
+    if (!m_stereo)
+      std::snprintf(carrier, sizeof(carrier), "nothing");
+    else if (m_carrierLayer != 0)
+      std::snprintf(carrier, sizeof(carrier), "layer %d", m_carrierLayer);
+    else
+      std::snprintf(carrier, sizeof(carrier), "the panel");
+
+    char head[320];
+    std::snprintf(head, sizeof(head), "window %u by %u, plane %.0f by %.0f, showing%s side by "
+                  "side on %s, texel aspect %.3f",
+                  m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall,
+                  showing.empty() ? " no layers," : showing.c_str(), carrier,
+                  m_panelTexelAspect);
+
+    if (m_layerSaid == head && now - m_layerSaidAt < kLayerSayGapMs)
+      return;
+    m_layerSaid = head;
+    m_layerSaidAt = now;
+
+    const RootProperty::Reading reads = RootProperty::read(kComposeName);
+    if (!reads.reached)
+      note("pmp-xr-host: layers: %s, %s cannot be read, %s", head, kComposeName,
+           reads.trouble.c_str());
+    else if (reads.present)
+      note("pmp-xr-host: layers: %s, %s reads %u", head, kComposeName, reads.value);
+    else
+      note("pmp-xr-host: layers: %s, %s is absent", head, kComposeName);
   }
 
   void Presenter::probeCover()
@@ -1463,9 +1463,29 @@ namespace
 
   void Presenter::fitPanel()
   {
-    if (m_shapeFailed)
-      return;
     if (!(m_panelMouseWide > 0.0f) || !(m_panelMouseTall > 0.0f))
+      return;
+
+    const float want = texelWanted();
+    if (m_texelWant != want)
+    {
+      char where[32];
+      if (m_carrierLayer != 0)
+        std::snprintf(where, sizeof(where), "layer %d", m_carrierLayer);
+      else if (m_backed)
+        std::snprintf(where, sizeof(where), "layer %d", m_backedLayer);
+      else
+        std::snprintf(where, sizeof(where), "the panel");
+
+      note("pmp-xr-host: the window is %u by %u inside a %.0f by %.0f plane, packing %u, with "
+           "the picture on %s, so the panel needs %.3f texels wide per tall",
+           m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall, m_packing, where,
+           want);
+      m_texelWant = want;
+      setTexelAspect(want);
+    }
+
+    if (m_shapeFailed)
       return;
 
     float bow = 0.0f;
@@ -1479,17 +1499,7 @@ namespace
     }
 
     const bool bent = std::fabs(bow) > kBowCurved;
-    const float want = texelWanted();
     const bool first = !(m_shapeHad > 0.0f);
-
-    if (m_texelWant != want)
-    {
-      note("pmp-xr-host: the window is %u by %u inside a %.0f by %.0f plane, packing %u, so "
-           "the picture needs %.3f texels wide per tall",
-           m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall, m_packing, want);
-      m_texelWant = want;
-      setTexelAspect(want);
-    }
 
     if (bent == m_bentSeen)
       ++m_bentAgree;
@@ -1565,6 +1575,16 @@ namespace
     m_bentAgree = 0;
     m_bowSaidAt = 0;
 
+    if (m_carrierLayer != 0)
+    {
+      const EVROverlayError error = ovl->SetOverlayFlag(
+        m_layers[m_carrierLayer], VROverlayFlags_SideBySide_Parallel, false);
+      note("pmp-xr-host: layer %d is flat again%s", m_carrierLayer,
+           error == EVROverlayError_VROverlayError_None ? "" : " (the runtime complained)");
+      m_carrierLayer = 0;
+      return;
+    }
+
     if (m_panelWasStereo)
       return;
 
@@ -1621,19 +1641,47 @@ namespace
       note("pmp-xr-host: the Plex panel went away (%s), looking for it again", errorName(read));
       m_stereo = false;
       m_panel = k_ulOverlayHandleInvalid;
+      m_carrierLayer = 0;
+      m_backed = false;
       m_stage = Looking;
       m_lookTries = 0;
       send(XrProtocol::Flat, "the Plex panel was replaced, waiting for the new one");
       return;
     }
 
-    if (enabled)
+    if (m_carrierLayer != 0)
+    {
+      bool carried = false;
+      const EVROverlayError layerRead = ovl->GetOverlayFlag(
+        m_layers[m_carrierLayer], VROverlayFlags_SideBySide_Parallel, &carried);
+
+      if (layerRead == EVROverlayError_VROverlayError_None)
+      {
+        if (!carried)
+        {
+          const EVROverlayError again = ovl->SetOverlayFlag(
+            m_layers[m_carrierLayer], VROverlayFlags_SideBySide_Parallel, true);
+          note("pmp-xr-host: something cleared the side by side flag on layer %d, and it was "
+               "set again, %s",
+               m_carrierLayer, errorName(again));
+        }
+        fitPanel();
+        return;
+      }
+
+      note("pmp-xr-host: layer %d went away (%s), so the panel takes the side by side flag "
+           "again",
+           m_carrierLayer, errorName(layerRead));
+      m_layers[m_carrierLayer] = k_ulOverlayHandleInvalid;
+      m_carrierLayer = 0;
+    }
+    else if (enabled)
     {
       fitPanel();
       return;
     }
-
-    note("pmp-xr-host: something cleared the side by side flag, setting it again");
+    else
+      note("pmp-xr-host: something cleared the side by side flag, setting it again");
 
     std::string why;
     if (assertStereo(why))
@@ -1706,6 +1754,8 @@ namespace
         m_windowTall = message.windowTall;
         note("pmp-xr-host: the app draws a %u by %u window into a %.0f by %.0f plane",
              m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall);
+        if (m_stage == Holding)
+          watchLayers(true);
         if (m_stereo)
           fitPanel();
       }
@@ -1763,6 +1813,16 @@ namespace
     if (m_appid != 0)
       note("pmp-xr-host: this session is Steam app %u", m_appid);
 
+    const RootProperty::Reading left = RootProperty::read(kComposeOurs);
+    if (left.reached && left.present)
+    {
+      RootProperty::remove(kComposeName);
+      RootProperty::remove(kComposeOurs);
+      note("pmp-xr-host: an earlier run left %s set, and it was taken away", kComposeName);
+    }
+    else if (!left.reached)
+      note("pmp-xr-host: the X root window cannot be read, %s", left.trouble.c_str());
+
     return startRuntime();
   }
 
@@ -1807,6 +1867,7 @@ namespace
   void Presenter::teardown()
   {
     dropStereo();
+    dropComposite();
     m_ovr.stop();
   }
 }
