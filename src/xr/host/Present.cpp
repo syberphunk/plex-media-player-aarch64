@@ -9,6 +9,8 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <errno.h>
 #include <poll.h>
@@ -186,11 +188,15 @@ namespace
     bool panelPoseAt(float across, float up, struct HmdMatrix34_t& pose) const;
     bool castAt(const float from[3], const float along[3], float hit[3], float uv[2],
                 float& away) const;
+    bool castAtOverlay(VROverlayHandle_t overlay, const float from[3], const float along[3],
+                       float& away) const;
     float edgeAlong(const float from[3], const float along[3], const float step[3],
                     float reach) const;
     bool measureBow(float& bow, float& wide, float& tall, bool speak);
     bool measureShape(float& wide, float& tall, float& bow, bool speak);
     void setTexelAspect(float want);
+    float texelWanted() const;
+    void probeCover();
     void fitPanel();
     void measurePanel(const char* when, bool onlyIfChanged = false);
     void probeCursor();
@@ -218,6 +224,11 @@ namespace
     bool m_bentSeen = false;
     int m_bentAgree = 0;
     int64_t m_bowSaidAt = 0;
+    uint32_t m_packing = 0;
+    uint32_t m_windowWide = 0;
+    uint32_t m_windowTall = 0;
+    int64_t m_coverAt = 0;
+    std::vector<std::pair<VROverlayHandle_t, std::string>> m_neighbours;
     bool m_shapeFailed = false;
     bool m_texelAspectKnown = false;
     int m_relists = 0;
@@ -422,6 +433,7 @@ namespace
       }
 
       m_surveyRunning = true;
+      m_neighbours.clear();
       note("pmp-xr-host: listing the overlays in the session, generation %u down to 0",
            m_scanGeneration);
     }
@@ -488,6 +500,9 @@ namespace
                  static_cast<unsigned long long>(handle), found.key);
           }
         }
+
+        if (found.visible && handle != m_panel && m_neighbours.size() < 64)
+          m_neighbours.push_back(std::make_pair(handle, std::string(found.key)));
 
         note("pmp-xr-host: overlay %llu \"%s\" named \"%s\", %.2f m wide, texture %ux%u, %s, "
              "flags 0x%x, sort %u, transform %d, curve %.3f, pid %u",
@@ -776,6 +791,32 @@ namespace
     return true;
   }
 
+  bool Presenter::castAtOverlay(VROverlayHandle_t overlay, const float from[3],
+                                const float along[3], float& away) const
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->ComputeOverlayIntersection || overlay == k_ulOverlayHandleInvalid)
+      return false;
+
+    struct VROverlayIntersectionParams_t ask;
+    std::memset(&ask, 0, sizeof(ask));
+    for (int axis = 0; axis < 3; ++axis)
+    {
+      ask.vSource.v[axis] = from[axis];
+      ask.vDirection.v[axis] = along[axis];
+    }
+    ask.eOrigin = ETrackingUniverseOrigin_TrackingUniverseStanding;
+
+    struct VROverlayIntersectionResults_t got;
+    std::memset(&got, 0, sizeof(got));
+
+    if (!ovl->ComputeOverlayIntersection(overlay, &ask, &got))
+      return false;
+
+    away = got.fDistance;
+    return true;
+  }
+
   float Presenter::edgeAlong(const float from[3], const float along[3], const float step[3],
                              float reach) const
   {
@@ -921,6 +962,129 @@ namespace
          error == EVROverlayError_VROverlayError_None ? "" : " (the runtime complained)");
   }
 
+  float Presenter::texelWanted() const
+  {
+    if (m_packing != XrProtocol::SideBySide && m_packing != XrProtocol::OverUnder)
+      return 1.0f;
+    if (!(m_panelMouseWide > 0.0f) || !(m_panelMouseTall > 0.0f))
+      return 1.0f;
+    if (m_windowWide < 2 || m_windowTall < 2)
+      return 1.0f;
+
+    const float planeWide = m_panelMouseWide;
+    const float planeTall = m_panelMouseTall;
+    const bool scaled = std::fabs(planeWide - static_cast<float>(m_windowWide)) > 1.0f ||
+                        std::fabs(planeTall - static_cast<float>(m_windowTall)) > 1.0f;
+
+    if (scaled)
+      return 1.0f;
+
+    return m_packing == XrProtocol::SideBySide ? 2.0f : 0.5f;
+  }
+
+  void Presenter::probeCover()
+  {
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+    if (!ovl || !ovl->ComputeOverlayIntersection || m_panel == k_ulOverlayHandleInvalid)
+      return;
+    if (m_neighbours.empty())
+      return;
+
+    float corner[3];
+    float unit[3];
+    if (!panelPointAt(0.0f, 0.0f, corner) || !panelPointAt(1.0f, 0.0f, unit))
+      return;
+
+    float across = 1.0f;
+    float up = 1.0f;
+    if (m_panelMetres > 0.0f && gapBetween(corner, unit) < m_panelMetres * 0.5f &&
+        m_panelMouseWide > 0.0f && m_panelMouseTall > 0.0f)
+    {
+      across = m_panelMouseWide;
+      up = m_panelMouseTall;
+    }
+
+    struct HmdMatrix34_t pose;
+    if (!panelPoseAt(across * 0.5f, up * 0.5f, pose))
+      return;
+
+    float right[3];
+    float back[3];
+    float middle[3];
+    for (int axis = 0; axis < 3; ++axis)
+    {
+      right[axis] = pose.m[axis][0];
+      back[axis] = pose.m[axis][2];
+      middle[axis] = pose.m[axis][3];
+    }
+
+    float hit[3];
+    float uv[2] = { -1.0f, -1.0f };
+    float away = 0.0f;
+    float sign = 0.0f;
+
+    for (int facing = 0; facing < 2 && sign == 0.0f; ++facing)
+    {
+      const float try_ = facing == 0 ? 1.0f : -1.0f;
+      float from[3];
+      float along[3];
+      for (int axis = 0; axis < 3; ++axis)
+      {
+        from[axis] = middle[axis] + back[axis] * 2.0f * try_;
+        along[axis] = -back[axis] * try_;
+      }
+      if (castAt(from, along, hit, uv, away))
+        sign = try_;
+    }
+
+    if (sign == 0.0f)
+      return;
+
+    const float span = m_panelMetres > 0.0f ? m_panelMetres : 2.0f;
+
+    const int kSamples = 9;
+    char line[512];
+    int wrote = 0;
+    wrote += std::snprintf(line + wrote, sizeof(line) - wrote,
+                           "pmp-xr-host: across the panel the eye meets");
+
+    for (int sample = 0; sample < kSamples; ++sample)
+    {
+      const float at = (static_cast<float>(sample) / static_cast<float>(kSamples - 1) - 0.5f) *
+                       span * 0.98f;
+
+      float from[3];
+      float along[3];
+      for (int axis = 0; axis < 3; ++axis)
+      {
+        from[axis] = middle[axis] + back[axis] * 2.0f * sign + right[axis] * at;
+        along[axis] = -back[axis] * sign;
+      }
+
+      float mine = 0.0f;
+      const bool onPanel = castAt(from, along, hit, uv, mine);
+
+      const char* nearest = onPanel ? "panel" : "nothing";
+      float best = onPanel ? mine : 1.0e9f;
+
+      for (size_t other = 0; other < m_neighbours.size(); ++other)
+      {
+        float theirs = 0.0f;
+        if (!castAtOverlay(m_neighbours[other].first, from, along, theirs))
+          continue;
+        if (theirs >= best - 0.002f)
+          continue;
+        best = theirs;
+        nearest = m_neighbours[other].second.c_str();
+      }
+
+      if (wrote < static_cast<int>(sizeof(line)) - 1)
+        wrote += std::snprintf(line + wrote, sizeof(line) - wrote, " %s", nearest);
+    }
+
+    note("%s", line);
+  }
+
   bool Presenter::measureShape(float& wide, float& tall, float& bow, bool speak)
   {
     float origin[3];
@@ -983,8 +1147,17 @@ namespace
     }
 
     const bool bent = std::fabs(bow) > kBowCurved;
-    const float want = bent ? 2.0f : 1.0f;
+    const float want = texelWanted();
     const bool first = !(m_shapeHad > 0.0f);
+
+    if (m_texelWant != want)
+    {
+      note("pmp-xr-host: the window is %u by %u inside a %.0f by %.0f plane, packing %u, so "
+           "the picture needs %.3f texels wide per tall",
+           m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall, m_packing, want);
+      m_texelWant = want;
+      setTexelAspect(want);
+    }
 
     if (bent == m_bentSeen)
       ++m_bentAgree;
@@ -996,15 +1169,22 @@ namespace
     if (m_bentAgree < kBowAgree)
       return;
 
-    if (!first && bent == m_shapeBent && m_texelWant == want)
+    const int64_t now = nowMs();
+
+    if (!first && bent == m_shapeBent)
     {
-      const int64_t now = nowMs();
       if (now - m_bowSaidAt >= kBowSayGapMs)
       {
         m_bowSaidAt = now;
         note("pmp-xr-host: the panel is still %s, bowing %.4f m over %.3f m, at %.3f texels "
-             "wide per tall",
-             bent ? "curved" : "flat", bow, wide, m_texelWant);
+             "wide per tall, from a %u by %u window in a %.0f by %.0f plane",
+             bent ? "curved" : "flat", bow, wide, m_texelWant, m_windowWide, m_windowTall,
+             m_panelMouseWide, m_panelMouseTall);
+      }
+      if (now - m_coverAt >= kBowSayGapMs)
+      {
+        m_coverAt = now;
+        probeCover();
       }
       return;
     }
@@ -1012,8 +1192,8 @@ namespace
     m_shapeHad = wide / tall;
     m_shapeBent = bent;
     m_shapeBow = bow;
-    m_texelWant = want;
-    m_bowSaidAt = nowMs();
+    m_bowSaidAt = now;
+    m_coverAt = now;
 
     measureBow(bow, wide, tall, true);
 
@@ -1024,10 +1204,11 @@ namespace
       note("pmp-xr-host: the panel's own transform still says %.3f by %.3f m, %.3f to 1",
            flatWide, flatTall, flatWide / flatTall);
 
-    note("pmp-xr-host: the panel is %s, bowing %.4f m over %.3f m, so the picture needs "
-         "%.3f texels wide per tall",
-         bent ? "curved" : "flat", bow, wide, want);
-    setTexelAspect(want);
+    note("pmp-xr-host: the panel is %s, bowing %.4f m over %.3f m, and stays at %.3f texels "
+         "wide per tall",
+         bent ? "curved" : "flat", bow, wide, m_texelWant);
+
+    probeCover();
   }
 
   void Presenter::dropStereo()
@@ -1178,6 +1359,23 @@ namespace
       {
         note("pmp-xr-host: a message of %zd bytes was not understood", got);
         continue;
+      }
+
+      if (message.packing != m_packing)
+      {
+        m_packing = message.packing;
+        note("pmp-xr-host: the app packs the picture as %u", m_packing);
+      }
+
+      if (message.windowWide >= 2 && message.windowTall >= 2 &&
+          (message.windowWide != m_windowWide || message.windowTall != m_windowTall))
+      {
+        m_windowWide = message.windowWide;
+        m_windowTall = message.windowTall;
+        note("pmp-xr-host: the app draws a %u by %u window into a %.0f by %.0f plane",
+             m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall);
+        if (m_stereo)
+          fitPanel();
       }
 
       switch (message.type)
