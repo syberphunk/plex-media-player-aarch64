@@ -56,9 +56,6 @@ namespace
   const int kCursorRestKeep = 4;
   const double kCursorRestSpread = 10.0;
   const double kCursorRestApart = 12.0;
-  const int kRulerMs = 90000;
-  const int kRulerBars = 5;
-  const float kRulerWide = 10.0f;
 
   const char kArrowVertex[] = R"(
 uniform vec2 u_p0;
@@ -122,8 +119,7 @@ PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
   m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
   m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0), m_dumpWaits(0),
-  m_dumpBudget(kDumpBudget), m_captures(false), m_rulerFrom(0), m_rulerSaid(0),
-  m_rulerShots(0),
+  m_dumpBudget(kDumpBudget), m_captures(false),
   m_arrowProgram(nullptr), m_arrowVao(0),
   m_arrowFailed(false),
   m_probeTarget(nullptr), m_probeWanted(false), m_probeRunning(false), m_probeTick(0)
@@ -261,9 +257,6 @@ void PlayerRenderer::syncStereo()
       m_dumpBudget = kDumpBudget;
     m_dumpsLeft = wanted ? qMin(kFrameDumps, m_dumpBudget) : 0;
     m_dumpWaits = 0;
-    m_rulerFrom = wanted ? QDateTime::currentMSecsSinceEpoch() : 0;
-    m_rulerSaid = 0;
-    m_rulerShots = 0;
   }
 
   m_stereoWanted = wanted;
@@ -604,138 +597,6 @@ bool PlayerRenderer::prepareArrow()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
-{
-  if (m_rulerFrom == 0)
-    return;
-
-  const int w = m_windowSize.width();
-  const int h = m_windowSize.height();
-  if (w < 4 || h < 4 || half < 2)
-    return;
-
-  const qint64 since = QDateTime::currentMSecsSinceEpoch() - m_rulerFrom;
-
-  if (!prepareArrow())
-    return;
-
-  const bool upright = (since / qint64(kRulerMs)) % 2 == 0;
-  const float span = upright ? float(w) : float(h);
-  const float edge = kRulerWide;
-
-  float at[kRulerBars];
-  for (int bar = 0; bar < kRulerBars; ++bar)
-    at[bar] = edge + float(bar) * (span - 2.0f * edge) / float(kRulerBars - 1);
-
-  const int want = upright ? 1 : 2;
-  if (m_rulerSaid != want)
-  {
-    m_rulerSaid = want;
-    QString where;
-    for (int bar = 0; bar < kRulerBars; ++bar)
-      where += QString::number(double(at[bar]), 'f', 0) + " ";
-    QLOG_INFO() << "Stereoscopic: five" << (upright ? "upright" : "flat")
-                << "measuring bars, red yellow green cyan magenta, at"
-                << (upright ? "x" : "y") << where << "of"
-                << (upright ? w : h) << "for the next" << kRulerMs / 1000 << "seconds";
-  }
-
-  static const float colour[kRulerBars][3] = {
-    { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f },
-    { 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 1.0f }
-  };
-
-  gl->glDisable(GL_BLEND);
-  gl->glViewport(0, 0, w, h);
-  m_arrowProgram->bind();
-  gl->glBindVertexArray(m_arrowVao);
-
-  for (int eye = 0; eye < 2; ++eye)
-  {
-    for (int bar = 0; bar < kRulerBars; ++bar)
-    {
-      m_arrowProgram->setUniformValue(
-        "u_colour", QVector3D(colour[bar][0], colour[bar][1], colour[bar][2]));
-
-      float left = 0.0f;
-      float right = 0.0f;
-      float base = 0.0f;
-      float top = 0.0f;
-
-      if (upright)
-      {
-        left = float(eye * half) + (at[bar] - kRulerWide * 0.5f) * float(half) / float(w);
-        right = float(eye * half) + (at[bar] + kRulerWide * 0.5f) * float(half) / float(w);
-        base = 0.0f;
-        top = float(h);
-      }
-      else
-      {
-        left = float(eye * half);
-        right = float(eye * half + half);
-        base = float(h) - at[bar] - kRulerWide * 0.5f;
-        top = float(h) - at[bar] + kRulerWide * 0.5f;
-      }
-
-      const float corner[4][2] = {
-        { left, base }, { right, base }, { right, top }, { left, top }
-      };
-      static const int piece[2][3] = { { 0, 1, 2 }, { 0, 2, 3 } };
-
-      for (int pass = 0; pass < 2; ++pass)
-      {
-        for (int point = 0; point < 3; ++point)
-        {
-          const int corn = piece[pass][point];
-          const QString name = QStringLiteral("u_p%1").arg(point);
-          m_arrowProgram->setUniformValue(qPrintable(name),
-                                          QVector2D(corner[corn][0] * 2.0f / float(w) - 1.0f,
-                                                    corner[corn][1] * 2.0f / float(h) - 1.0f));
-        }
-
-        gl->glDrawArrays(GL_TRIANGLES, 0, 3);
-      }
-    }
-  }
-
-  gl->glBindVertexArray(0);
-  m_arrowProgram->release();
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::dumpRuler(QOpenGLExtraFunctions* gl)
-{
-  if (m_rulerFrom == 0 || m_rulerShots >= 2)
-    return;
-
-  const qint64 since = QDateTime::currentMSecsSinceEpoch() - m_rulerFrom;
-  const int phase = since < qint64(kRulerMs) ? 1 : (since < qint64(kRulerMs) * 2 ? 2 : 0);
-  if (phase == 0 || phase <= m_rulerShots || since % qint64(kRulerMs) < 10000)
-    return;
-
-  m_rulerShots = phase;
-
-  QOpenGLFramebufferObject screen(m_windowSize);
-  if (!screen.isValid())
-    return;
-
-  gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-  gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, screen.handle());
-  gl->glBlitFramebuffer(0, 0, m_windowSize.width(), m_windowSize.height(), 0, 0,
-                        m_windowSize.width(), m_windowSize.height(), GL_COLOR_BUFFER_BIT,
-                        GL_NEAREST);
-  gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-  const QString name = QStringLiteral("stereo-ruler-%1-%2-screen.png")
-                         .arg(phase == 1 ? "upright" : "flat")
-                         .arg(QDateTime::currentDateTime().toString("HHmmss-zzz"));
-  screen.toImage().save(Paths::logDir() + QDir::separator() + name);
-
-  QLOG_INFO() << "Stereoscopic: wrote the measuring bars as" << name << "from a"
-              << m_windowSize.width() << "by" << m_windowSize.height() << "window";
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
 {
   if (m_cursorAt.isNull())
@@ -847,9 +708,7 @@ void PlayerRenderer::composeWindow()
       drawShot(gl, eye * half, half, h);
     gl->glDisable(GL_BLEND);
     gl->glViewport(0, 0, w, h);
-    drawRuler(gl, half);
     drawCursor(gl, half);
-    dumpRuler(gl);
   }
   else
   {
@@ -862,9 +721,7 @@ void PlayerRenderer::composeWindow()
       overlayVideo(gl, half);
 
     gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    drawRuler(gl, half);
     drawCursor(gl, half);
-    dumpRuler(gl);
   }
 
   gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
