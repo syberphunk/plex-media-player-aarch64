@@ -51,6 +51,33 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.47" date="2026-11-10">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>3D now works when Plex runs at 1280x720 from its Steam icon, as well as at
+              1920x1080. At 1280x720 a black band covered part of the 3D screen; it is
+              gone.</li>
+          <li>The pointer now follows the controller exactly on the 3D screen, at
+              1280x720 and 1920x1080, with the screen flat or curved.</li>
+          <li>Seeking backwards with hardware decoding could leave the audio ahead of
+              the picture, or silent. The decoder now discards the frames it decoded
+              before the seek.</li>
+          <li>VP9 video is decoded in software on the Steam Frame, because its hardware
+              VP9 decoder delivers only about 2 frames a second.</li>
+        </ul>
+        <p>Changed:</p>
+        <ul>
+          <li>Plex can now write to Steam's log folder, where SteamVR's client library
+              writes its log.</li>
+        </ul>
+        <p>Known:</p>
+        <ul>
+          <li>The 3D screen curves more sharply than it should, and its resize handles
+              do not meet the edges of the picture.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.46" date="2026-11-02">
       <description>
         <p>New functionality:</p>
