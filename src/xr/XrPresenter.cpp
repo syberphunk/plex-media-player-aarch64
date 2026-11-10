@@ -6,6 +6,8 @@
 #include <QSocketNotifier>
 #include <QThread>
 
+#include <cmath>
+
 #include <errno.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -87,6 +89,12 @@ void XrPresenter::tell(uint32_t type)
   message.swapped = m_swapped ? 1 : 0;
   message.windowWide = uint32_t(qMax(0, m_windowWide.load()));
   message.windowTall = uint32_t(qMax(0, m_windowTall.load()));
+  if (type == XrProtocol::Mark)
+  {
+    message.markAcrossMillionths = uint32_t(qMax(0, m_markAcross.load()));
+    message.markDownMillionths = uint32_t(qMax(0, m_markDown.load()));
+    message.markSay = m_markSay.exchange(false) ? 1 : 0;
+  }
 
   if (::send(m_socket, &message, sizeof(message), MSG_NOSIGNAL) < 0)
     QLOG_WARN() << "Stereoscopic: the presenter did not take the message:" << strerror(errno);
@@ -118,6 +126,27 @@ void XrPresenter::pushWindow()
   QLOG_INFO() << "Stereoscopic: the window is now" << m_windowWide.load() << "by"
               << m_windowTall.load() << "pixels, telling the presenter";
   tell(XrProtocol::Panel);
+}
+
+void XrPresenter::markPointer(double across, double down, bool say)
+{
+  m_markAcross = int(qBound(0.0, across, 1.0) * 1000000.0);
+  m_markDown = int(qBound(0.0, down, 1.0) * 1000000.0);
+  if (say)
+    m_markSay = true;
+
+  QMetaObject::invokeMethod(this, "pushMark", Qt::QueuedConnection);
+}
+
+void XrPresenter::pushMark()
+{
+  if (!m_wanted || m_socket < 0 || m_panelPointerWide.load() <= 1000)
+  {
+    m_markSay = false;
+    return;
+  }
+
+  tell(XrProtocol::Mark);
 }
 
 void XrPresenter::readHost()
@@ -170,18 +199,60 @@ void XrPresenter::readHost()
     if (message.texelAspectThousandths > 0)
       m_panelTexelAspect = float(message.texelAspectThousandths) / 1000.0f;
 
-    const int pointerWide = message.type == XrProtocol::Stereo &&
-                            message.pointerWideThousandths >= 1000
+    const bool pointing =
+      message.type == XrProtocol::Stereo || message.type == XrProtocol::Pointer;
+    const int pointerWide = pointing && message.pointerWideThousandths >= 1000
                               ? int(message.pointerWideThousandths)
                               : 1000;
-    const bool pointerNews = message.type == XrProtocol::Stereo &&
-                             (pointerWide != m_panelPointerWide.load() || !m_panelStereo);
+    const bool pointerNews =
+      pointing && (pointerWide != m_panelPointerWide.load() || !m_panelStereo);
     m_panelPointerWide = pointerWide;
     if (pointerNews)
       QLOG_INFO() << "Stereoscopic: the laser's surface is" << float(pointerWide) / 1000.0f
                   << "times as wide as the picture, so the pointer is"
                   << (pointerWide > 1000 ? "spread about the middle of the window"
                                          : "used as delivered");
+
+    const bool spreading = pointing && pointerWide > 1000;
+    const bool curved = spreading && message.curveRadiusMillimetres > 0 &&
+                        message.curveSweepThousandths > 0 && message.curveTallMillimetres > 0;
+    const int aimedBy = curved ? int(message.aimedBy) : int(XrProtocol::Unaimed);
+    m_aimRight = curved ? int(message.aimMillimetres[0]) : 0;
+    m_aimUp = curved ? int(message.aimMillimetres[1]) : 0;
+    m_aimOut = curved ? int(message.aimMillimetres[2]) : 0;
+    m_curveRadius = curved ? int(message.curveRadiusMillimetres) : 0;
+    m_curveSweep = curved ? int(message.curveSweepThousandths) : 0;
+    m_curveTall = curved ? int(message.curveTallMillimetres) : 0;
+    m_aimedBy = aimedBy;
+
+    const int curveState = !spreading ? -1 : !curved ? 0 : 1 + aimedBy;
+    if (curveState != m_curveSaid)
+    {
+      m_curveSaid = curveState;
+      const QString arc =
+        QStringLiteral("an arc of radius %1 m sweeping %2 degrees, %3 m tall")
+          .arg(double(message.curveRadiusMillimetres) / 1000.0, 0, 'f', 3)
+          .arg(double(message.curveSweepThousandths) * 0.0572958, 0, 'f', 1)
+          .arg(double(message.curveTallMillimetres) / 1000.0, 0, 'f', 3);
+      if (curveState == 0)
+      {
+        QLOG_INFO() << "Stereoscopic: the surface the laser lands on is flat, so the pointer "
+                       "is spread evenly";
+      }
+      else if (curveState == 1)
+      {
+        QLOG_INFO() << "Stereoscopic: the surface the laser lands on is" << qPrintable(arc)
+                    << "but nothing says where the laser starts, so the pointer is spread "
+                       "as when flat";
+      }
+      else if (curveState > 1)
+      {
+        QLOG_INFO() << "Stereoscopic: the surface the laser lands on is" << qPrintable(arc)
+                    << "and the picture sits in front of it, so the pointer follows the "
+                       "laser from"
+                    << qPrintable(pointerSource());
+      }
+    }
 
     switch (message.type)
     {
@@ -193,6 +264,9 @@ void XrPresenter::readHost()
                          "the Plex panel is side by side, flags 0x%1; squeezing the window")
                          .arg(message.flags, 0, 16));
         emit panelChanged();
+        break;
+
+      case XrProtocol::Pointer:
         break;
 
       case XrProtocol::Flat:
@@ -367,4 +441,65 @@ void XrPresenter::onFinished()
     return;
   QLOG_INFO() << "Stereoscopic: the presenter exited";
   shutdown();
+}
+
+bool XrPresenter::bendPointer(double across, double down, double& onto, double& under) const
+{
+  const double spread = double(m_panelPointerWide.load()) / 1000.0;
+  const double outer = double(m_curveRadius.load()) / 1000.0;
+  const double sweep = double(m_curveSweep.load()) / 1000.0;
+  const double tall = double(m_curveTall.load()) / 1000.0;
+  if (!(spread > 1.0) || !(outer > 0.0) || !(sweep > 0.0) || !(tall > 0.0) ||
+      m_aimedBy.load() == int(XrProtocol::Unaimed))
+    return false;
+
+  const double fromRight = double(m_aimRight.load()) / 1000.0;
+  const double fromUp = double(m_aimUp.load()) / 1000.0;
+  const double fromOut = double(m_aimOut.load()) / 1000.0;
+  if (!(fromOut > 0.0))
+    return false;
+
+  const double inner = outer / spread;
+  const double angle = (across - 0.5) * sweep;
+  const double goRight = outer * std::sin(angle) - fromRight;
+  const double goUp = (0.5 - down) * tall - fromUp;
+  const double goOut = outer * (1.0 - std::cos(angle)) - fromOut;
+
+  const double a = goRight * goRight + goOut * goOut;
+  if (!(a > 1.0e-9))
+    return false;
+
+  const double b = 2.0 * (fromRight * goRight + (fromOut - inner) * goOut);
+  const double c = fromRight * fromRight + (fromOut - inner) * (fromOut - inner) - inner * inner;
+  const double inside = b * b - 4.0 * a * c;
+  const double along = inside >= 0.0 ? (-b + std::sqrt(inside)) / (2.0 * a) : -b / (2.0 * a);
+  if (!(along > 0.0))
+    return false;
+
+  const double right = fromRight + along * goRight;
+  const double up = fromUp + along * goUp;
+  const double out = fromOut + along * goOut;
+
+  onto = std::atan2(right, inner - out) / sweep + 0.5;
+  under = 0.5 - up / tall;
+  return true;
+}
+
+QString XrPresenter::pointerSource() const
+{
+  const int by = m_aimedBy.load();
+  if (m_curveRadius.load() <= 0)
+    return QStringLiteral("a flat surface");
+  if (by == int(XrProtocol::Unaimed))
+    return QStringLiteral("nowhere known");
+
+  return QStringLiteral("%1 m right, %2 m up and %3 m out of its middle, read from %4")
+    .arg(double(m_aimRight.load()) / 1000.0, 0, 'f', 3)
+    .arg(double(m_aimUp.load()) / 1000.0, 0, 'f', 3)
+    .arg(double(m_aimOut.load()) / 1000.0, 0, 'f', 3)
+    .arg(by == int(XrProtocol::DashboardDevice)
+           ? QStringLiteral("the device the dashboard names")
+           : by == int(XrProtocol::PointedController)
+               ? QStringLiteral("the controller whose ray lands nearest the pointer")
+               : QStringLiteral("the controller pointed nearest the panel"));
 }

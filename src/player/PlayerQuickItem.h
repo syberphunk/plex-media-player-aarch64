@@ -2,6 +2,7 @@
 #define PLAYERQUICKITEM_H
 
 #include <Qt>
+#include <QElapsedTimer>
 #include <QList>
 #include <QPointF>
 #include <QRect>
@@ -106,7 +107,10 @@ public:
     void reportPointerReach(const char* when);
     void reportPointerPress();
     QPointF stretchPointer(const QPointF& at) const;
+    QPointF spreadPointer(const QPointF& at, bool follow) const;
+    QString pointerTrace() const;
     void noteRawReach(const QPointF& at);
+    void markPointer(bool say);
 
     bool eventFilter(QObject* watched, QEvent* event) override;
     void initMpv(PlayerComponent* player);
@@ -139,6 +143,7 @@ private:
     QTimer* m_cursorRest;
     QPointF m_cursorRestedAt;
     QPointF m_cursorRaw;
+    QElapsedTimer m_cursorMarked;
     bool m_cursorStretching;
     float m_cursorRawLow;
     float m_cursorRawHigh;

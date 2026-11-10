@@ -3,6 +3,7 @@
 #include "OpenVr.h"
 #include "RootProperty.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -72,6 +73,15 @@ namespace
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
   const int kBowSayGapMs = 30000;
+  const float kBowEdge = 0.98f;
+  const float kArcShift = 0.01f;
+  const int kArcSayGapMs = 5000;
+  const int32_t kAimShiftMm = 5;
+  const uint32_t kCurveShift = 2;
+  const int kMarkFreshMs = 1000;
+  const float kMarkHold = 0.1f;
+  const int kAimSayGapMs = 1000;
+  const int kDeviceSayGapMs = 500;
   const int kLookGapMs = 1000;
   const int kLookLimit = 30;
 
@@ -208,6 +218,12 @@ namespace
     float texelWanted() const;
     float pointerWide() const;
     void tellPointer();
+    void sayArc(bool atOnce);
+    void takeAim();
+    void sayDevices();
+    void curveNow(uint32_t& radius, uint32_t& sweep, uint32_t& tall, uint32_t& by,
+                  int32_t aim[3]) const;
+    bool curveMoved() const;
     void probeCover();
     bool windowScaled() const;
     void askComposite();
@@ -230,6 +246,37 @@ namespace
     bool m_panelWasStereo = false;
     float m_panelTexelAspect = 1.0f;
     float m_pointerWideTold = 0.0f;
+    bool m_arcKnown = false;
+    float m_arcRadius = 0.0f;
+    float m_arcSweep = 0.0f;
+    float m_arcWide = 0.0f;
+    float m_arcTall = 0.0f;
+    float m_arcLean = 0.0f;
+    float m_arcLift = 0.0f;
+    float m_arcSideUv[2] = {-1.0f, -1.0f};
+    float m_arcSweepByUv = 0.0f;
+    float m_arcCrown[3] = {0.0f, 0.0f, 0.0f};
+    float m_arcRight[3] = {1.0f, 0.0f, 0.0f};
+    float m_arcOver[3] = {0.0f, 1.0f, 0.0f};
+    float m_arcOut[3] = {0.0f, 0.0f, 1.0f};
+    float m_arcSaidRadius = -1.0f;
+    float m_arcSaidSweep = -1.0f;
+    float m_arcSaidWide = -1.0f;
+    int64_t m_arcSaidAt = 0;
+    uint32_t m_aimBy = XrProtocol::Unaimed;
+    uint32_t m_aimDevice = k_unTrackedDeviceIndexInvalid;
+    uint32_t m_aimNamed = k_unTrackedDeviceIndexInvalid;
+    float m_aim[3] = {0.0f, 0.0f, 0.0f};
+    int m_aimSaidBy = -1;
+    uint32_t m_aimSaidDevice = k_unTrackedDeviceIndexInvalid;
+    int64_t m_aimSaidAt = 0;
+    uint32_t m_curveTold[4] = {0, 0, 0, 0};
+    int32_t m_aimTold[3] = {0, 0, 0};
+    uint32_t m_aimPointed = k_unTrackedDeviceIndexInvalid;
+    float m_markAcross = -1.0f;
+    float m_markDown = -1.0f;
+    int64_t m_markAt = 0;
+    int64_t m_devicesSaidAt = 0;
     float m_panelMouseWide = 0.0f;
     float m_panelMouseTall = 0.0f;
     float m_panelMetres = 0.0f;
@@ -973,24 +1020,103 @@ namespace
       step[axis] = over[axis];
     const float toTop = edgeAlong(from, along, step, reach);
 
-    float edgeUv[2] = { -1.0f, -1.0f };
+    float leftUv[2] = { -1.0f, -1.0f };
+    float rightUv[2] = { -1.0f, -1.0f };
     float edgeHit[3];
     float leftAway = away;
     float rightAway = away;
     float at[3];
 
     for (int axis = 0; axis < 3; ++axis)
-      at[axis] = from[axis] - right[axis] * toLeft * 0.98f;
-    castAt(at, along, edgeHit, edgeUv, leftAway);
+      at[axis] = from[axis] - right[axis] * toLeft * kBowEdge;
+    castAt(at, along, edgeHit, leftUv, leftAway);
 
     for (int axis = 0; axis < 3; ++axis)
-      at[axis] = from[axis] + right[axis] * toRight * 0.98f;
-    castAt(at, along, edgeHit, edgeUv, rightAway);
+      at[axis] = from[axis] + right[axis] * toRight * kBowEdge;
+    castAt(at, along, edgeHit, rightUv, rightAway);
 
     wide = toLeft + toRight;
     tall = toBase + toTop;
     const float edgeAway = (leftAway + rightAway) * 0.5f;
     bow = edgeAway - away;
+
+    const float lean = (toRight - toLeft) * 0.5f;
+    const float lift = (toTop - toBase) * 0.5f;
+    float crown[3];
+    float crownUv[2] = { -1.0f, -1.0f };
+    float crownAway = away;
+
+    for (int axis = 0; axis < 3; ++axis)
+      at[axis] = from[axis] + right[axis] * lean + over[axis] * lift;
+    if (!castAt(at, along, crown, crownUv, crownAway))
+    {
+      crownAway = away;
+      for (int axis = 0; axis < 3; ++axis)
+        crown[axis] = hit[axis] + right[axis] * lean + over[axis] * lift;
+    }
+
+    const float leftOut = toLeft * kBowEdge + lean;
+    const float rightOut = toRight * kBowEdge - lean;
+    const float leftRise = crownAway - leftAway;
+    const float rightRise = crownAway - rightAway;
+    const float sideOut = (leftOut + rightOut) * 0.5f;
+    const float rise = (leftRise + rightRise) * 0.5f;
+    float facing = rise < 0.0f ? -1.0f : 1.0f;
+
+    struct VR_IVRSystem_FnTable* sys = m_ovr.system;
+    if (!(std::fabs(rise) > kBowCurved) && sys && sys->GetDeviceToAbsoluteTrackingPose)
+    {
+      struct TrackedDevicePose_t head;
+      std::memset(&head, 0, sizeof(head));
+      sys->GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin_TrackingUniverseStanding, 0.0f,
+                                           &head, 1);
+      if (head.bPoseIsValid)
+      {
+        float before = 0.0f;
+        for (int axis = 0; axis < 3; ++axis)
+          before += (head.mDeviceToAbsoluteTracking.m[axis][3] - crown[axis]) * -along[axis];
+        facing = before < 0.0f ? -1.0f : 1.0f;
+      }
+    }
+
+    float radius = 0.0f;
+    float sweep = 0.0f;
+    float sweepByUv = 0.0f;
+    if (std::fabs(rise) > kBowCurved && sideOut > 0.0f)
+    {
+      radius = (sideOut * sideOut + rise * rise) / (2.0f * std::fabs(rise));
+      sweep = 2.0f * std::asin(std::min(1.0f, wide * 0.5f / radius));
+
+      const float uvSpan = std::fabs(rightUv[0] - leftUv[0]);
+      if (uvSpan > 0.01f)
+        sweepByUv = 2.0f * (std::atan2(std::fabs(leftRise), leftOut) +
+                            std::atan2(std::fabs(rightRise), rightOut)) / uvSpan;
+    }
+
+    const float turn =
+      leftUv[0] >= 0.0f && rightUv[0] >= 0.0f && rightUv[0] < leftUv[0] ? -1.0f : 1.0f;
+
+    m_arcKnown = true;
+    m_arcRadius = radius;
+    m_arcSweep = sweep;
+    m_arcWide = wide;
+    m_arcTall = tall;
+    m_arcLean = lean * turn;
+    m_arcLift = lift;
+    m_arcSideUv[0] = leftUv[0];
+    m_arcSideUv[1] = rightUv[0];
+    m_arcSweepByUv = sweepByUv;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+      m_arcCrown[axis] = crown[axis];
+      m_arcRight[axis] = right[axis] * turn;
+      m_arcOut[axis] = -along[axis] * facing;
+    }
+    m_arcOver[0] = m_arcOut[1] * m_arcRight[2] - m_arcOut[2] * m_arcRight[1];
+    m_arcOver[1] = m_arcOut[2] * m_arcRight[0] - m_arcOut[0] * m_arcRight[2];
+    m_arcOver[2] = m_arcOut[0] * m_arcRight[1] - m_arcOut[1] * m_arcRight[0];
+    if (over[0] * m_arcOver[0] + over[1] * m_arcOver[1] + over[2] * m_arcOver[2] < 0.0f)
+      m_arcLift = -lift;
 
     if (speak)
       note("pmp-xr-host: the panel the headset can touch is %.3f by %.3f m, %.3f m away in the "
@@ -1033,12 +1159,339 @@ namespace
     return m_stereo && m_carrierLayer == 0 && !m_backed ? kStereoHalves : 1.0f;
   }
 
-  void Presenter::tellPointer()
+  void Presenter::sayArc(bool atOnce)
   {
-    if (!m_told || m_stage != Holding || pointerWide() == m_pointerWideTold)
+    if (!m_arcKnown)
       return;
 
-    send(XrProtocol::Stereo, nullptr);
+    const int64_t now = nowMs();
+    const bool shifted =
+      std::fabs(m_arcRadius - m_arcSaidRadius) > kArcShift * std::max(m_arcRadius, 1.0f) ||
+      std::fabs(m_arcSweep - m_arcSaidSweep) > kArcShift * std::max(m_arcSweep, 1.0f) ||
+      std::fabs(m_arcWide - m_arcSaidWide) > kArcShift * std::max(m_arcWide, 1.0f);
+    if (!atOnce && (!shifted || now - m_arcSaidAt < kArcSayGapMs))
+      return;
+
+    m_arcSaidAt = now;
+    m_arcSaidRadius = m_arcRadius;
+    m_arcSaidSweep = m_arcSweep;
+    m_arcSaidWide = m_arcWide;
+
+    const float degrees = 57.29578f;
+    if (m_arcRadius > 0.0f)
+      note("pmp-xr-host: the surface the laser lands on is an arc of radius %.3f m sweeping "
+           "%.1f degrees, %.3f m along the arc, %.3f m across and %.3f m tall, its middle "
+           "%.3f m right and %.3f m above the panel's own; the texture runs from %.4f to %.4f "
+           "between the outermost rays, which makes the sweep %.1f degrees",
+           m_arcRadius, m_arcSweep * degrees, m_arcRadius * m_arcSweep, m_arcWide, m_arcTall,
+           m_arcLean, m_arcLift, m_arcSideUv[0], m_arcSideUv[1], m_arcSweepByUv * degrees);
+    else
+      note("pmp-xr-host: the surface the laser lands on is flat, %.3f by %.3f m, its middle "
+           "%.3f m right and %.3f m above the panel's own; the texture runs from %.4f to %.4f "
+           "between the outermost rays",
+           m_arcWide, m_arcTall, m_arcLean, m_arcLift, m_arcSideUv[0], m_arcSideUv[1]);
+  }
+
+  void Presenter::takeAim()
+  {
+    m_aimBy = XrProtocol::Unaimed;
+    m_aimDevice = k_unTrackedDeviceIndexInvalid;
+    m_aimNamed = k_unTrackedDeviceIndexInvalid;
+
+    if (!m_stereo || !m_arcKnown || !(m_arcRadius > 0.0f) || !(pointerWide() > 1.0f))
+    {
+      m_aimSaidBy = -1;
+      return;
+    }
+
+    struct VR_IVRSystem_FnTable* sys = m_ovr.system;
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+
+    struct TrackedDevicePose_t poses[k_unMaxTrackedDeviceCount];
+    std::memset(poses, 0, sizeof(poses));
+    const bool posed = sys && sys->GetDeviceToAbsoluteTrackingPose;
+    if (posed)
+      sys->GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin_TrackingUniverseStanding,
+                                           0.0f, poses, k_unMaxTrackedDeviceCount);
+
+    if (ovl && ovl->GetPrimaryDashboardDevice)
+      m_aimNamed = ovl->GetPrimaryDashboardDevice();
+
+    if (posed && m_aimNamed < k_unMaxTrackedDeviceCount && poses[m_aimNamed].bPoseIsValid)
+    {
+      m_aimBy = XrProtocol::DashboardDevice;
+      m_aimDevice = m_aimNamed;
+    }
+    else if (posed && sys->GetTrackedDeviceClass)
+    {
+      const bool marked = m_markAt > 0 && nowMs() - m_markAt < kMarkFreshMs;
+      const bool kept = !marked && m_aimPointed < k_unMaxTrackedDeviceCount &&
+                        poses[m_aimPointed].bPoseIsValid &&
+                        sys->GetTrackedDeviceClass(m_aimPointed) ==
+                          ETrackedDeviceClass_TrackedDeviceClass_Controller;
+      float best = -2.0f;
+      float nearest = -1.0f;
+      for (uint32_t device = 0; device < k_unMaxTrackedDeviceCount; ++device)
+      {
+        if (!poses[device].bPoseIsValid ||
+            sys->GetTrackedDeviceClass(device) != ETrackedDeviceClass_TrackedDeviceClass_Controller)
+          continue;
+
+        const struct HmdMatrix34_t& held = poses[device].mDeviceToAbsoluteTracking;
+        float toCrown[3];
+        float length = 0.0f;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+          toCrown[axis] = m_arcCrown[axis] - held.m[axis][3];
+          length += toCrown[axis] * toCrown[axis];
+        }
+        length = std::sqrt(length);
+        if (!(length > 0.0f))
+          continue;
+
+        float facing = 0.0f;
+        for (int axis = 0; axis < 3; ++axis)
+          facing += -held.m[axis][2] * toCrown[axis] / length;
+
+        float gap = -1.0f;
+        if (marked)
+        {
+          float from[3];
+          float forward[3];
+          float hit[3];
+          float uv[2] = { -1.0f, -1.0f };
+          float away = 0.0f;
+          for (int axis = 0; axis < 3; ++axis)
+          {
+            from[axis] = held.m[axis][3];
+            forward[axis] = -held.m[axis][2];
+          }
+          if (castAt(from, forward, hit, uv, away))
+          {
+            gap = std::fabs(uv[0] - m_markAcross);
+            if (device == m_aimPointed)
+              gap = std::max(0.0f, gap - kMarkHold);
+          }
+        }
+
+        const bool closer = gap >= 0.0f && (nearest < 0.0f || gap < nearest);
+        if (closer || (nearest < 0.0f && facing > best))
+        {
+          if (closer)
+            nearest = gap;
+          best = facing;
+          m_aimBy = closer ? XrProtocol::PointedController : XrProtocol::AimedController;
+          m_aimDevice = device;
+        }
+      }
+
+      if (kept)
+      {
+        m_aimBy = XrProtocol::PointedController;
+        m_aimDevice = m_aimPointed;
+      }
+      else if (m_aimBy == XrProtocol::PointedController)
+        m_aimPointed = m_aimDevice;
+    }
+
+    if (m_aimBy != XrProtocol::Unaimed)
+    {
+      const struct HmdMatrix34_t& held = poses[m_aimDevice].mDeviceToAbsoluteTracking;
+      float aim[3] = {0.0f, 0.0f, 0.0f};
+      for (int axis = 0; axis < 3; ++axis)
+      {
+        const float gap = held.m[axis][3] - m_arcCrown[axis];
+        aim[0] += gap * m_arcRight[axis];
+        aim[1] += gap * m_arcOver[axis];
+        aim[2] += gap * m_arcOut[axis];
+      }
+      for (int axis = 0; axis < 3; ++axis)
+        m_aim[axis] = aim[axis];
+    }
+
+    const int64_t now = nowMs();
+    const bool same = int(m_aimBy) == m_aimSaidBy && m_aimDevice == m_aimSaidDevice;
+    if (now - m_aimSaidAt < (same ? kBowSayGapMs : kAimSayGapMs))
+      return;
+
+    m_aimSaidBy = int(m_aimBy);
+    m_aimSaidDevice = m_aimDevice;
+    m_aimSaidAt = now;
+
+    if (m_aimBy == XrProtocol::Unaimed)
+      note("pmp-xr-host: nothing says where the laser starts (the dashboard names %s, poses "
+           "%s), so the pointer cannot follow it onto the picture",
+           m_aimNamed == k_unTrackedDeviceIndexInvalid ? "no device" : "a device with no pose",
+           posed ? "were read" : "cannot be read");
+    else
+      note("pmp-xr-host: the laser starts at device %u, %s%s, %.3f m right, %.3f m up and "
+           "%.3f m out from the middle of the surface it lands on",
+           m_aimDevice,
+           m_aimBy == XrProtocol::DashboardDevice
+             ? "the one the dashboard names"
+             : m_aimBy == XrProtocol::PointedController
+                 ? "the controller whose ray lands nearest the pointer"
+                 : "the controller pointed nearest the panel",
+           m_aimBy == XrProtocol::DashboardDevice
+             ? ""
+             : m_aimNamed == k_unTrackedDeviceIndexInvalid
+                 ? ", as the dashboard names no device"
+                 : ", as the dashboard's device has no pose",
+           m_aim[0], m_aim[1], m_aim[2]);
+  }
+
+  void Presenter::sayDevices()
+  {
+    const int64_t now = nowMs();
+    if (now - m_devicesSaidAt < kDeviceSayGapMs)
+      return;
+    m_devicesSaidAt = now;
+
+    struct VR_IVRSystem_FnTable* sys = m_ovr.system;
+    struct VR_IVROverlay_FnTable* ovl = m_ovr.overlay;
+
+    if (!sys || !sys->GetDeviceToAbsoluteTrackingPose || !sys->GetTrackedDeviceClass)
+    {
+      note("pmp-xr-host: with the pointer %.4f across and %.4f down the window, no device "
+           "poses can be read",
+           m_markAcross, m_markDown);
+      return;
+    }
+
+    struct TrackedDevicePose_t poses[k_unMaxTrackedDeviceCount];
+    std::memset(poses, 0, sizeof(poses));
+    sys->GetDeviceToAbsoluteTrackingPose(ETrackingUniverseOrigin_TrackingUniverseStanding, 0.0f,
+                                         poses, k_unMaxTrackedDeviceCount);
+
+    const uint32_t named = ovl && ovl->GetPrimaryDashboardDevice
+                             ? ovl->GetPrimaryDashboardDevice()
+                             : k_unTrackedDeviceIndexInvalid;
+
+    int said = 0;
+    for (uint32_t device = 0; device < k_unMaxTrackedDeviceCount; ++device)
+    {
+      if (!poses[device].bPoseIsValid)
+        continue;
+
+      const ETrackedDeviceClass kind = sys->GetTrackedDeviceClass(device);
+      if (kind != ETrackedDeviceClass_TrackedDeviceClass_HMD &&
+          kind != ETrackedDeviceClass_TrackedDeviceClass_Controller)
+        continue;
+
+      const struct HmdMatrix34_t& held = poses[device].mDeviceToAbsoluteTracking;
+      float from[3];
+      float forward[3];
+      float placed[3] = {0.0f, 0.0f, 0.0f};
+      for (int axis = 0; axis < 3; ++axis)
+      {
+        from[axis] = held.m[axis][3];
+        forward[axis] = -held.m[axis][2];
+        const float gap = held.m[axis][3] - m_arcCrown[axis];
+        placed[0] += gap * m_arcRight[axis];
+        placed[1] += gap * m_arcOver[axis];
+        placed[2] += gap * m_arcOut[axis];
+      }
+
+      char where[128];
+      if (m_arcKnown)
+        std::snprintf(where, sizeof(where),
+                      "%.3f m right, %.3f m up and %.3f m out from the middle of the surface "
+                      "the laser lands on",
+                      placed[0], placed[1], placed[2]);
+      else
+        std::snprintf(where, sizeof(where), "somewhere about a surface not yet measured");
+
+      float hit[3];
+      float uv[2] = { -1.0f, -1.0f };
+      float away = 0.0f;
+      char lands[96];
+      if (castAt(from, forward, hit, uv, away))
+        std::snprintf(lands, sizeof(lands), "lands on the texture at %.4f, %.4f, %.3f m along",
+                      uv[0], uv[1], away);
+      else
+        std::snprintf(lands, sizeof(lands), "misses the surface");
+
+      const bool taken = m_aimBy != XrProtocol::Unaimed && device == m_aimDevice;
+      note("pmp-xr-host: with the pointer %.4f across and %.4f down the window, device %u, "
+           "%s%s, is %s and its forward ray %s",
+           m_markAcross, m_markDown, device,
+           kind == ETrackedDeviceClass_TrackedDeviceClass_HMD ? "the head" : "a controller",
+           device == named && taken ? " (named by the dashboard and taken as the laser's start)"
+             : device == named ? " (named by the dashboard)"
+             : taken ? " (taken as the laser's start)"
+             : "",
+           where, lands);
+      ++said;
+    }
+
+    if (said == 0)
+      note("pmp-xr-host: with the pointer %.4f across and %.4f down the window, no head or "
+           "controller has a pose (the dashboard names %s)",
+           m_markAcross, m_markDown,
+           named == k_unTrackedDeviceIndexInvalid ? "no device" : "a device");
+  }
+
+  void Presenter::curveNow(uint32_t& radius, uint32_t& sweep, uint32_t& tall, uint32_t& by,
+                           int32_t aim[3]) const
+  {
+    radius = 0;
+    sweep = 0;
+    tall = 0;
+    by = XrProtocol::Unaimed;
+    aim[0] = aim[1] = aim[2] = 0;
+
+    if (!m_stereo || !m_arcKnown || !(m_arcRadius > 0.0f) || !(pointerWide() > 1.0f))
+      return;
+
+    radius = static_cast<uint32_t>(m_arcRadius * 1000.0f + 0.5f);
+    sweep = static_cast<uint32_t>(m_arcSweep * 1000.0f + 0.5f);
+    tall = static_cast<uint32_t>(m_arcTall * 1000.0f + 0.5f);
+    by = m_aimBy;
+    if (by != XrProtocol::Unaimed)
+      for (int axis = 0; axis < 3; ++axis)
+        aim[axis] = static_cast<int32_t>(std::lround(m_aim[axis] * 1000.0f));
+  }
+
+  bool Presenter::curveMoved() const
+  {
+    uint32_t radius = 0;
+    uint32_t sweep = 0;
+    uint32_t tall = 0;
+    uint32_t by = 0;
+    int32_t aim[3];
+    curveNow(radius, sweep, tall, by, aim);
+
+    const uint32_t now[3] = {radius, sweep, tall};
+    if (by != m_curveTold[3])
+      return true;
+    for (int which = 0; which < 3; ++which)
+    {
+      const uint32_t gap =
+        now[which] > m_curveTold[which] ? now[which] - m_curveTold[which]
+                                        : m_curveTold[which] - now[which];
+      if (gap >= kCurveShift || (now[which] == 0) != (m_curveTold[which] == 0))
+        return true;
+    }
+    for (int axis = 0; axis < 3; ++axis)
+      if (std::abs(aim[axis] - m_aimTold[axis]) >= kAimShiftMm)
+        return true;
+    return false;
+  }
+
+  void Presenter::tellPointer()
+  {
+    if (!m_told || m_stage != Holding)
+      return;
+
+    if (pointerWide() != m_pointerWideTold)
+    {
+      send(XrProtocol::Stereo, nullptr);
+      return;
+    }
+
+    takeAim();
+    if (curveMoved())
+      send(XrProtocol::Pointer, nullptr);
   }
 
   VROverlayHandle_t Presenter::layerHandle(int which) const
@@ -1511,6 +1964,7 @@ namespace
     if (!measureBow(bow, wide, tall, false))
     {
       m_shapeFailed = true;
+      m_arcKnown = false;
       note("pmp-xr-host: the panel's shape cannot be measured");
       return;
     }
@@ -1545,6 +1999,7 @@ namespace
         m_coverAt = now;
         probeCover();
       }
+      sayArc(false);
       return;
     }
 
@@ -1555,6 +2010,7 @@ namespace
     m_coverAt = now;
 
     measureBow(bow, wide, tall, true);
+    sayArc(true);
 
     float flatWide = 0.0f;
     float flatTall = 0.0f;
@@ -1584,6 +2040,13 @@ namespace
     m_shapeBent = false;
     m_shapeBow = 0.0f;
     m_shapeFailed = false;
+    m_arcKnown = false;
+    m_arcSaidRadius = -1.0f;
+    m_arcSaidSweep = -1.0f;
+    m_arcSaidWide = -1.0f;
+    m_aimSaidBy = -1;
+    m_aimPointed = k_unTrackedDeviceIndexInvalid;
+    m_markAt = 0;
 
     if (m_texelWant > 1.0f)
       setTexelAspect(1.0f);
@@ -1723,9 +2186,31 @@ namespace
     message.texelAspectThousandths =
       static_cast<uint32_t>(m_panelTexelAspect * 1000.0f + 0.5f);
 
-    const float pointer = type == XrProtocol::Stereo ? pointerWide() : 1.0f;
+    const bool pointing = type == XrProtocol::Stereo || type == XrProtocol::Pointer;
+    const float pointer = pointing ? pointerWide() : 1.0f;
     message.pointerWideThousandths = static_cast<uint32_t>(pointer * 1000.0f + 0.5f);
-    if (type != XrProtocol::Stereo)
+
+    if (pointing)
+    {
+      takeAim();
+      curveNow(message.curveRadiusMillimetres, message.curveSweepThousandths,
+               message.curveTallMillimetres, message.aimedBy, message.aimMillimetres);
+      m_curveTold[0] = message.curveRadiusMillimetres;
+      m_curveTold[1] = message.curveSweepThousandths;
+      m_curveTold[2] = message.curveTallMillimetres;
+      m_curveTold[3] = message.aimedBy;
+      for (int axis = 0; axis < 3; ++axis)
+        m_aimTold[axis] = message.aimMillimetres[axis];
+    }
+    else
+    {
+      for (int which = 0; which < 4; ++which)
+        m_curveTold[which] = 0;
+      for (int axis = 0; axis < 3; ++axis)
+        m_aimTold[axis] = 0;
+    }
+
+    if (!pointing)
       m_pointerWideTold = 0.0f;
     else if (pointer != m_pointerWideTold)
     {
@@ -1809,6 +2294,17 @@ namespace
           }
           if (m_stage == Holding && m_told)
             send(XrProtocol::Stereo, nullptr);
+          break;
+
+        case XrProtocol::Mark:
+          m_markAcross = float(message.markAcrossMillionths) / 1000000.0f;
+          m_markDown = float(message.markDownMillionths) / 1000000.0f;
+          m_markAt = nowMs();
+          if (message.markSay != 0 && m_stage == Holding)
+          {
+            takeAim();
+            sayDevices();
+          }
           break;
 
         case XrProtocol::Stop:

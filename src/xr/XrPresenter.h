@@ -29,6 +29,9 @@ public:
   int panelMillimetres() const { return m_panelMillimetres; }
   float panelTexelAspect() const { return m_panelTexelAspect; }
   float panelPointerWide() const { return float(m_panelPointerWide.load()) / 1000.0f; }
+  bool bendPointer(double across, double down, double& onto, double& under) const;
+  QString pointerSource() const;
+  void markPointer(double across, double down, bool say);
 
   const QSize& videoSize() const { return m_videoSize; }
   uint32_t packing() const { return m_packing; }
@@ -60,6 +63,7 @@ private Q_SLOTS:
   void shutdown();
   void readHost();
   void pushWindow();
+  void pushMark();
 
 private:
   explicit XrPresenter(QObject* parent = nullptr);
@@ -82,6 +86,17 @@ private:
   std::atomic<int> m_windowWide{0};
   std::atomic<int> m_windowTall{0};
   std::atomic<int> m_panelPointerWide{1000};
+  std::atomic<int> m_curveRadius{0};
+  std::atomic<int> m_curveSweep{0};
+  std::atomic<int> m_curveTall{0};
+  std::atomic<int> m_aimedBy{0};
+  std::atomic<int> m_aimRight{0};
+  std::atomic<int> m_aimUp{0};
+  std::atomic<int> m_aimOut{0};
+  int m_curveSaid = -1;
+  std::atomic<int> m_markAcross{0};
+  std::atomic<int> m_markDown{0};
+  std::atomic<bool> m_markSay{false};
 
   int m_socket = -1;
   QSocketNotifier* m_notifier = nullptr;

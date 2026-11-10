@@ -6,7 +6,7 @@
 namespace XrProtocol
 {
   const uint32_t kMagic = 0x58504d50;
-  const uint32_t kVersion = 7;
+  const uint32_t kVersion = 8;
   const int kSocketFd = 3;
   const int kReasonLength = 96;
 
@@ -16,7 +16,9 @@ namespace XrProtocol
     Stop = 2,
     Stereo = 3,
     Flat = 4,
-    Failed = 5
+    Failed = 5,
+    Pointer = 6,
+    Mark = 7
   };
 
   enum Packing : uint32_t
@@ -24,6 +26,14 @@ namespace XrProtocol
     Mono = 0,
     SideBySide = 1,
     OverUnder = 2
+  };
+
+  enum Aim : uint32_t
+  {
+    Unaimed = 0,
+    DashboardDevice = 1,
+    AimedController = 2,
+    PointedController = 3
   };
 
   struct Message
@@ -46,6 +56,16 @@ namespace XrProtocol
     uint32_t panelMillimetres;
     uint32_t texelAspectThousandths;
     uint32_t pointerWideThousandths;
+
+    uint32_t curveRadiusMillimetres;
+    uint32_t curveSweepThousandths;
+    uint32_t curveTallMillimetres;
+    uint32_t aimedBy;
+    int32_t aimMillimetres[3];
+
+    uint32_t markAcrossMillionths;
+    uint32_t markDownMillionths;
+    uint32_t markSay;
 
     char reason[kReasonLength];
   };

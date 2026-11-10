@@ -52,6 +52,7 @@ namespace
   const int kCursorReportMax = 40;
   const int kCursorRestMs = 200;
   const int kCursorRestMax = 80;
+  const int kCursorMarkGapMs = 100;
   const int kCursorRestKeep = 4;
   const double kCursorRestSpread = 10.0;
   const double kCursorRestApart = 12.0;
@@ -1296,7 +1297,9 @@ void PlayerQuickItem::notePointerRest()
   QLOG_INFO() << "Stereoscopic: the pointer rests at x" << float(middle.x()) << "y"
               << float(middle.y()) << "spread" << float(highX - lowX) << "by"
               << float(highY - lowY) << "of" << (win ? win->width() : 0) << "by"
-              << (win ? win->height() : 0) << ", raw x" << float(m_cursorRaw.x());
+              << (win ? win->height() : 0) << ", raw x" << float(m_cursorRaw.x())
+              << qPrintable(pointerTrace());
+  markPointer(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1329,7 +1332,8 @@ void PlayerQuickItem::reportPointerPress()
 
   QLOG_INFO() << "Stereoscopic: the pointer was pressed at x" << float(m_cursorAt.x()) << "y"
               << float(m_cursorAt.y()) << "of" << wide << "by" << tall << ", raw x"
-              << float(m_cursorRaw.x());
+              << float(m_cursorRaw.x()) << qPrintable(pointerTrace());
+  markPointer(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1378,7 +1382,30 @@ void PlayerQuickItem::notePointerReach()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+QString PlayerQuickItem::pointerTrace() const
+{
+  if (!XrPresenter::exists() || !(XrPresenter::Get().panelPointerWide() > 1.0f))
+    return QString();
+
+  const QPointF even = spreadPointer(m_cursorRaw, false);
+  const QPointF bent = spreadPointer(m_cursorRaw, true);
+  return QStringLiteral("y %1 , spread evenly x %2 y %3 , following the laser x %4 y %5 from %6")
+    .arg(m_cursorRaw.y(), 0, 'f', 1)
+    .arg(even.x(), 0, 'f', 1)
+    .arg(even.y(), 0, 'f', 1)
+    .arg(bent.x(), 0, 'f', 1)
+    .arg(bent.y(), 0, 'f', 1)
+    .arg(XrPresenter::Get().pointerSource());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
+{
+  return spreadPointer(at, true);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QPointF PlayerQuickItem::spreadPointer(const QPointF& at, bool follow) const
 {
   const QQuickWindow* win = window();
   if (!win)
@@ -1406,7 +1433,16 @@ QPointF PlayerQuickItem::stretchPointer(const QPointF& at) const
   const float spread = known ? XrPresenter::Get().panelPointerWide() : 1.0f;
   if (spread > 1.0f)
   {
-    x = wide * 0.5f + (x - wide * 0.5f) * spread;
+    double onto = 0.0;
+    double under = 0.0;
+    if (follow && XrPresenter::Get().bendPointer(double(x) / double(wide),
+                                                 double(y) / double(tall), onto, under))
+    {
+      x = float(onto) * wide;
+      y = float(under) * tall;
+    }
+    else
+      x = wide * 0.5f + (x - wide * 0.5f) * spread;
     moved = true;
   }
 
@@ -1442,6 +1478,35 @@ void PlayerQuickItem::noteRawReach(const QPointF& at)
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerQuickItem::markPointer(bool say)
+{
+  if (!XrPresenter::exists() || !(XrPresenter::Get().panelPointerWide() > 1.0f))
+    return;
+  if (!say && m_cursorMarked.isValid() && m_cursorMarked.elapsed() < kCursorMarkGapMs)
+    return;
+
+  const QQuickWindow* win = window();
+  const double wide = win ? double(win->width()) : 0.0;
+  const double tall = win ? double(win->height()) : 0.0;
+  if (wide <= 0.0 || tall <= 0.0)
+    return;
+
+  double x = m_cursorRaw.x();
+  double y = m_cursorRaw.y();
+  const QSize panel = XrPresenter::Get().panelPointer();
+  if (m_cursorOffWindow && panel.width() > 0 && panel.height() > 0
+      && (panel.width() != int(wide) || panel.height() != int(tall)))
+  {
+    x = x * wide / double(panel.width());
+    y = y * tall / double(panel.height());
+  }
+
+  m_cursorMarked.start();
+  XrPresenter::Get().markPointer(x / wide, y / tall, say);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
 {
   switch (event->type())
@@ -1455,6 +1520,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       if (m_stereoLive && !m_cursorStretching)
       {
         noteRawReach(was->position());
+        markPointer(false);
         const QPointF put = stretchPointer(was->position());
         if (put != was->position())
         {
@@ -1486,6 +1552,7 @@ bool PlayerQuickItem::eventFilter(QObject* watched, QEvent* event)
       if (m_stereoLive && !m_cursorStretching)
       {
         noteRawReach(was->position());
+        markPointer(false);
         const QPointF put = stretchPointer(was->position());
         if (put != was->position())
         {
