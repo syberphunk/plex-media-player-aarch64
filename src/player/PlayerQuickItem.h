@@ -45,6 +45,8 @@ private:
   bool prepareKey();
   void drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height);
   bool prepareArrow();
+  void drawRuler(QOpenGLExtraFunctions* gl, int half);
+  void dumpRuler(QOpenGLExtraFunctions* gl);
   void drawCursor(QOpenGLExtraFunctions* gl, int half);
   static double meanLuma(QOpenGLExtraFunctions* gl, QOpenGLFramebufferObject* fbo);
   void reportShot(QOpenGLExtraFunctions* gl);
@@ -75,7 +77,11 @@ private:
   int m_dumpWaits;
   int m_dumpBudget;
   bool m_captures;
+  bool m_bars;
   QPointF m_cursorAt;
+  qint64 m_rulerFrom;
+  int m_rulerSaid;
+  int m_rulerShots;
   QOpenGLShaderProgram* m_arrowProgram;
   unsigned int m_arrowVao;
   bool m_arrowFailed;
@@ -157,6 +163,7 @@ private:
     bool m_cursorHitTop;
     bool m_cursorHitBase;
     bool m_captures;
+    bool m_measuringBars;
     PlayerRenderer* m_renderer;
 };
 

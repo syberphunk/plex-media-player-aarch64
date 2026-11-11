@@ -177,6 +177,11 @@
         "hidden": true
       },
       {
+        "value": "measuringBars",
+        "default": false,
+        "hidden": true
+      },
+      {
         "value": "logLevel",
         "default": "debug",
         "hidden": true,

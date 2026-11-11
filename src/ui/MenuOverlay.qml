@@ -47,6 +47,7 @@ FocusScope
   property bool keyListOpen: false
 
   property bool diagnostics: settings ? settings.value("main", "diagnostics") === true : false
+  property bool measuringBars: settings ? settings.value("main", "measuringBars") === true : false
 
   property bool steamOffer: false
   property bool steamOfferShown: false
@@ -1479,6 +1480,28 @@ FocusScope
               settings.setValue("main", "diagnostics", value)
               settings.setValue("main", "logLevel", value ? "trace" : "debug")
             }
+          }
+        }
+
+        Toggle
+        {
+          width: parent.width
+          label: qsTr("Show measuring bars on 3D video")
+          hint: menu.diagnostics
+                ? qsTr("Five coloured bars drawn over each eye's picture, upright "
+                       + "then flat, swapping every 90 seconds")
+                : qsTr("Needs extra logs and pictures turned on")
+          interactive: menu.diagnostics
+          opacity: menu.diagnostics ? 1 : 0.45
+          checked: menu.diagnostics && menu.measuringBars
+          onToggled: function(value)
+          {
+            if (!menu.diagnostics)
+              return;
+
+            menu.measuringBars = value
+            if (settings)
+              settings.setValue("main", "measuringBars", value)
           }
         }
 
