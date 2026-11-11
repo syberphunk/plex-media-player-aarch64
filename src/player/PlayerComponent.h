@@ -213,6 +213,7 @@ private:
   void updatePlaybackState();
   void handleMpvEvent(mpv_event *event);
   void reportSeekProgress(double sound);
+  void reportPlaybackPace();
   void resolveStereoFormat();
   void surveyCapability(bool stereoWanted);
   // Potentially switch the display refresh rate, and return true if the refresh rate
@@ -276,6 +277,9 @@ private:
   double m_seekFromVideoPts = 0.0;
   double m_seekRestartVideoPts = 0.0;
   bool m_seekWatching = false;
+  qint64 m_paceSaidAt = 0;
+  qint64 m_paceDropped = 0;
+  qint64 m_paceLate = 0;
 
   int m_loadfileIndexArg = -1;
 };

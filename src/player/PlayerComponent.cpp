@@ -620,6 +620,44 @@ void PlayerComponent::reportSeekProgress(double sound)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerComponent::reportPlaybackPace()
+{
+  if (!m_inPlayback)
+    return;
+
+  const qint64 now = QDateTime::currentMSecsSinceEpoch();
+  const qint64 span = now - m_paceSaidAt;
+  if (span < 30000)
+    return;
+
+  m_paceSaidAt = now;
+
+  const QVariant rate = mpv::qt::get_property(m_mpv, "container-fps");
+  const QVariant dropped = mpv::qt::get_property(m_mpv, "decoder-frame-drop-count");
+  const QVariant late = mpv::qt::get_property(m_mpv, "frame-drop-count");
+  if (mpv::qt::is_error(dropped) || mpv::qt::is_error(late))
+    return;
+
+  const qint64 droppedNow = dropped.toLongLong();
+  const qint64 lateNow = late.toLongLong();
+
+  QLOG_INFO() << "Playback:"
+              << qPrintable(mpv::qt::get_property(m_mpv, "video-format").toString())
+              << "decoded by"
+              << qPrintable(mpv::qt::get_property(m_mpv, "current-tracks/video/decoder").toString())
+              << "at"
+              << (mpv::qt::is_error(rate) ? QStringLiteral("unreported")
+                                          : QString::number(rate.toDouble(), 'f', 2))
+              << "frames a second in the file; in the last" << qRound(span / 1000.0)
+              << "seconds the decoder threw away" << droppedNow - m_paceDropped
+              << "frames and the display" << lateNow - m_paceLate
+              << "- totals" << droppedNow << "and" << lateNow;
+
+  m_paceDropped = droppedNow;
+  m_paceLate = lateNow;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void PlayerComponent::handleMpvEvent(mpv_event *event)
 {
   switch (event->event_id)
@@ -628,6 +666,9 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
     {
       m_inPlayback = true;
       m_seekWatching = false;
+      m_paceSaidAt = QDateTime::currentMSecsSinceEpoch();
+      m_paceDropped = 0;
+      m_paceLate = 0;
       XrPresenter::Get().resetProbe();
       break;
     }
@@ -710,6 +751,7 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
           m_lastPositionUpdate = pos;
         }
         reportSeekProgress(pos);
+        reportPlaybackPace();
       }
       else if (strcmp(prop->name, "vo-configured") == 0)
       {
