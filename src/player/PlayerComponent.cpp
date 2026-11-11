@@ -34,8 +34,6 @@
 
 #include <unistd.h>
 
-static const qint64 kDemuxerForwardFloor = (qint64)256 * 1024 * 1024;
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static void wakeup_cb(void *context)
 {
@@ -1639,14 +1637,7 @@ void PlayerComponent::updateVideoSettings()
 
   QVariant cache = SettingsComponent::Get().value(SETTINGS_SECTION_VIDEO, "cache");
   setVideoProperty(QStringLiteral("cache"), QStringLiteral("yes"));
-
-  const qint64 chosen = (qint64)cache.toInt() * 1024 * 1024;
-  const qint64 forward = qMax(chosen, kDemuxerForwardFloor);
-  if (forward != chosen)
-    QLOG_INFO() << "demuxer read ahead raised from" << chosen / (1024 * 1024) << "MB to"
-                << forward / (1024 * 1024) << "MB so a wide audio interleave cannot starve a seek";
-  setVideoProperty(QStringLiteral("demuxer-max-bytes"), forward);
-  setVideoProperty(QStringLiteral("demuxer-max-back-bytes"), forward / 2);
+  setVideoProperty(QStringLiteral("demuxer-max-bytes"), (qint64)cache.toInt() * 1024 * 1024);
 
   updateVideoAspectSettings();
 }
