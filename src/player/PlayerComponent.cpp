@@ -185,6 +185,13 @@ bool PlayerComponent::componentInitialize()
   connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_VIDEO), &SettingsSection::valuesUpdated,
           this, &PlayerComponent::updateVideoSettings);
 
+  connect(SettingsComponent::Get().getSection(SETTINGS_SECTION_MAIN), &SettingsSection::valuesUpdated,
+          this, [this](const QVariantMap& values)
+  {
+    if (values.contains("vp9HardwareDecoding"))
+      updateVideoSettings();
+  });
+
   connect(&XrComponent::Get(), &XrComponent::overrideChanged, this, [this]()
   {
     if (m_inPlayback)
@@ -1635,11 +1642,16 @@ void PlayerComponent::updateVideoSettings()
 
   setVideoProperty(QStringLiteral("hwdec"), hwdecMode);
 
+  const bool vp9Hardware =
+    SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "vp9HardwareDecoding").toBool();
+
   QStringList preference;
   if (hwdecMode != "no")
   {
     for (const QString& codec : SessionEnv::v4l2DecodeCodecs())
       preference << codec + "_v4l2m2m";
+    if (vp9Hardware && SessionEnv::v4l2DecodeBrokenCodecs().contains("vp9"))
+      preference << "vp9_v4l2m2m";
   }
 
   if (preference != m_videoDecoderPreference)
@@ -1654,7 +1666,9 @@ void PlayerComponent::updateVideoSettings()
                   << "- any other codec falls back to software";
       QLOG_INFO() << "V4L2 decoder emits at most" << SessionEnv::v4l2DecodeBitDepth()
                   << "bit; deeper streams will use software decoding";
-      const QStringList excluded = SessionEnv::v4l2DecodeExcludedCodecs();
+      QStringList excluded = SessionEnv::v4l2DecodeExcludedCodecs();
+      if (vp9Hardware)
+        excluded.removeAll("vp9");
       if (!excluded.isEmpty())
         QLOG_INFO() << "not using the V4L2 decoder for" << qPrintable(excluded.join(","))
                     << "- it delivers broken timestamps; these use software decoding";

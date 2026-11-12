@@ -21,6 +21,7 @@
 #define SETTING_MENU_HIGH_CONTRAST "menuHighContrast"
 #define SETTING_DOWNLOAD_DIR "downloadDir"
 #define SETTING_DOWNLOAD_ASK "downloadAsk"
+#define SETTING_VP9_HARDWARE "vp9HardwareDecoding"
 
 #define MAP_NAME "Plex Media Player Menu"
 #define MAP_IDMATCHER "^Keyboard"
@@ -51,6 +52,7 @@ namespace
       { "keys", SETTING_MENU_BUTTON, QString("KEY_BUTTON_7") },
       { "display", SETTING_MENU_TEXT_SCALE, QString("normal") },
       { "display", SETTING_MENU_HIGH_CONTRAST, false },
+      { "playback", SETTING_VP9_HARDWARE, false },
     };
   }
 
@@ -138,6 +140,9 @@ void MenuComponent::onSettingsChanged(const QString& section, const QVariantMap&
 
   if (values.contains(SETTING_DOWNLOAD_DIR) || values.contains(SETTING_DOWNLOAD_ASK))
     emit downloadChanged();
+
+  if (values.contains(SETTING_VP9_HARDWARE))
+    emit playbackChanged();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -237,6 +242,12 @@ QString MenuComponent::logDir() const
 bool MenuComponent::downloadAsk() const
 {
   return SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_DOWNLOAD_ASK).toBool();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+bool MenuComponent::vp9HardwareDecoding() const
+{
+  return SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, SETTING_VP9_HARDWARE).toBool();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

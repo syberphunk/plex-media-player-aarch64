@@ -1344,6 +1344,26 @@ FocusScope
         Heading
         {
           width: parent.width
+          text: qsTr("Playback")
+        }
+
+        Toggle
+        {
+          width: parent.width
+          label: qsTr("Decode VP9 video in hardware")
+          hint: qsTr("Off decodes VP9 on the CPU. The headset's VP9 decoder is "
+                     + "known to play at a few frames a second")
+          checked: cfg ? cfg.vp9HardwareDecoding : false
+          onToggled: function(value)
+          {
+            if (settings)
+              settings.setValue("main", "vp9HardwareDecoding", value)
+          }
+        }
+
+        Heading
+        {
+          width: parent.width
           visible: menu.xr !== null && menu.xr.supported
           text: qsTr("Stereoscopic 3D")
         }

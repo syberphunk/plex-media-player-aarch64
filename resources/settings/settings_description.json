@@ -182,6 +182,11 @@
         "hidden": true
       },
       {
+        "value": "vp9HardwareDecoding",
+        "default": false,
+        "hidden": true
+      },
+      {
         "value": "logLevel",
         "default": "debug",
         "hidden": true,

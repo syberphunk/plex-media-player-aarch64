@@ -5,6 +5,7 @@
 
 #include "QsLog.h"
 #include "display/DisplayComponent.h"
+#include "settings/SettingsComponent.h"
 #include "shared/SessionEnv.h"
 #include "xr/XrPresenter.h"
 
@@ -145,7 +146,10 @@ void CapabilityComponent::survey(const QSize& window, const QString& codec,
     }
   }
 
-  const QStringList codecs = SessionEnv::v4l2DecodeCodecs();
+  QStringList codecs = SessionEnv::v4l2DecodeCodecs();
+  if (SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "vp9HardwareDecoding").toBool() &&
+      SessionEnv::v4l2DecodeBrokenCodecs().contains("vp9"))
+    codecs << "vp9";
   const int depth = SessionEnv::v4l2DecodeBitDepth();
 
   if (codecs.isEmpty())

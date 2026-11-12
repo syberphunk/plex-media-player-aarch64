@@ -26,6 +26,7 @@ static QMap<QString, QString>* g_hostOsRelease = nullptr;
 static QString g_graphicsEnvReport;
 static QString g_v4l2DecodeReport;
 static QStringList g_v4l2DecodeExcluded;
+static QStringList g_v4l2DecodeBroken;
 static int g_v4l2DecodeBitDepth = -1;
 
 bool SessionEnv::insideGamescope()
@@ -314,7 +315,10 @@ QStringList SessionEnv::v4l2DecodeCodecs()
       for (const char* broken : k_v4l2BrokenCodecs)
       {
         if (codec == QLatin1String(broken))
+        {
           g_v4l2DecodeExcluded << codec;
+          g_v4l2DecodeBroken << codec;
+        }
       }
     }
   }
@@ -351,6 +355,12 @@ QStringList SessionEnv::v4l2DecodeExcludedCodecs()
 {
   v4l2DecodeCodecs();
   return g_v4l2DecodeExcluded;
+}
+
+QStringList SessionEnv::v4l2DecodeBrokenCodecs()
+{
+  v4l2DecodeCodecs();
+  return g_v4l2DecodeBroken;
 }
 
 static bool haveVulkanIcd(const QString& nameFilter)

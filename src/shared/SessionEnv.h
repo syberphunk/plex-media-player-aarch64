@@ -35,6 +35,8 @@ namespace SessionEnv
 
   QStringList v4l2DecodeExcludedCodecs();
 
+  QStringList v4l2DecodeBrokenCodecs();
+
   // True when Steam started this process, which is what gives the device its
   // per-title power profile. A launch from the SteamOS Launch Programs menu
   // sets none of these.
