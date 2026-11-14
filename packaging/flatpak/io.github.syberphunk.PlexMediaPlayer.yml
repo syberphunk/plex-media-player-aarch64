@@ -110,6 +110,8 @@ modules:
         sha256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
       - type: patch
         path: patches/ffmpeg-v4l2m2m-flush.patch
+      - type: patch
+        path: patches/ffmpeg-v4l2m2m-vp9-superframe-split.patch
 
   - name: libmpv
     buildsystem: meson
