@@ -822,24 +822,36 @@ void PlayerComponent::handleMpvEvent(mpv_event *event)
         len -= 1;
       QString logline = QString::fromUtf8(msg->prefix) + ": " + QString::fromUtf8(msg->text, (int)len);
 
-      if (logline == m_lastLogLine)
+      const qint64 now = QDateTime::currentMSecsSinceEpoch();
+      auto repeat = m_logRepeats.find(logline);
+      if (repeat != m_logRepeats.end() && now - repeat->seen < 5000)
       {
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        ++m_lastLogRepeats;
-        if (now - m_lastLogSaid < 5000)
+        ++repeat->count;
+        repeat->seen = now;
+        if (now - repeat->said < 5000)
           break;
-        m_lastLogSaid = now;
-        logline += QStringLiteral(" (repeated %1 times)").arg(m_lastLogRepeats);
+        repeat->said = now;
+        logline += QStringLiteral(" (repeated %1 times)").arg(repeat->count);
       }
       else
       {
-        if (m_lastLogRepeats > 1)
-          QLOG_INFO() << qPrintable(m_lastLogLine)
-                      << qPrintable(QStringLiteral("(repeated %1 times in all)")
-                                      .arg(m_lastLogRepeats));
-        m_lastLogLine = logline;
-        m_lastLogRepeats = 1;
-        m_lastLogSaid = QDateTime::currentMSecsSinceEpoch();
+        if (m_logRepeats.size() >= 64)
+        {
+          for (auto it = m_logRepeats.begin(); it != m_logRepeats.end();)
+          {
+            if (now - it->seen < 5000)
+            {
+              ++it;
+              continue;
+            }
+            if (it->count > 1)
+              QLOG_INFO() << qPrintable(it.key())
+                          << qPrintable(QStringLiteral("(repeated %1 times in all)").arg(it->count));
+            it = m_logRepeats.erase(it);
+          }
+        }
+        if (m_logRepeats.size() < 256)
+          m_logRepeats.insert(logline, {1, now, now});
       }
 
       if (msg->log_level >= MPV_LOG_LEVEL_V)

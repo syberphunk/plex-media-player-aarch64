@@ -1,0 +1,246 @@
+--- a/libavcodec/v4l2_buffers.c
++++ b/libavcodec/v4l2_buffers.c
+@@ -511,6 +511,22 @@ int ff_v4l2_buffer_avpkt_to_buf(const AVPacket *pkt, V4L2Buffer *out)
+ 
+     v4l2_set_pts(out, pkt->pts);
+ 
++    if (buf_to_m2mctx(out)->vp9_mark) {
++        V4L2m2mContext *s = buf_to_m2mctx(out);
++        int64_t ts = (int64_t)out->buf.timestamp.tv_sec * USEC_PER_SEC +
++                     out->buf.timestamp.tv_usec;
++
++        if (s->vp9_mark == 2) {
++            ts = s->vp9_last_ts + 1;
++            s->vp9_hidden_ts[s->vp9_hidden_head++ % FF_ARRAY_ELEMS(s->vp9_hidden_ts)] = ts;
++            if (!s->vp9_hidden_sent++)
++                av_log(logger(out), AV_LOG_INFO, "vp9: the first hidden frame goes to the decoder at %"PRId64" us\n", ts);
++            out->buf.timestamp.tv_usec = ts % USEC_PER_SEC;
++            out->buf.timestamp.tv_sec = ts / USEC_PER_SEC;
++        }
++        s->vp9_last_ts = ts;
++    }
++
+     if (pkt->flags & AV_PKT_FLAG_KEY)
+         out->flags = V4L2_BUF_FLAG_KEYFRAME;
+ 
+--- a/libavcodec/v4l2_context.c
++++ b/libavcodec/v4l2_context.c
+@@ -267,6 +267,52 @@ static int v4l2_stop_encode(V4L2Context *ctx)
+     return 0;
+ }
+ 
++static void v4l2_warn_pollerr(V4L2Context *ctx)
++{
++    unsigned n = ++ctx_to_m2mctx(ctx)->warn_pollerr;
++
++    if (n == 1 || !(n % 1000))
++        av_log(logger(ctx), AV_LOG_WARNING, "%s POLLERR (%u times)\n", ctx->name, n);
++}
++
++static int v4l2_vp9_drop(V4L2Context *ctx, V4L2Buffer *avbuf)
++{
++    V4L2m2mContext *s = ctx_to_m2mctx(ctx);
++    int64_t ts;
++    int i;
++
++    if (!s->vp9_track || V4L2_TYPE_IS_OUTPUT(ctx->type))
++        return 0;
++
++    ts = (int64_t)avbuf->buf.timestamp.tv_sec * 1000000 + avbuf->buf.timestamp.tv_usec;
++
++    for (i = 0; i < FF_ARRAY_ELEMS(s->vp9_hidden_ts); i++) {
++        if (s->vp9_hidden_ts[i] && s->vp9_hidden_ts[i] == ts)
++            break;
++    }
++
++    if (i < FF_ARRAY_ELEMS(s->vp9_hidden_ts)) {
++        s->vp9_hidden_ts[i] = 0;
++        if (ts < s->vp9_last_out)
++            s->vp9_late++;
++        if (!s->vp9_hidden_dropped++)
++            av_log(logger(ctx), AV_LOG_INFO, "vp9: the decoder returned a picture for a hidden frame at %"PRId64" us; dropping it\n", ts);
++        else if (!(s->vp9_hidden_dropped % 300))
++            ff_v4l2_m2m_vp9_report(s, "so far");
++    } else if (s->vp9_last_out && ts == s->vp9_last_out) {
++        if (!s->vp9_repeat_dropped++)
++            av_log(logger(ctx), AV_LOG_INFO, "vp9: the decoder returned a second picture at %"PRId64" us; dropping it\n", ts);
++    } else {
++        s->vp9_last_out = ts;
++        return 0;
++    }
++
++    if (ctx->streamon && !ff_v4l2_buffer_enqueue(avbuf))
++        return 1;
++    avbuf->status = V4L2BUF_AVAILABLE;
++    return 1;
++}
++
+ static V4L2Buffer* v4l2_dequeue_v4l2buf(V4L2Context *ctx, int timeout)
+ {
+     struct v4l2_plane planes[VIDEO_MAX_PLANES];
+@@ -283,11 +329,14 @@ static V4L2Buffer* v4l2_dequeue_v4l2buf(V4L2Context *ctx, int timeout)
+             if (ctx->buffers[i].status == V4L2BUF_IN_DRIVER)
+                 break;
+         }
+-        if (i == ctx->num_buffers)
+-            av_log(logger(ctx), AV_LOG_WARNING, "All capture buffers returned to "
+-                                                "userspace. Increase num_capture_buffers "
+-                                                "to prevent device deadlock or dropped "
+-                                                "packets/frames.\n");
++        if (i == ctx->num_buffers) {
++            unsigned n = ++ctx_to_m2mctx(ctx)->warn_busy;
++            if (n == 1 || !(n % 1000))
++                av_log(logger(ctx), AV_LOG_WARNING, "All capture buffers returned to "
++                                                    "userspace. Increase num_capture_buffers "
++                                                    "to prevent device deadlock or dropped "
++                                                    "packets/frames. (%u times)\n", n);
++        }
+     }
+ 
+     /* if we are draining and there are no more capture buffers queued in the driver we are done */
+@@ -335,11 +384,11 @@ start:
+ 
+             for (i = 0; i < ctx->num_buffers; i++) {
+                 if (ctx->buffers[i].status != V4L2BUF_AVAILABLE)
+-                    av_log(logger(ctx), AV_LOG_WARNING, "%s POLLERR\n", ctx->name);
++                    v4l2_warn_pollerr(ctx);
+             }
+         }
+         else
+-            av_log(logger(ctx), AV_LOG_WARNING, "%s POLLERR\n", ctx->name);
++            v4l2_warn_pollerr(ctx);
+ 
+         return NULL;
+     }
+@@ -633,12 +682,17 @@ int ff_v4l2_context_dequeue_frame(V4L2Context* ctx, AVFrame* frame, int timeout)
+      *  1. decoded frame available
+      *  2. an input buffer is ready to be dequeued
+      */
+-    avbuf = v4l2_dequeue_v4l2buf(ctx, timeout);
+-    if (!avbuf) {
+-        if (ctx->done)
+-            return AVERROR_EOF;
++    for (;;) {
++        avbuf = v4l2_dequeue_v4l2buf(ctx, timeout);
++        if (!avbuf) {
++            if (ctx->done)
++                return AVERROR_EOF;
+ 
+-        return AVERROR(EAGAIN);
++            return AVERROR(EAGAIN);
++        }
++
++        if (!v4l2_vp9_drop(ctx, avbuf))
++            break;
+     }
+ 
+     return ff_v4l2_buffer_buf_to_avframe(frame, avbuf);
+--- a/libavcodec/v4l2_m2m.h
++++ b/libavcodec/v4l2_m2m.h
+@@ -66,8 +66,24 @@ typedef struct V4L2m2mContext {
+ 
+     /* reference back to V4L2m2mPriv */
+     void *priv;
++
++    int vp9_track;
++    int vp9_mark;
++    int64_t vp9_last_ts;
++    int64_t vp9_last_out;
++    int64_t vp9_hidden_ts[64];
++    unsigned vp9_hidden_head;
++    unsigned vp9_hidden_sent;
++    unsigned vp9_hidden_dropped;
++    unsigned vp9_repeat_dropped;
++    unsigned vp9_late;
++    unsigned warn_busy;
++    unsigned warn_pollerr;
++    unsigned warn_reject;
+ } V4L2m2mContext;
+ 
++void ff_v4l2_m2m_vp9_report(V4L2m2mContext *s, const char *when);
++
+ typedef struct V4L2m2mPriv {
+     AVClass *class;
+ 
+--- a/libavcodec/v4l2_m2m_dec.c
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -147,6 +147,27 @@ static void v4l2_requeue_capture(V4L2m2mContext *s)
+     }
+ }
+ 
++static int v4l2_vp9_hidden(const uint8_t *data, int size)
++{
++    int pos = 4;
++
++    if (size < 1 || (data[0] >> 6) != 2)
++        return 0;
++    if (((data[0] >> 4) & 3) == 3)
++        pos++;
++    if ((data[0] >> (7 - pos)) & 1)
++        return 0;
++    pos += 2;
++    return !((data[0] >> (7 - pos)) & 1);
++}
++
++void ff_v4l2_m2m_vp9_report(V4L2m2mContext *s, const char *when)
++{
++    av_log(s->avctx, AV_LOG_INFO, "vp9 %s: %u hidden frames sent, %u hidden pictures dropped, "
++           "%u repeated pictures dropped, %u hidden pictures arrived after a later one\n",
++           when, s->vp9_hidden_sent, s->vp9_hidden_dropped, s->vp9_repeat_dropped, s->vp9_late);
++}
++
+ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+ {
+     V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
+@@ -169,9 +190,17 @@ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
+     if (s->draining)
+         goto dequeue;
+ 
++    s->vp9_mark = s->vp9_track && s->buf_pkt.size ?
++                  (v4l2_vp9_hidden(s->buf_pkt.data, s->buf_pkt.size) ? 2 : 1) : 0;
+     ret = ff_v4l2_context_enqueue_packet(output, &s->buf_pkt);
+-    if (ret < 0 && ret != AVERROR(EAGAIN))
++    s->vp9_mark = 0;
++    if (ret < 0 && ret != AVERROR(EAGAIN)) {
++        unsigned n = ++s->warn_reject;
++        if (n == 1 || !(n % 1000))
++            av_log(avctx, AV_LOG_WARNING, "the decoder refused a packet: %s (%u times)\n",
++                   av_err2str(ret), n);
+         goto fail;
++    }
+ 
+     /* if EAGAIN don't unref packet and try to enqueue in the next iteration */
+     if (ret != AVERROR(EAGAIN))
+@@ -222,6 +251,7 @@ static av_cold int v4l2_decode_init(AVCodecContext *avctx)
+     capture->av_pix_fmt = avctx->pix_fmt;
+ 
+     s->avctx = avctx;
++    s->vp9_track = avctx->codec_id == AV_CODEC_ID_VP9;
+     ret = ff_v4l2_m2m_codec_init(priv);
+     if (ret) {
+         av_log(avctx, AV_LOG_ERROR, "can't configure decoder\n");
+@@ -233,6 +263,10 @@ static av_cold int v4l2_decode_init(AVCodecContext *avctx)
+ 
+ static av_cold int v4l2_decode_close(AVCodecContext *avctx)
+ {
++    V4L2m2mContext *s = ((V4L2m2mPriv*)avctx->priv_data)->context;
++
++    if (s && s->vp9_track)
++        ff_v4l2_m2m_vp9_report(s, "at close");
+     return ff_v4l2_m2m_codec_end(avctx->priv_data);
+ }
+ 
+@@ -245,6 +279,13 @@ static void v4l2_decode_flush(AVCodecContext *avctx)
+ 
+     av_packet_unref(&s->buf_pkt);
+ 
++    if (s->vp9_track) {
++        ff_v4l2_m2m_vp9_report(s, "at seek");
++        memset(s->vp9_hidden_ts, 0, sizeof(s->vp9_hidden_ts));
++        s->vp9_last_ts = 0;
++        s->vp9_last_out = 0;
++    }
++
+     if (output->streamon) {
+         ret = ff_v4l2_context_set_status(output, VIDIOC_STREAMOFF);
+         if (ret)

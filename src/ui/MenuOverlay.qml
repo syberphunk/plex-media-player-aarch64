@@ -1351,8 +1351,7 @@ FocusScope
         {
           width: parent.width
           label: qsTr("Decode VP9 video in hardware")
-          hint: qsTr("Off decodes VP9 on the CPU. The headset's VP9 decoder is "
-                     + "known to play at a few frames a second")
+          hint: qsTr("Off decodes VP9 on the CPU")
           checked: cfg ? cfg.vp9HardwareDecoding : false
           onToggled: function(value)
           {
