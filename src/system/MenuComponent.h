@@ -33,7 +33,6 @@ public:
   Q_PROPERTY(bool downloadWritable READ downloadWritable NOTIFY downloadChanged)
   Q_PROPERTY(bool downloadAsk READ downloadAsk NOTIFY downloadChanged)
   Q_PROPERTY(QString downloadStatus READ downloadStatus NOTIFY downloadStatusChanged)
-  Q_PROPERTY(bool vp9HardwareDecoding READ vp9HardwareDecoding NOTIFY playbackChanged)
   Q_PROPERTY(QString logDir READ logDir CONSTANT)
 
   bool visible() const { return m_visible; }
@@ -49,7 +48,6 @@ public:
   bool downloadWritable() const;
   bool downloadAsk() const;
   QString downloadStatus() const { return m_downloadStatus; }
-  bool vp9HardwareDecoding() const;
   QString logDir() const;
 
   Q_INVOKABLE void show();
@@ -66,7 +64,6 @@ public:
   Q_SIGNAL void configChanged();
   Q_SIGNAL void downloadChanged();
   Q_SIGNAL void downloadStatusChanged();
-  Q_SIGNAL void playbackChanged();
 
 private:
   explicit MenuComponent(QObject* parent = nullptr);

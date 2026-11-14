@@ -26,7 +26,6 @@ static QMap<QString, QString>* g_hostOsRelease = nullptr;
 static QString g_graphicsEnvReport;
 static QString g_v4l2DecodeReport;
 static QStringList g_v4l2DecodeExcluded;
-static QStringList g_v4l2DecodeBroken;
 static int g_v4l2DecodeBitDepth = -1;
 
 bool SessionEnv::insideGamescope()
@@ -114,8 +113,6 @@ static const struct { unsigned int fourcc; const char* codec; } k_v4l2CodedForma
   {V4L2_PIX_FMT_VC1_ANNEX_G, "vc1"},
 #endif
 };
-
-static const char* const k_v4l2BrokenCodecs[] = {"vp9"};
 
 #define PMP_FOURCC(a, b, c, d) \
   ((unsigned int)(a) | ((unsigned int)(b) << 8) | ((unsigned int)(c) << 16) | ((unsigned int)(d) << 24))
@@ -308,20 +305,6 @@ QStringList SessionEnv::v4l2DecodeCodecs()
         g_v4l2DecodeExcluded << codec;
     }
   }
-  else
-  {
-    for (const QString& codec : codecs)
-    {
-      for (const char* broken : k_v4l2BrokenCodecs)
-      {
-        if (codec == QLatin1String(broken))
-        {
-          g_v4l2DecodeExcluded << codec;
-          g_v4l2DecodeBroken << codec;
-        }
-      }
-    }
-  }
 
   for (const QString& codec : g_v4l2DecodeExcluded)
     codecs.removeAll(codec);
@@ -355,12 +338,6 @@ QStringList SessionEnv::v4l2DecodeExcludedCodecs()
 {
   v4l2DecodeCodecs();
   return g_v4l2DecodeExcluded;
-}
-
-QStringList SessionEnv::v4l2DecodeBrokenCodecs()
-{
-  v4l2DecodeCodecs();
-  return g_v4l2DecodeBroken;
 }
 
 static bool haveVulkanIcd(const QString& nameFilter)
