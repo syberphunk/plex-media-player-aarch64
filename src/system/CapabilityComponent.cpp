@@ -170,13 +170,6 @@ void CapabilityComponent::survey(const QSize& window, const QString& codec,
           QStringLiteral("This file is %1, which the hardware decoder does not list (%2).")
             .arg(codec, codecs.join(QStringLiteral(", "))));
     }
-    else if (family.contains(QLatin1String("vp9")) &&
-             SessionEnv::drmDriver().startsWith(QLatin1String("msm")))
-    {
-      add(found, "vp9-slow", Weight::Warning,
-          QStringLiteral("VP9 hardware decoding is advertised on this device but does not keep "
-                         "up, so this file may stutter."));
-    }
   }
 
   if (depth > 0 && videoBitDepth > depth)
