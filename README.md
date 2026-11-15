@@ -15,7 +15,7 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | libplacebo | v7.360.1 | https://code.videolan.org/videolan/libplacebo |
 | mpv (libmpv) | v0.41.0 | https://github.com/mpv-player/mpv |
 | OpenXR-SDK (loader) | 1.1.65 | https://github.com/KhronosGroup/OpenXR-SDK |
-| zlib (minizip) | 1.3.1 | https://zlib.net |
+| zlib (minizip) | 1.4 | https://zlib.net |
 | org.kde.Platform / org.kde.Sdk | 6.11 | https://invent.kde.org/packaging/flatpak-kde-runtime |
 | io.qt.qtwebengine.BaseApp | 6.11 | https://github.com/flathub/io.qt.qtwebengine.BaseApp |
 
@@ -100,9 +100,6 @@ and `sha256`, replaces the copy in `vendor-deps/`, and rewrites the version
 table above. libplacebo is vendored by `scripts/vendor-libplacebo.sh`, which
 clones the tag with the submodules its GLSL preprocessor needs and writes a
 reproducible archive.
-
-zlib is held at 1.3.1. CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
-`--update` reports the newer release and leaves the pin alone.
 
 `.github/workflows/check-sources.yml` runs the check weekly;
 `.github/workflows/release.yml` builds, verifies and publishes on a

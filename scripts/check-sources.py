@@ -94,7 +94,6 @@ UPSTREAM = {
         "fallback_url": "https://zlib.net/zlib-%(v)s.tar.gz",
         "vendor": "zlib-%(v)s.tar.gz",
         "readme": ("zlib (minizip)", ""),
-        "hold": ("1.3.1", "CVE-2026-85091 affects 1.3.1.2 through 1.3.2"),
     },
     "openxr-loader": {
         "probe": ("github", "KhronosGroup/OpenXR-SDK"),

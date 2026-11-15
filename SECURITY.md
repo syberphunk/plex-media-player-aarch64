@@ -38,10 +38,9 @@ this fork's own code, and then rebuilding. Every pinned version is listed in
 [README.md](README.md), and a release asset is built only from a tagged commit
 of this repository.
 
-Where a pin is deliberately held back the reason is recorded with it: zlib stays
-at 1.3.1 because CVE-2026-85091 affects 1.3.1.2 through 1.3.2, so
-`scripts/check-sources.py --update` reports the newer release and leaves the pin
-alone.
+Where a pin is deliberately held back the reason is recorded with it in
+`scripts/check-sources.py`, and `--update` reports the newer release and leaves
+the pin alone.
 
 ## What GitHub checks
 
