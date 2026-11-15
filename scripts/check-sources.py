@@ -87,13 +87,21 @@ UPSTREAM = {
         "vendor": "mpv-%(v)s.tar.gz",
         "readme": ("mpv (libmpv)", "v"),
     },
+    "zlib": {
+        "probe": ("github", "madler/zlib"),
+        "strip_v": True,
+        "url": "https://zlib.net/fossils/zlib-%(v)s.tar.gz",
+        "fallback_url": "https://zlib.net/zlib-%(v)s.tar.gz",
+        "vendor": "zlib-%(v)s.tar.gz",
+        "readme": ("zlib (libz, minizip)", ""),
+    },
     "minizip": {
         "probe": ("github", "madler/zlib"),
         "strip_v": True,
         "url": "https://zlib.net/fossils/zlib-%(v)s.tar.gz",
         "fallback_url": "https://zlib.net/zlib-%(v)s.tar.gz",
         "vendor": "zlib-%(v)s.tar.gz",
-        "readme": ("zlib (minizip)", ""),
+        "readme": ("zlib (libz, minizip)", ""),
     },
     "openxr-loader": {
         "probe": ("github", "KhronosGroup/OpenXR-SDK"),

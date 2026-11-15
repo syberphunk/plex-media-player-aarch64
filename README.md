@@ -15,7 +15,7 @@ aarch64 build of Plex Media Player, packaged as a Flatpak.
 | libplacebo | v7.360.1 | https://code.videolan.org/videolan/libplacebo |
 | mpv (libmpv) | v0.41.0 | https://github.com/mpv-player/mpv |
 | OpenXR-SDK (loader) | 1.1.65 | https://github.com/KhronosGroup/OpenXR-SDK |
-| zlib (minizip) | 1.4 | https://zlib.net |
+| zlib (libz, minizip) | 1.4 | https://zlib.net |
 | org.kde.Platform / org.kde.Sdk | 6.11 | https://invent.kde.org/packaging/flatpak-kde-runtime |
 | io.qt.qtwebengine.BaseApp | 6.11 | https://github.com/flathub/io.qt.qtwebengine.BaseApp |
 
