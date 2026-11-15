@@ -2,7 +2,7 @@
 """usage: check-sources.py [options]
 
   --update             fetch newer upstream releases, rewrite the pins and the
-                       README version table
+                       version table in docs/building.md
   --deep               hash every remote source instead of only checking it exists
   --fail-on-outdated   exit non-zero when a newer upstream release exists
   --offline            skip every network check
@@ -128,7 +128,7 @@ UPSTREAM = {
     },
 }
 
-README = os.path.join(REPO, "README.md")
+README = os.path.join(REPO, "docs", "building.md")
 
 VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+)+")
 TAG_RE = re.compile(r"v?[0-9]+(?:\.[0-9]+)+(?:-[0-9A-Za-z.]+)?")
@@ -609,7 +609,7 @@ def readme_sync(wanted, rewrite):
         row = cells[1]
         if row not in wanted or cells[2] == wanted[row]:
             continue
-        stale.append("%s: README says %s, manifest pins %s"
+        stale.append("%s: docs/building.md says %s, manifest pins %s"
                      % (row, cells[2] or "nothing", wanted[row]))
         cells[2] = wanted[row]
         lines[number] = "| " + " | ".join(cells[1:4]) + " |"
@@ -776,14 +776,14 @@ def main(argv):
     failures.extend(action_failures)
 
     print()
-    print("==> README versions")
+    print("==> docs/building.md versions")
     stale = readme_sync(readme_rows(sources, runtime), updating)
     for item in stale:
-        report("README.md", updating, item)
+        report("docs/building.md", updating, item)
     if not stale:
-        report("README.md", True, "matches the manifest")
+        report("docs/building.md", True, "matches the manifest")
     elif updating:
-        print("    rewrote README.md")
+        print("    rewrote docs/building.md")
     else:
         failures.extend([False] * len(stale))
 
