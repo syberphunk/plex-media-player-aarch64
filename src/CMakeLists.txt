@@ -109,6 +109,12 @@ foreach(loc ${rsrc_locations})
     install(FILES ${loc}/qtwebengine_devtools_resources.pak DESTINATION resources)
   endif()
 endforeach()
+install(FILES
+  ${CMAKE_SOURCE_DIR}/packaging/steam/portrait.png
+  ${CMAKE_SOURCE_DIR}/packaging/steam/capsule.png
+  ${CMAKE_SOURCE_DIR}/packaging/steam/hero.png
+  ${CMAKE_SOURCE_DIR}/packaging/steam/logo.png
+  DESTINATION ${INSTALL_RESOURCE_DIR}/steam)
 if(WEB_TV_DIR)
   install(DIRECTORY ${WEB_TV_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/tv)
   install(DIRECTORY ${WEB_DESKTOP_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/desktop)

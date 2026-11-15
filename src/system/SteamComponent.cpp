@@ -187,9 +187,10 @@ QList<SteamComponent::Entry> SteamComponent::parseShortcuts(const QByteArray& da
     }
     if (type != 0x00)
       return entries;
-    pos++;
 
     Entry entry;
+    entry.start = pos;
+    pos++;
     bool indexOk = false;
     entry.index = readCString(data, pos).toInt(&indexOk);
     if (!indexOk)
@@ -203,7 +204,10 @@ QList<SteamComponent::Entry> SteamComponent::parseShortcuts(const QByteArray& da
       {
         pos++;
         if (depth == 0)
+        {
+          entry.end = pos;
           break;
+        }
         depth--;
         continue;
       }
@@ -243,10 +247,18 @@ QList<SteamComponent::Entry> SteamComponent::parseShortcuts(const QByteArray& da
       }
     }
 
+    if (entry.end < 0)
+      return entries;
     entries.append(entry);
   }
 
   return entries;
+}
+
+bool SteamComponent::isOurs(const Entry& entry)
+{
+  const QString haystack = entry.exe + " " + entry.launchOptions;
+  return haystack.contains(ourFlatpakId()) || haystack.contains(QLatin1String("plexmediaplayer"));
 }
 
 quint32 SteamComponent::shortcutAppId(const QString& exe, const QString& appName)
@@ -302,11 +314,9 @@ void SteamComponent::refresh()
     }
 
     m_entryCount = entries.size();
-    const QString flatpakId = ourFlatpakId();
     for (const Entry& entry : entries)
     {
-      const QString haystack = entry.exe + " " + entry.launchOptions;
-      if (!haystack.contains(flatpakId) && !haystack.contains(QLatin1String("plexmediaplayer")))
+      if (!isOurs(entry))
         continue;
       m_shortcutIndex = entry.index;
       m_shortcutName = entry.appName;
@@ -437,12 +447,29 @@ bool SteamComponent::createShortcut()
     }
 
     int next = 0;
+    const Entry* ours = nullptr;
     for (const Entry& existing : entries)
+    {
       next = qMax(next, existing.index + 1);
-    entry.index = next;
-    data = data.left(data.size() - 2) + serializeEntry(next, entry);
-    data.append(static_cast<char>(0x08));
-    data.append(static_cast<char>(0x08));
+      if (!ours && isOurs(existing))
+        ours = &existing;
+    }
+
+    if (ours)
+    {
+      entry.index = ours->index;
+      if (!ours->appName.isEmpty())
+        entry.appName = ours->appName;
+      entry.appId = ours->appId != 0 ? ours->appId : shortcutAppId(ours->exe, ours->appName);
+      data = data.left(ours->start) + serializeEntry(entry.index, entry) + data.mid(ours->end);
+    }
+    else
+    {
+      entry.index = next;
+      data = data.left(data.size() - 2) + serializeEntry(next, entry);
+      data.append(static_cast<char>(0x08));
+      data.append(static_cast<char>(0x08));
+    }
   }
   else
   {
@@ -468,8 +495,62 @@ bool SteamComponent::createShortcut()
 
   QLOG_INFO() << "Steam: wrote shortcut" << entry.index << "appid" << entry.appId
               << "to" << qPrintable(m_shortcutsPath);
+  writeArtwork(entry.appId);
   refresh();
   return shortcutPresent();
+}
+
+int SteamComponent::writeArtwork(quint32 appId) const
+{
+  struct Kind
+  {
+    const char* source;
+    const char* suffix;
+  };
+  static const Kind kinds[] = {
+    {"portrait", "p"},
+    {"capsule", ""},
+    {"hero", "_hero"},
+    {"logo", "_logo"}
+  };
+
+  const QString grid = QFileInfo(m_shortcutsPath).absolutePath() + "/grid";
+  int written = 0;
+  for (const Kind& kind : kinds)
+  {
+    const QString source = Paths::resourceDir(QString("steam/%1.png").arg(kind.source));
+    if (!QFile::exists(source))
+    {
+      QLOG_WARN() << "Steam: no" << kind.source << "artwork at" << qPrintable(source);
+      continue;
+    }
+
+    const QString base = QString("%1/%2%3").arg(grid).arg(appId).arg(kind.suffix);
+    const QStringList existing = {base + ".png", base + ".jpg", base + ".jpeg"};
+    bool present = false;
+    for (const QString& path : existing)
+      present = present || QFile::exists(path);
+    if (present)
+    {
+      QLOG_INFO() << "Steam:" << kind.source << "artwork already set, left as it is";
+      continue;
+    }
+
+    QDir().mkpath(grid);
+    if (QFile::copy(source, base + ".png"))
+    {
+      QFile::setPermissions(base + ".png", QFile::ReadOwner | QFile::WriteOwner
+                                             | QFile::ReadGroup | QFile::ReadOther);
+      written++;
+    }
+    else
+    {
+      QLOG_WARN() << "Steam: writing" << qPrintable(base + ".png") << "failed";
+    }
+  }
+
+  QLOG_INFO() << "Steam: wrote" << written << "artwork files to" << qPrintable(grid);
+  return written;
 }
 
 bool SteamComponent::relaunchThroughSteam()

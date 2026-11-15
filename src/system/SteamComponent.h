@@ -61,6 +61,8 @@ private:
     QString exe;
     QString launchOptions;
     quint32 appId = 0;
+    int start = -1;
+    int end = -1;
   };
 
   static QString findSteamRoot();
@@ -71,6 +73,9 @@ private:
   static quint64 runGameId(quint32 appId);
   static QString ourFlatpakId();
   static QString exportedIconPath(const QString& flatpakId);
+  static bool isOurs(const Entry& entry);
+
+  int writeArtwork(quint32 appId) const;
 
   bool backup(const QByteArray& data) const;
 
