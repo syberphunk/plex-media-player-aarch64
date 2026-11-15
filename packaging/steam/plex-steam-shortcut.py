@@ -9,7 +9,7 @@ import sys
 import zlib
 from glob import glob
 
-APPNAME = "Plex"
+APPNAME = "Plex Media Player"
 EXE = "/usr/bin/flatpak"
 FLATPAK_ID = "io.github.syberphunk.PlexMediaPlayer"
 LAUNCH = "run " + FLATPAK_ID
