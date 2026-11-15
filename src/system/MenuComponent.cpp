@@ -1,5 +1,6 @@
 #include "MenuComponent.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -8,8 +9,12 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryFile>
+#include <QThread>
 
 #include "QsLog.h"
+#include "ProblemReport.h"
+#include "SteamComponent.h"
+#include "SystemComponent.h"
 #include "input/InputComponent.h"
 #include "settings/SettingsComponent.h"
 #include "shared/Paths.h"
@@ -455,4 +460,75 @@ void MenuComponent::loadKeyBindings()
     padEntry["action"] = QString("this menu (gamepad)");
     m_keyBindings.insert(1, padEntry);
   }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static QString hostRelease()
+{
+  for (const QString& path : {QString("/run/host/os-release"), QString("/etc/os-release")})
+  {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+      continue;
+
+    QStringList fields;
+    for (const QByteArray& line : file.readAll().split('\n'))
+    {
+      for (const char* key : {"PRETTY_NAME=", "VERSION_ID=", "BUILD_ID=", "VARIANT_ID="})
+      {
+        if (line.startsWith(key))
+          fields << QString::fromUtf8(line).remove('"');
+      }
+    }
+    return fields.join(' ');
+  }
+  return QString("unknown");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void MenuComponent::saveProblemReport(bool pictures)
+{
+  if (m_reportBusy)
+    return;
+
+  QString summary;
+  summary += "Plex Media Player problem report\n";
+  summary += "  Saved: " + QDateTime::currentDateTime().toString(Qt::ISODate) + "\n\n";
+  summary += SystemComponent::Get().debugInformation();
+  summary += "Operating system\n  " + hostRelease() + "\n\n";
+  summary += "Steam\n  " + SteamComponent::Get().report() + "\n\n";
+  summary += QString("Diagnostics\n  Keep extra logs and pictures: %1\n  Log level: %2\n")
+               .arg(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "diagnostics").toBool()
+                      ? "on" : "off")
+               .arg(SettingsComponent::Get().value(SETTINGS_SECTION_MAIN, "logLevel").toString());
+
+  const QString directory = ProblemReport::defaultDirectory();
+  m_reportBusy = true;
+  m_reportStatus.clear();
+  emit reportChanged();
+
+  QLOG_INFO() << "Problem report: saving to" << qPrintable(directory)
+              << (pictures ? "with pictures" : "without pictures");
+
+  QThread* thread = QThread::create([this, pictures, summary, directory]() {
+    QString error;
+    const QString path =
+      ProblemReport::write(ProblemReport::collect(pictures, summary), directory, &error);
+    QMetaObject::invokeMethod(this, [this, path, error]() {
+      m_reportBusy = false;
+      if (path.isEmpty())
+      {
+        QLOG_WARN() << "Problem report: not saved:" << qPrintable(error);
+        m_reportStatus = tr("The report could not be saved: %1").arg(error);
+      }
+      else
+      {
+        QLOG_INFO() << "Problem report: saved" << qPrintable(path);
+        m_reportStatus = tr("Saved to %1").arg(QDir::toNativeSeparators(path));
+      }
+      emit reportChanged();
+    }, Qt::QueuedConnection);
+  });
+  connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+  thread->start(QThread::LowPriority);
 }

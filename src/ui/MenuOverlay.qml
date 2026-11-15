@@ -48,6 +48,7 @@ FocusScope
 
   property bool diagnostics: settings ? settings.value("main", "diagnostics") === true : false
   property bool measuringBars: settings ? settings.value("main", "measuringBars") === true : false
+  property bool reportPictures: false
 
   property bool steamOffer: false
   property bool steamOfferShown: false
@@ -1503,6 +1504,52 @@ FocusScope
             if (settings)
               settings.setValue("main", "measuringBars", value)
           }
+        }
+
+        Toggle
+        {
+          width: parent.width
+          label: qsTr("Include pictures in the report")
+          hint: qsTr("The pictures show what was playing. Leave this off unless the "
+                     + "problem is with how the picture looks")
+          checked: menu.reportPictures
+          onToggled: function(value)
+          {
+            menu.reportPictures = value
+          }
+        }
+
+        Item
+        {
+          width: parent.width
+          height: Math.round(96 * menu.u)
+
+          Btn
+          {
+            anchors.left: parent.left
+            anchors.leftMargin: Math.round(18 * menu.u)
+            anchors.verticalCenter: parent.verticalCenter
+            enabled: cfg !== null && !cfg.reportBusy
+            label: cfg && cfg.reportBusy
+                     ? qsTr("Saving...")
+                     : qsTr("Save a problem report")
+            hint: qsTr("Logs and settings, with private details replaced, saved to "
+                       + "your Downloads folder")
+            minW: 330
+            onClicked:
+            {
+              if (cfg)
+                cfg.saveProblemReport(menu.reportPictures)
+            }
+          }
+        }
+
+        Note
+        {
+          width: parent.width - Math.round(36 * menu.u)
+          x: Math.round(18 * menu.u)
+          visible: cfg !== null && cfg.reportStatus !== ""
+          text: cfg ? cfg.reportStatus : ""
         }
 
         Heading

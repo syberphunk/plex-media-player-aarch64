@@ -34,6 +34,8 @@ public:
   Q_PROPERTY(bool downloadAsk READ downloadAsk NOTIFY downloadChanged)
   Q_PROPERTY(QString downloadStatus READ downloadStatus NOTIFY downloadStatusChanged)
   Q_PROPERTY(QString logDir READ logDir CONSTANT)
+  Q_PROPERTY(bool reportBusy READ reportBusy NOTIFY reportChanged)
+  Q_PROPERTY(QString reportStatus READ reportStatus NOTIFY reportChanged)
 
   bool visible() const { return m_visible; }
   QString menuKey() const;
@@ -49,6 +51,8 @@ public:
   bool downloadAsk() const;
   QString downloadStatus() const { return m_downloadStatus; }
   QString logDir() const;
+  bool reportBusy() const { return m_reportBusy; }
+  QString reportStatus() const { return m_reportStatus; }
 
   Q_INVOKABLE void show();
   Q_INVOKABLE void hide();
@@ -58,12 +62,14 @@ public:
   Q_INVOKABLE void restoreDefaults(const QString& group);
   Q_INVOKABLE void noteDownload(const QString& name, const QString& state);
   Q_INVOKABLE void grabKeyboard(const QString& owner, bool grab);
+  Q_INVOKABLE void saveProblemReport(bool pictures);
 
   Q_SIGNAL void visibleChanged();
   Q_SIGNAL void keyboardGrabbedChanged();
   Q_SIGNAL void configChanged();
   Q_SIGNAL void downloadChanged();
   Q_SIGNAL void downloadStatusChanged();
+  Q_SIGNAL void reportChanged();
 
 private:
   explicit MenuComponent(QObject* parent = nullptr);
@@ -79,6 +85,8 @@ private:
   bool m_visible = false;
   QSet<QString> m_grabbers;
   QString m_downloadStatus;
+  QString m_reportStatus;
+  bool m_reportBusy = false;
   QVariantList m_keyBindings;
 };
 

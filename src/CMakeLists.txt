@@ -161,8 +161,13 @@ target_link_libraries(${MAIN_TARGET}
   ${ICU_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${MINIZIP_LIBS}
+  ${ZLIB_LIBRARIES}
   ${OPENXR_LIBS}
 )
+
+if(ZLIB_FOUND)
+  target_include_directories(${MAIN_TARGET} PRIVATE ${ZLIB_INCLUDE_DIRS})
+endif()
 
 install(TARGETS ${MAIN_TARGET} DESTINATION ${INSTALL_BIN_DIR})
 
