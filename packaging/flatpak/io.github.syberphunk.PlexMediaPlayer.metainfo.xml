@@ -51,6 +51,43 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.50" date="2026-11-16">
+      <description>
+        <p>Added:</p>
+        <ul>
+          <li>Steam library pictures. Adding the Steam icon now also gives Plex a cover,
+              a banner, a background and a logo in the Steam library. Pictures you have set
+              yourself are left as they are.</li>
+          <li>A new app icon.</li>
+          <li><em>Save a problem report</em>, in the <em>Diagnostics</em> section of
+              <em>Plex Media Player settings</em>. It saves the logs and settings to your
+              Downloads folder as one file to attach to an issue, with server names,
+              addresses, titles and account details replaced. <em>Include pictures in the
+              report</em> adds the pictures kept by <em>Keep extra logs and pictures</em>;
+              they show what was playing.</li>
+          <li>The README is now a user guide. Building from source is described in
+              <code>docs/building.md</code>.</li>
+        </ul>
+        <p>Fixed:</p>
+        <ul>
+          <li><em>Rewrite Steam icon</em> replaces the existing Plex entry. It used to add
+              a second one.</li>
+          <li>The update button no longer stays on <em>Checking…</em> when the settings
+              open. It says whether you have the latest version without being clicked.</li>
+          <li><em>Restart through Steam</em> is no longer offered after a new Steam icon is
+              added and before Steam has restarted. Steam cannot start an icon it has not
+              loaded, so a note asks you to restart Steam first.</li>
+        </ul>
+        <p>Known:</p>
+        <ul>
+          <li>The 3D screen curves more sharply than it should, and its resize handles
+              do not meet the edges of the picture.</li>
+          <li>Side-by-side 3D cannot be viewed when Steam runs Plex at a resolution that
+              is not 16:9, such as 1280x800. Use 1280x720 or 1920x1080 until this is
+              fixed.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.49" date="2026-11-15">
       <description>
         <p>Fixed:</p>
