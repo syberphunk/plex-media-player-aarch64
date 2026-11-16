@@ -216,11 +216,15 @@ FocusScope
     if (!steam)
       return;
 
+    const rewriting = steam.shortcutPresent
     if (steam.createShortcut())
     {
-      menu.steamStatus = qsTr("Icon created. Steam reads its shortcut list when it "
-                              + "starts, so restart Steam and then open Plex from "
-                              + "your library.")
+      menu.steamStatus = rewriting
+                           ? qsTr("Icon written again. Steam shows the change "
+                                  + "after it restarts.")
+                           : qsTr("Icon created. Steam reads its shortcut list when it "
+                                  + "starts, so restart Steam and then open Plex from "
+                                  + "your library.")
     }
     else
     {
@@ -1705,6 +1709,9 @@ FocusScope
           text: menu.steam && menu.steam.launchedFromSteam
                   ? qsTr("Steam started this session, so the device is running "
                          + "Plex on its game performance profile.")
+                  : (menu.steam && menu.steam.awaitingSteam
+                       ? qsTr("Steam has not loaded the new icon yet. Restart "
+                              + "Steam, then open Plex from your library.")
                   : (menu.steam && menu.steam.shortcutPresent
                        ? qsTr("Steam has an icon for Plex, but this session was not "
                               + "started from it. Starting it from Steam gives the "
@@ -1713,7 +1720,7 @@ FocusScope
                        : qsTr("Steam has no icon for Plex. Adding one lets the "
                               + "device run Plex on the performance profile it "
                               + "reserves for games, which is what 4K playback "
-                              + "needs."))
+                              + "needs.")))
         }
 
         Note

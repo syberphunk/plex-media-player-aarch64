@@ -4,8 +4,11 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QCryptographicHash>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 #include <QUrl>
 
 #include "QsLog.h"
@@ -17,6 +20,32 @@ namespace
 {
   const char* const kShortcutsKey = "shortcuts";
   const char* const kFallbackFlatpakId = "io.github.syberphunk.PlexMediaPlayer";
+  const char* const kAddedFile = "steam-shortcut-added";
+
+  QByteArray fileHash(const QString& path)
+  {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+      return QByteArray();
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    hash.addData(&file);
+    return hash.result().toHex();
+  }
+
+  QSet<QByteArray> earlierArtwork()
+  {
+    QSet<QByteArray> hashes;
+    QFile file(Paths::resourceDir("steam/earlier.sha256"));
+    if (!file.open(QIODevice::ReadOnly))
+      return hashes;
+    for (const QByteArray& line : file.readAll().split('\n'))
+    {
+      const QByteArray hash = line.trimmed().left(64).toLower();
+      if (hash.size() == 64)
+        hashes.insert(hash);
+    }
+    return hashes;
+  }
 
   quint32 crc32(const QByteArray& data)
   {
@@ -324,11 +353,79 @@ void SteamComponent::refresh()
                               ? entry.appId
                               : shortcutAppId(entry.exe, entry.appName);
       m_runGameId = runGameId(appId);
+      checkAwaitingSteam(appId);
       break;
     }
   }
 
   emit shortcutChanged();
+}
+
+QDateTime SteamComponent::steamStartTime() const
+{
+  if (m_steamRoot.isEmpty())
+    return QDateTime();
+
+  QFile file(m_steamRoot + "/logs/console_log.txt");
+  if (!file.open(QIODevice::ReadOnly))
+    return QDateTime();
+
+  const qint64 limit = 8 * 1024 * 1024;
+  if (file.size() > limit)
+    file.seek(file.size() - limit);
+  const QString text = QString::fromUtf8(file.readAll());
+
+  static const QRegularExpression started(
+    QStringLiteral("^\\[(\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)\\] Client version:"),
+    QRegularExpression::MultilineOption);
+
+  QDateTime last;
+  QRegularExpressionMatchIterator it = started.globalMatch(text);
+  while (it.hasNext())
+    last = QDateTime::fromString(it.next().captured(1), "yyyy-MM-dd HH:mm:ss");
+  return last;
+}
+
+void SteamComponent::noteAdded(quint32 appId)
+{
+  m_addedThisSession = appId;
+  QSaveFile out(Paths::dataDir(kAddedFile));
+  if (out.open(QIODevice::WriteOnly))
+  {
+    out.write(QString("%1 %2\n").arg(appId).arg(QDateTime::currentSecsSinceEpoch()).toUtf8());
+    out.commit();
+  }
+}
+
+void SteamComponent::checkAwaitingSteam(quint32 appId)
+{
+  m_awaitingSteam = false;
+
+  const QString path = Paths::dataDir(kAddedFile);
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly))
+    return;
+  const QStringList fields = QString::fromUtf8(file.readAll()).simplified().split(' ');
+  file.close();
+  if (fields.size() < 2 || fields.at(0).toUInt() != appId)
+    return;
+
+  if (m_launchedFromSteam && SessionEnv::steamGameId() == QString::number(runGameId(appId)))
+  {
+    QFile::remove(path);
+    return;
+  }
+
+  const QDateTime added = QDateTime::fromSecsSinceEpoch(fields.at(1).toLongLong());
+  const QDateTime started = steamStartTime();
+  if (started.isValid())
+    m_awaitingSteam = started < added;
+  else
+    m_awaitingSteam = m_addedThisSession == appId;
+
+  QLOG_INFO() << "Steam: shortcut" << appId << "added" << added.toString(Qt::ISODate)
+              << "Steam started" << (started.isValid() ? started.toString(Qt::ISODate) : QString("unknown"))
+              << (m_awaitingSteam ? "- Steam has not loaded it yet" : "- Steam has loaded it");
 }
 
 bool SteamComponent::shouldOffer() const
@@ -419,6 +516,7 @@ bool SteamComponent::createShortcut()
   QByteArray data;
   QFile file(m_shortcutsPath);
   const bool existed = file.exists();
+  bool added = true;
   if (existed)
   {
     if (!file.open(QIODevice::ReadOnly))
@@ -457,6 +555,7 @@ bool SteamComponent::createShortcut()
 
     if (ours)
     {
+      added = false;
       entry.index = ours->index;
       if (!ours->appName.isEmpty())
         entry.appName = ours->appName;
@@ -495,6 +594,8 @@ bool SteamComponent::createShortcut()
 
   QLOG_INFO() << "Steam: wrote shortcut" << entry.index << "appid" << entry.appId
               << "to" << qPrintable(m_shortcutsPath);
+  if (added)
+    noteAdded(entry.appId);
   writeArtwork(entry.appId);
   refresh();
   return shortcutPresent();
@@ -515,6 +616,7 @@ int SteamComponent::writeArtwork(quint32 appId) const
   };
 
   const QString grid = QFileInfo(m_shortcutsPath).absolutePath() + "/grid";
+  const QSet<QByteArray> earlier = earlierArtwork();
   int written = 0;
   for (const Kind& kind : kinds)
   {
@@ -526,14 +628,31 @@ int SteamComponent::writeArtwork(quint32 appId) const
     }
 
     const QString base = QString("%1/%2%3").arg(grid).arg(appId).arg(kind.suffix);
-    const QStringList existing = {base + ".png", base + ".jpg", base + ".jpeg"};
-    bool present = false;
-    for (const QString& path : existing)
-      present = present || QFile::exists(path);
-    if (present)
+    if (QFile::exists(base + ".jpg") || QFile::exists(base + ".jpeg"))
     {
-      QLOG_INFO() << "Steam:" << kind.source << "artwork already set, left as it is";
+      QLOG_INFO() << "Steam:" << kind.source << "artwork set by someone else, left as it is";
       continue;
+    }
+
+    if (QFile::exists(base + ".png"))
+    {
+      const QByteArray current = fileHash(base + ".png");
+      if (current == fileHash(source))
+      {
+        QLOG_INFO() << "Steam:" << kind.source << "artwork is already this version's";
+        continue;
+      }
+      if (!earlier.contains(current))
+      {
+        QLOG_INFO() << "Steam:" << kind.source << "artwork set by someone else, left as it is";
+        continue;
+      }
+      if (!QFile::remove(base + ".png"))
+      {
+        QLOG_WARN() << "Steam: replacing" << qPrintable(base + ".png") << "failed";
+        continue;
+      }
+      QLOG_INFO() << "Steam:" << kind.source << "artwork from an earlier version replaced";
     }
 
     QDir().mkpath(grid);
@@ -588,6 +707,8 @@ QString SteamComponent::report() const
   {
     parts << QString("ours=%1 \"%2\" rungameid=%3")
                .arg(m_shortcutIndex).arg(m_shortcutName).arg(m_runGameId);
+    if (m_awaitingSteam)
+      parts << "awaiting-steam-restart";
   }
   else
   {

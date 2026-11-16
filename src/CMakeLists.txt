@@ -114,6 +114,7 @@ install(FILES
   ${CMAKE_SOURCE_DIR}/packaging/steam/capsule.png
   ${CMAKE_SOURCE_DIR}/packaging/steam/hero.png
   ${CMAKE_SOURCE_DIR}/packaging/steam/logo.png
+  ${CMAKE_SOURCE_DIR}/packaging/steam/earlier.sha256
   DESTINATION ${INSTALL_RESOURCE_DIR}/steam)
 if(WEB_TV_DIR)
   install(DIRECTORY ${WEB_TV_DIR}/ DESTINATION ${INSTALL_RESOURCE_DIR}/web-client/tv)

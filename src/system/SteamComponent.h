@@ -1,6 +1,7 @@
 #ifndef STEAMCOMPONENT_H
 #define STEAMCOMPONENT_H
 
+#include <QDateTime>
 #include <QString>
 #include <QStringList>
 
@@ -22,6 +23,7 @@ public:
   Q_PROPERTY(bool steamPresent READ steamPresent NOTIFY shortcutChanged)
   Q_PROPERTY(bool shortcutPresent READ shortcutPresent NOTIFY shortcutChanged)
   Q_PROPERTY(bool canRelaunch READ canRelaunch NOTIFY shortcutChanged)
+  Q_PROPERTY(bool awaitingSteam READ awaitingSteam NOTIFY shortcutChanged)
   Q_PROPERTY(QString shortcutName READ shortcutName NOTIFY shortcutChanged)
   Q_PROPERTY(QString lastError READ lastError NOTIFY shortcutChanged)
   Q_PROPERTY(bool shouldOffer READ shouldOffer NOTIFY shortcutChanged)
@@ -30,7 +32,8 @@ public:
   bool launchedFromSteam() const { return m_launchedFromSteam; }
   bool steamPresent() const { return !m_shortcutsPath.isEmpty(); }
   bool shortcutPresent() const { return m_shortcutIndex >= 0; }
-  bool canRelaunch() const { return shortcutPresent() && m_runGameId != 0; }
+  bool canRelaunch() const { return shortcutPresent() && m_runGameId != 0 && !m_awaitingSteam; }
+  bool awaitingSteam() const { return shortcutPresent() && m_awaitingSteam; }
   QString shortcutName() const { return m_shortcutName; }
   QString lastError() const { return m_lastError; }
 
@@ -76,6 +79,9 @@ private:
   static bool isOurs(const Entry& entry);
 
   int writeArtwork(quint32 appId) const;
+  QDateTime steamStartTime() const;
+  void noteAdded(quint32 appId);
+  void checkAwaitingSteam(quint32 appId);
 
   bool backup(const QByteArray& data) const;
 
@@ -87,6 +93,8 @@ private:
   QString m_shortcutName;
   QString m_lastError;
   quint64 m_runGameId = 0;
+  bool m_awaitingSteam = false;
+  quint32 m_addedThisSession = 0;
 };
 
 #endif
