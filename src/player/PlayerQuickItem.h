@@ -6,6 +6,8 @@
 #include <QList>
 #include <QPointF>
 #include <QRect>
+#include <QRectF>
+#include <QSizeF>
 #include <QtQuick/QQuickFramebufferObject>
 
 #include <mpv/client.h>
@@ -41,13 +43,16 @@ private:
   void syncStereo();
   bool renderPacked(QOpenGLFramebufferObject* target);
   QSize packedFor(const QSize& native) const;
-  void overlayVideo(QOpenGLExtraFunctions* gl, int half);
+  QRectF eyeBox(int eye) const;
+  QRectF eyeVideo(int eye) const;
+  QRect glRect(const QRectF& box) const;
+  void overlayVideo(QOpenGLExtraFunctions* gl);
   bool prepareKey();
-  void drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height);
+  void drawShot(QOpenGLExtraFunctions* gl, const QRect& to);
   bool prepareArrow();
-  void drawRuler(QOpenGLExtraFunctions* gl, int half);
+  void drawRuler(QOpenGLExtraFunctions* gl);
   void dumpRuler(QOpenGLExtraFunctions* gl);
-  void drawCursor(QOpenGLExtraFunctions* gl, int half);
+  void drawCursor(QOpenGLExtraFunctions* gl);
   static double meanLuma(QOpenGLExtraFunctions* gl, QOpenGLFramebufferObject* fbo);
   void reportShot(QOpenGLExtraFunctions* gl);
   void dumpFrames(QOpenGLExtraFunctions* gl);
@@ -67,6 +72,8 @@ private:
   QSize m_packedSize;
   QSize m_windowSize;
   QRect m_windowVideoRect;
+  QSizeF m_eyePlane;
+  double m_eyeAspect;
   QOpenGLFramebufferObject* m_windowShot;
   QOpenGLFramebufferObject* m_videoFbo;
   QOpenGLShaderProgram* m_keyProgram;

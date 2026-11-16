@@ -1,7 +1,10 @@
 #ifndef STEREOFORMAT_H
 #define STEREOFORMAT_H
 
+#include <QPointF>
+#include <QRectF>
 #include <QSize>
+#include <QSizeF>
 #include <QString>
 
 namespace StereoFormat
@@ -52,6 +55,14 @@ namespace StereoFormat
   QString toSetting(const Layout& layout);
 
   QString label(const Layout& layout);
+
+  double eyeAspect(const Layout& layout, const QSize& display);
+
+  QRectF eyeBox(const QSizeF& window, const QSizeF& plane);
+
+  QPointF planeAt(const QPointF& at, const QSizeF& window, const QSizeF& plane);
+
+  QPointF windowAt(const QPointF& eyeAt, const QSizeF& window, const QSizeF& plane);
 }
 
 #endif

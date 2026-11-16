@@ -29,6 +29,19 @@ namespace
     return true;
   }
 
+  bool fitPlane(const QSizeF& window, const QSizeF& plane, double& scale, double& left,
+                double& top)
+  {
+    if (!(window.width() > 0.0) || !(window.height() > 0.0) || !(plane.width() > 0.0) ||
+        !(plane.height() > 0.0))
+      return false;
+
+    scale = qMin(plane.width() / window.width(), plane.height() / window.height());
+    left = (plane.width() - window.width() * scale) / 2.0;
+    top = (plane.height() - window.height() * scale) / 2.0;
+    return true;
+  }
+
   QString basename(const QString& path)
   {
     const QString name = QFileInfo(path).fileName();
@@ -292,4 +305,77 @@ QString StereoFormat::label(const Layout& layout)
   if (layout.swapped)
     text += QObject::tr(", right eye first");
   return text;
+}
+
+double StereoFormat::eyeAspect(const Layout& layout, const QSize& display)
+{
+  const double aspect = displayAspect(display);
+  if (aspect <= 0.0 || !layout.isStereo())
+    return 0.0;
+  if (layout.half)
+    return aspect;
+  return layout.packing == Packing::SideBySide ? aspect / 2.0 : aspect * 2.0;
+}
+
+QRectF StereoFormat::eyeBox(const QSizeF& window, const QSizeF& plane)
+{
+  const QRectF even(0.0, 0.0, window.width() / 2.0, window.height());
+
+  double scale = 0.0;
+  double left = 0.0;
+  double top = 0.0;
+  if (!fitPlane(window, plane, scale, left, top))
+    return even;
+
+  const double fromX = -left / scale;
+  const double toX = (plane.width() / 2.0 - left) / scale;
+  const double fromY = -top / scale;
+  const double toY = (plane.height() - top) / scale;
+  const double midX = (fromX + toX) / 2.0;
+  const double midY = (fromY + toY) / 2.0;
+  const double reachX = qMin(midX - qMax(fromX, 0.0), qMin(toX, window.width()) - midX);
+  const double reachY = qMin(midY - qMax(fromY, 0.0), qMin(toY, window.height()) - midY);
+  if (!(reachX > 0.0) || !(reachY > 0.0))
+    return even;
+
+  const double shape = even.width() / even.height();
+  const double wide = qMin(2.0 * reachX, 2.0 * reachY * shape);
+  const double tall = wide / shape;
+  return QRectF(midX - wide / 2.0, midY - tall / 2.0, wide, tall);
+}
+
+QPointF StereoFormat::planeAt(const QPointF& at, const QSizeF& window, const QSizeF& plane)
+{
+  double scale = 0.0;
+  double left = 0.0;
+  double top = 0.0;
+  if (!fitPlane(window, plane, scale, left, top))
+  {
+    if (!(window.width() > 0.0) || !(window.height() > 0.0))
+      return QPointF();
+    return QPointF(at.x() / window.width(), at.y() / window.height());
+  }
+
+  return QPointF((at.x() * scale + left) / plane.width(),
+                 (at.y() * scale + top) / plane.height());
+}
+
+QPointF StereoFormat::windowAt(const QPointF& eyeAt, const QSizeF& window, const QSizeF& plane)
+{
+  double scale = 0.0;
+  double left = 0.0;
+  double top = 0.0;
+  if (!fitPlane(window, plane, scale, left, top))
+    return QPointF(eyeAt.x() * window.width(), eyeAt.y() * window.height());
+
+  const QRectF box = eyeBox(window, plane);
+  const double fromX = (box.left() * scale + left) / (plane.width() / 2.0);
+  const double toX = (box.right() * scale + left) / (plane.width() / 2.0);
+  const double fromY = (box.top() * scale + top) / plane.height();
+  const double toY = (box.bottom() * scale + top) / plane.height();
+  if (!(toX > fromX) || !(toY > fromY))
+    return QPointF(eyeAt.x() * window.width(), eyeAt.y() * window.height());
+
+  return QPointF((eyeAt.x() - fromX) / (toX - fromX) * window.width(),
+                 (eyeAt.y() - fromY) / (toY - fromY) * window.height());
 }

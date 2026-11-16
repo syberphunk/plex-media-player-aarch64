@@ -334,10 +334,11 @@ void XrPresenter::reportProbe(int packing)
   emit probed();
 }
 
-void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped)
+void XrPresenter::request(const QSize& videoSize, uint32_t packing, bool swapped, double eyeAspect)
 {
   m_packing = packing;
   m_swapped = swapped;
+  m_eyeAspect = eyeAspect;
   m_videoSize = videoSize;
 
   if (m_impossible)

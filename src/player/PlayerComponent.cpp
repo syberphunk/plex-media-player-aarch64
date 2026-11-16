@@ -1614,7 +1614,8 @@ void PlayerComponent::resolveStereoFormat()
   else if (active.packing == StereoFormat::Packing::OverUnder)
     packing = XrProtocol::OverUnder;
 
-  XrPresenter::Get().request(m_videoSize, packing, active.swapped);
+  XrPresenter::Get().request(m_videoSize, packing, active.swapped,
+                             StereoFormat::eyeAspect(active, m_videoSize));
 }
 
 void PlayerComponent::updateVideoSettings()

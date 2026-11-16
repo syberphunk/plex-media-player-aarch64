@@ -19,7 +19,7 @@ public:
   static XrPresenter& Get();
   static bool exists();
 
-  void request(const QSize& videoSize, uint32_t packing, bool swapped);
+  void request(const QSize& videoSize, uint32_t packing, bool swapped, double eyeAspect);
   void release();
 
   bool wanted() const { return m_wanted; }
@@ -36,6 +36,7 @@ public:
   const QSize& videoSize() const { return m_videoSize; }
   uint32_t packing() const { return m_packing; }
   bool swapped() const { return m_swapped; }
+  double eyeAspect() const { return m_eyeAspect; }
 
   const QString& lastFailure() const { return m_lastFailure; }
 
@@ -109,6 +110,7 @@ private:
   float m_panelTexelAspect = 0.0f;
   uint32_t m_packing = 0;
   bool m_swapped = false;
+  double m_eyeAspect = 0.0;
 };
 
 #endif

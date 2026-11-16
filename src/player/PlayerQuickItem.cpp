@@ -32,6 +32,7 @@
 #include "settings/SettingsComponent.h"
 #include "shared/Paths.h"
 #include "utils/Utils.h"
+#include "xr/StereoFormat.h"
 #include "xr/XrPresenter.h"
 #include "xr/XrProtocol.h"
 
@@ -120,9 +121,9 @@ static void* get_proc_address(void* ctx, const char* name)
 PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
-  m_stereoControls(false), m_windowShot(nullptr), m_videoFbo(nullptr), m_keyProgram(nullptr),
-  m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0), m_dumpWaits(0),
-  m_dumpBudget(kDumpBudget), m_captures(false), m_bars(false), m_rulerFrom(0), m_rulerSaid(0),
+  m_stereoControls(false), m_eyeAspect(0.0), m_windowShot(nullptr), m_videoFbo(nullptr),
+  m_keyProgram(nullptr), m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
+  m_dumpWaits(0), m_dumpBudget(kDumpBudget), m_captures(false), m_bars(false), m_rulerFrom(0), m_rulerSaid(0),
   m_rulerShots(0),
   m_arrowProgram(nullptr), m_arrowVao(0),
   m_arrowFailed(false),
@@ -275,6 +276,11 @@ void PlayerRenderer::syncStereo()
   m_stereoWanted = wanted;
   m_stereoPacking = presenter.packing();
   m_stereoSwapped = presenter.swapped();
+  const QSize plane = presenter.panelPointer();
+  m_eyePlane = presenter.panelPointerWide() > 1.0f && plane.width() > 0 && plane.height() > 0
+                 ? QSizeF(plane)
+                 : QSizeF(m_windowSize);
+  m_eyeAspect = presenter.eyeAspect();
   m_packedSize = packedFor(presenter.videoSize());
 
   const bool controls = presenter.controlsActive();
@@ -395,16 +401,14 @@ void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
   const double shotLuma = meanLuma(gl, m_windowShot);
   const double videoLuma = meanLuma(gl, m_videoFbo);
 
-  QRect rect = m_windowVideoRect.intersected(QRect(0, 0, m_windowSize.width(), m_windowSize.height()));
-  if (rect.width() < 4 || rect.height() < 4)
-    rect = QRect(0, 0, m_windowSize.width(), m_windowSize.height());
-
   const int fromWide = m_stereoPacking == XrProtocol::SideBySide ? m_packedSize.width() / 2
                                                                  : m_packedSize.width();
   const int fromTall = m_stereoPacking == XrProtocol::OverUnder ? m_packedSize.height() / 2
                                                                 : m_packedSize.height();
-  const int toWide = rect.width() / 2;
-  const int toTall = rect.height();
+  const QRectF box = eyeBox(0);
+  const QRectF eye = eyeVideo(0);
+  const int toWide = qRound(eye.width());
+  const int toTall = qRound(eye.height());
 
   QLOG_INFO() << "Stereoscopic: squeezing the window" << w << "x" << h
               << "mean luminance" << qRound(shotLuma) << "picture luminance"
@@ -412,24 +416,70 @@ void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
               << m_windowVideoRect.y() << m_windowVideoRect.width() << m_windowVideoRect.height()
               << "packed" << m_packedSize.width() << "x" << m_packedSize.height() << "one eye"
               << fromWide << "x" << fromTall << "to" << toWide << "x" << toTall
-              << (toWide >= fromWide && toTall >= fromTall ? "magnified" : "minified");
+              << (toWide >= fromWide && toTall >= fromTall ? "magnified" : "minified")
+              << "eye box" << qRound(box.x()) << qRound(box.y()) << qRound(box.width())
+              << qRound(box.height()) << "on a plane" << qRound(m_eyePlane.width()) << "x"
+              << qRound(m_eyePlane.height()) << "eye aspect" << m_eyeAspect;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::overlayVideo(QOpenGLExtraFunctions* gl, int half)
+QRectF PlayerRenderer::eyeBox(int eye) const
+{
+  const QSizeF window(m_windowSize);
+  const QRectF left = StereoFormat::eyeBox(window, m_eyePlane);
+  if (eye == 0)
+    return left;
+  return QRectF(window.width() - left.right(), left.top(), left.width(), left.height());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QRectF PlayerRenderer::eyeVideo(int eye) const
 {
   const int w = m_windowSize.width();
   const int h = m_windowSize.height();
+  const QRectF box = eyeBox(eye);
+  if (w < 4 || h < 4)
+    return box;
 
   QRect rect = m_windowVideoRect.intersected(QRect(0, 0, w, h));
   if (rect.width() < 4 || rect.height() < 4)
     rect = QRect(0, 0, w, h);
 
+  const double across = box.width() / double(w);
+  const double down = box.height() / double(h);
+  const QRectF area(box.left() + rect.x() * across, box.top() + rect.y() * down,
+                    rect.width() * across, rect.height() * down);
+  if (!(m_eyeAspect > 0.0) || !(box.width() > 0.0) || !(box.height() > 0.0))
+    return area;
+
+  const double shape = m_eyeAspect * (box.width() / box.height()) * double(h) / double(w);
+  double wide = area.width();
+  double tall = wide / shape;
+  if (tall > area.height())
+  {
+    tall = area.height();
+    wide = tall * shape;
+  }
+
+  return QRectF(area.center().x() - wide / 2.0, area.center().y() - tall / 2.0, wide, tall);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+QRect PlayerRenderer::glRect(const QRectF& box) const
+{
+  const int h = m_windowSize.height();
+  const int x0 = qRound(box.left());
+  const int x1 = qRound(box.right());
+  const int y0 = h - qRound(box.bottom());
+  const int y1 = h - qRound(box.top());
+  return QRect(x0, y0, x1 - x0, y1 - y0);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+void PlayerRenderer::overlayVideo(QOpenGLExtraFunctions* gl)
+{
   const int pw = m_videoFbo->width();
   const int ph = m_videoFbo->height();
-
-  const int top = h - rect.y();
-  const int bottom = top - rect.height();
 
   gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_videoFbo->handle());
   gl->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -456,11 +506,10 @@ void PlayerRenderer::overlayVideo(QOpenGLExtraFunctions* gl, int half)
       sy1 = sy0 + part;
     }
 
-    const int dx0 = eye * half + rect.x() / 2;
-    const int dx1 = dx0 + rect.width() / 2;
+    const QRect to = glRect(eyeVideo(eye));
 
-    gl->glBlitFramebuffer(sx0, sy1, sx1, sy0, dx0, bottom, dx1, top, GL_COLOR_BUFFER_BIT,
-                          GL_LINEAR);
+    gl->glBlitFramebuffer(sx0, sy1, sx1, sy0, to.left(), to.top(), to.left() + to.width(),
+                          to.top() + to.height(), GL_COLOR_BUFFER_BIT, GL_LINEAR);
   }
 }
 
@@ -501,9 +550,9 @@ bool PlayerRenderer::prepareKey()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::drawShot(QOpenGLExtraFunctions* gl, int x, int width, int height)
+void PlayerRenderer::drawShot(QOpenGLExtraFunctions* gl, const QRect& to)
 {
-  gl->glViewport(x, 0, width, height);
+  gl->glViewport(to.left(), to.top(), to.width(), to.height());
   gl->glActiveTexture(GL_TEXTURE0);
   gl->glBindTexture(GL_TEXTURE_2D, m_windowShot->texture());
   gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -610,14 +659,14 @@ bool PlayerRenderer::prepareArrow()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
+void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl)
 {
   if (m_rulerFrom == 0)
     return;
 
   const int w = m_windowSize.width();
   const int h = m_windowSize.height();
-  if (w < 4 || h < 4 || half < 2)
+  if (w < 4 || h < 4 || eyeBox(0).width() < 2.0)
     return;
 
   const qint64 since = QDateTime::currentMSecsSinceEpoch() - m_rulerFrom;
@@ -658,6 +707,12 @@ void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
 
   for (int eye = 0; eye < 2; ++eye)
   {
+    const QRectF box = eyeBox(eye);
+    const float boxLeft = float(box.left());
+    const float boxTop = float(box.top());
+    const float across = float(box.width()) / float(w);
+    const float down = float(box.height()) / float(h);
+
     for (int bar = 0; bar < kRulerBars; ++bar)
     {
       m_arrowProgram->setUniformValue(
@@ -670,17 +725,17 @@ void PlayerRenderer::drawRuler(QOpenGLExtraFunctions* gl, int half)
 
       if (upright)
       {
-        left = float(eye * half) + (at[bar] - kRulerWide * 0.5f) * float(half) / float(w);
-        right = float(eye * half) + (at[bar] + kRulerWide * 0.5f) * float(half) / float(w);
-        base = 0.0f;
-        top = float(h);
+        left = boxLeft + (at[bar] - kRulerWide * 0.5f) * across;
+        right = boxLeft + (at[bar] + kRulerWide * 0.5f) * across;
+        base = float(h) - (boxTop + float(h) * down);
+        top = float(h) - boxTop;
       }
       else
       {
-        left = float(eye * half);
-        right = float(eye * half + half);
-        base = float(h) - at[bar] - kRulerWide * 0.5f;
-        top = float(h) - at[bar] + kRulerWide * 0.5f;
+        left = boxLeft;
+        right = boxLeft + float(w) * across;
+        base = float(h) - (boxTop + (at[bar] + kRulerWide * 0.5f) * down);
+        top = float(h) - (boxTop + (at[bar] - kRulerWide * 0.5f) * down);
       }
 
       const float corner[4][2] = {
@@ -742,14 +797,14 @@ void PlayerRenderer::dumpRuler(QOpenGLExtraFunctions* gl)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
+void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl)
 {
   if (m_cursorAt.isNull())
     return;
 
   const int w = m_windowSize.width();
   const int h = m_windowSize.height();
-  if (w < 4 || h < 4 || half < 2)
+  if (w < 4 || h < 4 || eyeBox(0).width() < 2.0)
     return;
   if (!prepareArrow())
     return;
@@ -759,8 +814,6 @@ void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
   if (x < 0.0f || y < 0.0f || x > float(w) || y > float(h))
     return;
 
-  const float tall = kCursorHeight;
-  const float wide = tall * float(half) / float(w);
 
   static const float shape[3][2] = { { 0.0f, 0.0f }, { 0.0f, 1.0f }, { 0.72f, 0.72f } };
 
@@ -771,8 +824,13 @@ void PlayerRenderer::drawCursor(QOpenGLExtraFunctions* gl, int half)
 
   for (int eye = 0; eye < 2; ++eye)
   {
-    const float tipX = float(eye * half) + x * float(half) / float(w);
-    const float tipY = float(h) - y;
+    const QRectF box = eyeBox(eye);
+    const float across = float(box.width()) / float(w);
+    const float down = float(box.height()) / float(h);
+    const float tall = kCursorHeight * down;
+    const float wide = kCursorHeight * across;
+    const float tipX = float(box.left()) + x * across;
+    const float tipY = float(h) - (float(box.top()) + y * down);
 
     for (int pass = 0; pass < 2; ++pass)
     {
@@ -834,7 +892,6 @@ void PlayerRenderer::composeWindow()
 
   reportShot(gl);
 
-  const int half = w / 2;
   const bool showing = m_playbackActive && m_videoFbo && m_videoFbo->isValid();
   const bool keyed = showing && prepareKey();
 
@@ -844,32 +901,35 @@ void PlayerRenderer::composeWindow()
 
   if (keyed)
   {
-    overlayVideo(gl, half);
+    overlayVideo(gl);
 
     gl->glEnable(GL_BLEND);
     gl->glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
     for (int eye = 0; eye < 2; ++eye)
-      drawShot(gl, eye * half, half, h);
+      drawShot(gl, glRect(eyeBox(eye)));
     gl->glDisable(GL_BLEND);
     gl->glViewport(0, 0, w, h);
-    drawRuler(gl, half);
-    drawCursor(gl, half);
+    drawRuler(gl);
+    drawCursor(gl);
     dumpRuler(gl);
   }
   else
   {
     gl->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_windowShot->handle());
     for (int eye = 0; eye < 2; ++eye)
-      gl->glBlitFramebuffer(0, 0, w, h, eye * half, 0, eye * half + half, h, GL_COLOR_BUFFER_BIT,
-                            GL_LINEAR);
+    {
+      const QRect to = glRect(eyeBox(eye));
+      gl->glBlitFramebuffer(0, 0, w, h, to.left(), to.top(), to.left() + to.width(),
+                            to.top() + to.height(), GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    }
 
     if (showing)
-      overlayVideo(gl, half);
+      overlayVideo(gl);
 
     gl->glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    drawRuler(gl, half);
-    drawCursor(gl, half);
+    drawRuler(gl);
+    drawCursor(gl);
     dumpRuler(gl);
   }
 
@@ -890,12 +950,9 @@ QSize PlayerRenderer::packedFor(const QSize& native) const
   if (native.width() < 8 || native.height() < 8 || w < 8 || h < 8)
     return native;
 
-  QRect rect = m_windowVideoRect.intersected(QRect(0, 0, w, h));
-  if (rect.width() < 4 || rect.height() < 4)
-    rect = QRect(0, 0, w, h);
-
-  const int wantWide = rect.width() / 2;
-  const int wantTall = rect.height();
+  const QRectF eye = eyeVideo(0);
+  const int wantWide = qRound(eye.width());
+  const int wantTall = qRound(eye.height());
   if (wantWide < 4 || wantTall < 4)
     return native;
 
@@ -1445,27 +1502,35 @@ QPointF PlayerQuickItem::spreadPointer(const QPointF& at, bool follow) const
   bool moved = false;
 
   const QSize panel = known ? XrPresenter::Get().panelPointer() : QSize();
-  if (m_cursorOffWindow && panel.width() > 0 && panel.height() > 0
-      && (panel.width() != int(wide) || panel.height() != int(tall)))
+  const bool hasPanel = panel.width() > 0 && panel.height() > 0;
+  const float spread = known ? XrPresenter::Get().panelPointerWide() : 1.0f;
+
+  if (spread > 1.0f)
+  {
+    const QSizeF window(wide, tall);
+    const QSizeF plane = hasPanel ? QSizeF(panel) : window;
+    const QPointF onPlane = m_cursorOffWindow && hasPanel
+                              ? QPointF(at.x() / plane.width(), at.y() / plane.height())
+                              : StereoFormat::planeAt(at, window, plane);
+
+    double onto = 0.0;
+    double under = 0.0;
+    if (!(follow && XrPresenter::Get().bendPointer(onPlane.x(), onPlane.y(), onto, under)))
+    {
+      onto = 0.5 + (onPlane.x() - 0.5) * double(spread);
+      under = onPlane.y();
+    }
+
+    const QPointF to = StereoFormat::windowAt(QPointF(onto, under), window, plane);
+    x = float(to.x());
+    y = float(to.y());
+    moved = true;
+  }
+  else if (m_cursorOffWindow && hasPanel
+           && (panel.width() != int(wide) || panel.height() != int(tall)))
   {
     x = x * wide / float(panel.width());
     y = y * tall / float(panel.height());
-    moved = true;
-  }
-
-  const float spread = known ? XrPresenter::Get().panelPointerWide() : 1.0f;
-  if (spread > 1.0f)
-  {
-    double onto = 0.0;
-    double under = 0.0;
-    if (follow && XrPresenter::Get().bendPointer(double(x) / double(wide),
-                                                 double(y) / double(tall), onto, under))
-    {
-      x = float(onto) * wide;
-      y = float(under) * tall;
-    }
-    else
-      x = wide * 0.5f + (x - wide * 0.5f) * spread;
     moved = true;
   }
 
@@ -1515,18 +1580,17 @@ void PlayerQuickItem::markPointer(bool say)
   if (wide <= 0.0 || tall <= 0.0)
     return;
 
-  double x = m_cursorRaw.x();
-  double y = m_cursorRaw.y();
   const QSize panel = XrPresenter::Get().panelPointer();
-  if (m_cursorOffWindow && panel.width() > 0 && panel.height() > 0
-      && (panel.width() != int(wide) || panel.height() != int(tall)))
-  {
-    x = x * wide / double(panel.width());
-    y = y * tall / double(panel.height());
-  }
+  const bool hasPanel = panel.width() > 0 && panel.height() > 0;
+  const QSizeF window(wide, tall);
+  const QSizeF plane = hasPanel ? QSizeF(panel) : window;
+  const QPointF onPlane = m_cursorOffWindow && hasPanel
+                            ? QPointF(m_cursorRaw.x() / plane.width(),
+                                      m_cursorRaw.y() / plane.height())
+                            : StereoFormat::planeAt(m_cursorRaw, window, plane);
 
   m_cursorMarked.start();
-  XrPresenter::Get().markPointer(x / wide, y / tall, say);
+  XrPresenter::Get().markPointer(onPlane.x(), onPlane.y(), say);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
