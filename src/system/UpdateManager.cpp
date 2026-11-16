@@ -990,7 +990,8 @@ void UpdateManager::fetchRelease(bool userCheck)
   startNotesRequest(true);
 
   setNotesStatus(NotesLoading);
-  setCheckStatus(CheckBusy, QString("Checking for updates"));
+  if (m_repoAnswer == RepoUnknown)
+    setCheckStatus(CheckBusy, QString("Checking for updates"));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1047,7 +1048,8 @@ void UpdateManager::onNotesFinished()
     }
 
     setNotesStatus(NotesFailed);
-    setCheckStatus(CheckFailed, QString("Could not reach the release feed"));
+    if (m_repoAnswer == RepoUnknown)
+      setCheckStatus(CheckFailed, QString("Could not reach the release feed"));
     return;
   }
 
@@ -1058,7 +1060,8 @@ void UpdateManager::onNotesFinished()
   {
     QLOG_WARN() << "Release notes are not an object:" << error.errorString();
     setNotesStatus(NotesFailed);
-    setCheckStatus(CheckFailed, QString("The release feed was unreadable"));
+    if (m_repoAnswer == RepoUnknown)
+      setCheckStatus(CheckFailed, QString("The release feed was unreadable"));
     return;
   }
 
@@ -1075,7 +1078,8 @@ void UpdateManager::onNotesFinished()
 
   if (tag.isEmpty())
   {
-    setCheckStatus(CheckFailed, QString("The release feed named no version"));
+    if (m_repoAnswer == RepoUnknown)
+      setCheckStatus(CheckFailed, QString("The release feed named no version"));
     return;
   }
 
