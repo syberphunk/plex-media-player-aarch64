@@ -51,6 +51,28 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="2.58.0-aarch64.51" date="2026-11-17">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>Side-by-side 3D now works when Steam runs Plex at a resolution that is not
+              16:9, such as 1280x800. While 3D plays, Plex asks Steam to stretch its window
+              over the whole screen and to scale it smoothly, and puts Steam's own settings
+              back when playback stops.</li>
+        </ul>
+        <p>Known:</p>
+        <ul>
+          <li>The 3D screen curves more sharply than it should, and its resize handles
+              do not meet the edges of the picture.</li>
+          <li>Below 1920x1080 the 3D picture and the playback controls are softer, because
+              Steam scales the window up to fill the screen. 1920x1080 gives the sharpest
+              picture.</li>
+          <li>Resuming some .ts recordings part way through does not start playback.
+              Playing them from the beginning works, and so does seeking once they are
+              playing.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.58.0-aarch64.50" date="2026-11-16">
       <description>
         <p>Added:</p>
