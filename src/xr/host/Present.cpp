@@ -32,6 +32,12 @@ namespace
   const float kStereoHalves = 2.0f;
   const char kComposeName[] = "GAMESCOPE_COMPOSITE_FORCE";
   const char kComposeOurs[] = "PLEXMEDIAPLAYER_COMPOSITE_FORCE";
+  const char kScaleName[] = "GAMESCOPE_NEW_SCALING_SCALER";
+  const char kScaleOurs[] = "PLEXMEDIAPLAYER_SCALING_SCALER";
+  const char kFilterName[] = "GAMESCOPE_NEW_SCALING_FILTER";
+  const char kFilterOurs[] = "PLEXMEDIAPLAYER_SCALING_FILTER";
+  const uint32_t kScaleStretch = 4;
+  const uint32_t kFilterLinear = 0;
   bool differs(float left, float right)
   {
     return !(left > right - 0.001f && left < right + 0.001f);
@@ -69,6 +75,8 @@ namespace
   const int kLayers = 7;
   const int kComposeWaitMs = 3000;
   const int kComposeAsks = 3;
+  const int kScaleProveMs = 1500;
+  const float kDrawnSlack = 2.0f;
   const int kDotSaidMax = 400;
   const float kBowCurved = 0.05f;
   const int kBowAgree = 2;
@@ -113,6 +121,38 @@ namespace
     clock_gettime(CLOCK_MONOTONIC, &now);
     return static_cast<int64_t>(now.tv_sec) * 1000 + now.tv_nsec / 1000000;
   }
+
+  std::string readingOf(const char* name)
+  {
+    const RootProperty::Reading reads = RootProperty::read(name);
+
+    char text[224];
+    if (!reads.reached)
+      std::snprintf(text, sizeof(text), "%s cannot be read, %s", name, reads.trouble.c_str());
+    else if (reads.present)
+      std::snprintf(text, sizeof(text), "%s reads %u", name, reads.value);
+    else
+      std::snprintf(text, sizeof(text), "%s is absent", name);
+    return text;
+  }
+
+  bool near(float left, float right)
+  {
+    return std::fabs(left - right) <= kDrawnSlack;
+  }
+
+  struct Lever
+  {
+    const char* name;
+    const char* ours;
+    uint32_t value;
+    const char* asks;
+    bool held = false;
+    bool refused = false;
+    bool had = false;
+    uint32_t was = 0;
+    int64_t since = 0;
+  };
 
   uint32_t appidFromEnvironment()
   {
@@ -186,6 +226,13 @@ namespace
       Giving = 2
     };
 
+    enum Stretch
+    {
+      Unproved = 0,
+      Stretched = 1,
+      Fitted = 2
+    };
+
     bool startRuntime();
     void teardown();
 
@@ -226,6 +273,14 @@ namespace
     bool curveMoved() const;
     void probeCover();
     bool windowScaled() const;
+    bool misshapen() const;
+    bool stretched() const;
+    bool scalingPending() const;
+    bool takeLever(Lever& lever);
+    void keepLever(Lever& lever);
+    void dropLever(Lever& lever);
+    void clearLever(const Lever& lever);
+    void tendScaling(int64_t now, int layer, float wide, float tall);
     void askComposite();
     void dropComposite();
     void carry(int layer);
@@ -307,6 +362,16 @@ namespace
     uint32_t m_composeWas = 0;
     int m_composeAsks = 0;
     int64_t m_composeUntil = 0;
+    Lever m_scale{kScaleName, kScaleOurs, kScaleStretch,
+                  "stretch the window over the whole plane"};
+    Lever m_filter{kFilterName, kFilterOurs, kFilterLinear,
+                   "scale the window with plain linear sampling"};
+    Stretch m_stretch = Unproved;
+    float m_baseWide = 0.0f;
+    float m_baseTall = 0.0f;
+    bool m_filterSaid = false;
+    bool m_stretchTold = false;
+    int m_stretchSaid = -1;
     uint32_t m_windowWide = 0;
     uint32_t m_windowTall = 0;
     int64_t m_coverAt = 0;
@@ -624,7 +689,8 @@ namespace
     if (m_panel != k_ulOverlayHandleInvalid || findByKey())
     {
       watchLayers(true);
-      if (m_backed && m_composeOurs && m_composeAsks < 2 && nowMs() < m_composeUntil)
+      if (scalingPending() ||
+          (m_backed && m_composeOurs && m_composeAsks < 2 && nowMs() < m_composeUntil))
       {
         m_lookAt = now - kLookGapMs + kLayerGapMs;
         return;
@@ -1483,7 +1549,7 @@ namespace
     if (!m_told || m_stage != Holding)
       return;
 
-    if (pointerWide() != m_pointerWideTold)
+    if (pointerWide() != m_pointerWideTold || stretched() != m_stretchTold)
     {
       send(XrProtocol::Stereo, nullptr);
       return;
@@ -1519,6 +1585,242 @@ namespace
 
     return std::fabs(m_panelMouseWide - static_cast<float>(m_windowWide)) > 1.0f ||
            std::fabs(m_panelMouseTall - static_cast<float>(m_windowTall)) > 1.0f;
+  }
+
+  bool Presenter::misshapen() const
+  {
+    if (!windowScaled())
+      return false;
+
+    const float wide = static_cast<float>(m_windowWide);
+    const float tall = static_cast<float>(m_windowTall);
+    const float fit = std::min(m_panelMouseWide / wide, m_panelMouseTall / tall);
+    return m_panelMouseWide - wide * fit > kDrawnSlack ||
+           m_panelMouseTall - tall * fit > kDrawnSlack;
+  }
+
+  bool Presenter::stretched() const
+  {
+    return m_scale.held && m_stretch != Fitted && misshapen();
+  }
+
+  bool Presenter::scalingPending() const
+  {
+    if (m_panelHidden)
+      return false;
+    if (m_filter.held && !m_filterSaid && !m_composeOurs)
+      return true;
+    if (!misshapen() || m_scale.refused)
+      return false;
+    return !m_scale.held || m_stretch == Unproved;
+  }
+
+  bool Presenter::takeLever(Lever& lever)
+  {
+    if (lever.held || lever.refused)
+      return false;
+
+    const RootProperty::Reading was = RootProperty::read(lever.name);
+    if (!was.reached)
+    {
+      lever.refused = true;
+      note("pmp-xr-host: %s cannot be read, %s, so the compositor is left as it is", lever.name,
+           was.trouble.c_str());
+      return false;
+    }
+
+    lever.had = was.present;
+    lever.was = was.value;
+    RootProperty::write(lever.ours, was.present ? was.value + 1 : 0);
+
+    const RootProperty::Reading now = RootProperty::write(lever.name, lever.value);
+    if (!now.reached || !now.present || now.value != lever.value)
+    {
+      lever.refused = true;
+      note("pmp-xr-host: %s would not be set, %s", lever.name,
+           now.reached ? "it does not read back" : now.trouble.c_str());
+      if (lever.had)
+        RootProperty::write(lever.name, lever.was);
+      else
+        RootProperty::remove(lever.name);
+      RootProperty::remove(lever.ours);
+      return false;
+    }
+
+    lever.held = true;
+    lever.since = nowMs();
+
+    if (lever.had)
+      note("pmp-xr-host: %s was %u and now reads %u, so the compositor is asked to %s",
+           lever.name, lever.was, now.value, lever.asks);
+    else
+      note("pmp-xr-host: %s was absent and now reads %u, so the compositor is asked to %s",
+           lever.name, now.value, lever.asks);
+    return true;
+  }
+
+  void Presenter::keepLever(Lever& lever)
+  {
+    if (!lever.held)
+      return;
+
+    const RootProperty::Reading now = RootProperty::write(lever.name, lever.value);
+    if (now.reached && now.present && now.value == lever.value)
+      return;
+
+    note("pmp-xr-host: %s would not be written again, %s", lever.name,
+         now.reached ? "it does not read back" : now.trouble.c_str());
+    dropLever(lever);
+    lever.refused = true;
+  }
+
+  void Presenter::dropLever(Lever& lever)
+  {
+    if (!lever.held)
+      return;
+    lever.held = false;
+
+    const RootProperty::Reading now = lever.had ? RootProperty::write(lever.name, lever.was)
+                                                : RootProperty::remove(lever.name);
+    RootProperty::remove(lever.ours);
+
+    if (!now.reached)
+      note("pmp-xr-host: %s could not be put back, %s", lever.name, now.trouble.c_str());
+    else if (now.present)
+      note("pmp-xr-host: %s was put back and reads %u", lever.name, now.value);
+    else
+      note("pmp-xr-host: %s was taken away again", lever.name);
+  }
+
+  void Presenter::clearLever(const Lever& lever)
+  {
+    const RootProperty::Reading left = RootProperty::read(lever.ours);
+    if (!left.reached || !left.present)
+      return;
+
+    if (left.value > 0)
+      RootProperty::write(lever.name, left.value - 1);
+    else
+      RootProperty::remove(lever.name);
+    RootProperty::remove(lever.ours);
+
+    note("pmp-xr-host: an earlier run left %s set, and it was %s", lever.name,
+         left.value > 0 ? "put back" : "taken away");
+  }
+
+  void Presenter::tendScaling(int64_t now, int layer, float wide, float tall)
+  {
+    if (!windowScaled())
+    {
+      dropLever(m_scale);
+      dropLever(m_filter);
+      m_stretch = Unproved;
+      return;
+    }
+
+    if (takeLever(m_filter))
+    {
+      m_filterSaid = layer != 0;
+      note("pmp-xr-host: when %s was written the compositor showed %s", kFilterName,
+           layer != 0 ? "the window on a layer of its own" : "no layer holding the window");
+    }
+    else if (m_filter.held && !m_filterSaid && !m_composeOurs)
+    {
+      if (layer != 0)
+      {
+        m_filterSaid = true;
+        note("pmp-xr-host: with %s at %u the compositor shows the window on layer %d, so it "
+             "no longer draws the window onto the panel on its own account",
+             kFilterName, kFilterLinear, layer);
+      }
+      else if (now - m_filter.since >= kScaleProveMs)
+      {
+        m_filterSaid = true;
+        note("pmp-xr-host: %d ms after %s was written the compositor still shows no layer "
+             "holding the window, and %s is not ours, so it draws the window onto the panel "
+             "for a reason that cannot be seen from here",
+             kScaleProveMs, kFilterName, kComposeName);
+      }
+    }
+
+    if (!misshapen())
+    {
+      dropLever(m_scale);
+      m_stretch = Unproved;
+      return;
+    }
+
+    const bool measured = layer != 0 && wide > 0.0f && tall > 0.0f;
+
+    if (!m_scale.held)
+    {
+      if (m_scale.refused)
+        return;
+      if (!measured && m_filter.held && !m_filterSaid && !m_composeOurs)
+        return;
+
+      m_baseWide = measured ? wide : 0.0f;
+      m_baseTall = measured ? tall : 0.0f;
+      m_stretch = Unproved;
+
+      if (measured)
+        note("pmp-xr-host: before %s is written layer %d is drawn %.0f by %.0f on the %.0f by "
+             "%.0f plane",
+             kScaleName, layer, wide, tall, m_panelMouseWide, m_panelMouseTall);
+      else
+        note("pmp-xr-host: the compositor shows no layer to measure before %s is written",
+             kScaleName);
+
+      takeLever(m_scale);
+      return;
+    }
+
+    const bool full =
+      measured && near(wide, m_panelMouseWide) && near(tall, m_panelMouseTall);
+    const bool based = m_baseWide > 0.0f && m_baseTall > 0.0f;
+    const bool baseFull =
+      based && near(m_baseWide, m_panelMouseWide) && near(m_baseTall, m_panelMouseTall);
+    const bool late = now - m_scale.since >= kScaleProveMs;
+
+    Stretch next = m_stretch;
+    if (full)
+      next = Stretched;
+    else if (late && measured)
+      next = Fitted;
+    else if (late && m_stretch == Unproved)
+      next = Stretched;
+
+    if (next == m_stretch)
+      return;
+    m_stretch = next;
+
+    if (next == Fitted)
+    {
+      note("pmp-xr-host: layer %d is drawn %.0f by %.0f on the %.0f by %.0f plane %d ms after "
+           "%s was written, so the compositor does not stretch the window and each eye keeps "
+           "the fitted box",
+           layer, wide, tall, m_panelMouseWide, m_panelMouseTall,
+           static_cast<int>(now - m_scale.since), kScaleName);
+      dropLever(m_scale);
+      m_scale.refused = true;
+    }
+    else if (!measured)
+      note("pmp-xr-host: the compositor shows no layer to measure after %s was written, so the "
+           "stretch is taken from the property, and %s",
+           kScaleName, readingOf(kScaleName).c_str());
+    else if (baseFull)
+      note("pmp-xr-host: layer %d read %.0f by %.0f both before and after %s was written, so "
+           "the reading cannot tell and the stretch is taken from the property",
+           layer, wide, tall, kScaleName);
+    else if (based)
+      note("pmp-xr-host: layer %d went from %.0f by %.0f to %.0f by %.0f, the whole plane, "
+           "after %s was written, so the compositor stretches the window",
+           layer, m_baseWide, m_baseTall, wide, tall, kScaleName);
+    else
+      note("pmp-xr-host: layer %d is drawn %.0f by %.0f, the whole plane, with nothing "
+           "measured before %s was written to compare against, so the compositor is taken to "
+           "stretch the window",
+           layer, wide, tall, kScaleName);
   }
 
   void Presenter::askComposite()
@@ -1701,6 +2003,23 @@ namespace
     }
 
     const bool backed = lowest != 0 && (lowestFlags & kOpaqueFlag) != 0 && windowScaled();
+
+    float drawnWide = 0.0f;
+    float drawnTall = 0.0f;
+    if (backed && ovl->GetOverlayMouseScale)
+    {
+      struct HmdVector2_t drawn = {{0.0f, 0.0f}};
+      if (ovl->GetOverlayMouseScale(m_layers[lowest], &drawn) ==
+          EVROverlayError_VROverlayError_None)
+      {
+        drawnWide = drawn.v[0];
+        drawnTall = drawn.v[1];
+      }
+    }
+
+    tendScaling(now, backed ? lowest : 0, drawnWide, drawnTall);
+    const bool settling = scalingPending();
+
     m_backed = backed;
     m_backedLayer = backed ? lowest : 0;
 
@@ -1719,12 +2038,12 @@ namespace
              m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall);
     }
 
-    if (backed && !m_composeAsked)
+    if (backed && !m_composeAsked && !settling)
       askComposite();
 
     if (m_stereo && !m_carryFailed)
     {
-      const bool waiting = m_composeOurs && now < m_composeUntil;
+      const bool waiting = settling || (m_composeOurs && now < m_composeUntil);
 
       if (backed && m_carrierLayer != 0 && m_carrierLayer != lowest)
         carry(lowest);
@@ -1757,26 +2076,31 @@ namespace
     else
       std::snprintf(carrier, sizeof(carrier), "the panel");
 
-    char head[320];
+    const char* shape = !windowScaled()                      ? "at its own size"
+                        : stretched() && m_stretch == Unproved ? "asked to stretch over the plane"
+                        : stretched()                          ? "stretched over the plane"
+                        : misshapen()                          ? "fitted inside the plane"
+                                                               : "scaled to the plane";
+
+    char drawn[64] = "";
+    if (drawnWide > 0.0f && drawnTall > 0.0f)
+      std::snprintf(drawn, sizeof(drawn), ", layer %d drawn %.0f by %.0f", lowest, drawnWide,
+                    drawnTall);
+
+    char head[448];
     std::snprintf(head, sizeof(head), "window %u by %u, plane %.0f by %.0f, showing%s side by "
-                  "side on %s, texel aspect %.3f",
+                  "side on %s, texel aspect %.3f, window %s%s",
                   m_windowWide, m_windowTall, m_panelMouseWide, m_panelMouseTall,
                   showing.empty() ? " no layers," : showing.c_str(), carrier,
-                  m_panelTexelAspect);
+                  m_panelTexelAspect, shape, drawn);
 
     if (m_layerSaid == head && now - m_layerSaidAt < kLayerSayGapMs)
       return;
     m_layerSaid = head;
     m_layerSaidAt = now;
 
-    const RootProperty::Reading reads = RootProperty::read(kComposeName);
-    if (!reads.reached)
-      note("pmp-xr-host: layers: %s, %s cannot be read, %s", head, kComposeName,
-           reads.trouble.c_str());
-    else if (reads.present)
-      note("pmp-xr-host: layers: %s, %s reads %u", head, kComposeName, reads.value);
-    else
-      note("pmp-xr-host: layers: %s, %s is absent", head, kComposeName);
+    note("pmp-xr-host: layers: %s, %s, %s, %s", head, readingOf(kComposeName).c_str(),
+         readingOf(kScaleName).c_str(), readingOf(kFilterName).c_str());
   }
 
   void Presenter::probeCover()
@@ -2083,6 +2407,9 @@ namespace
       return;
     m_checkAt = now;
 
+    keepLever(m_scale);
+    keepLever(m_filter);
+
     if (!m_settled && m_settledAt != 0 && now - m_settledAt > kSettleMs)
     {
       m_settled = true;
@@ -2189,6 +2516,21 @@ namespace
     const bool pointing = type == XrProtocol::Stereo || type == XrProtocol::Pointer;
     const float pointer = pointing ? pointerWide() : 1.0f;
     message.pointerWideThousandths = static_cast<uint32_t>(pointer * 1000.0f + 0.5f);
+
+    const bool stretch = pointing && stretched();
+    message.windowStretched = stretch ? 1 : 0;
+    if (pointing)
+    {
+      m_stretchTold = stretch;
+      if (m_stretchSaid != (stretch ? 1 : 0))
+      {
+        m_stretchSaid = stretch ? 1 : 0;
+        note("pmp-xr-host: the app is told the %u by %u window is %s the %.0f by %.0f plane",
+             m_windowWide, m_windowTall,
+             stretch ? "stretched over the whole of" : "drawn at its own shape on",
+             m_panelMouseWide, m_panelMouseTall);
+      }
+    }
 
     if (pointing)
     {
@@ -2353,6 +2695,9 @@ namespace
     else if (!left.reached)
       note("pmp-xr-host: the X root window cannot be read, %s", left.trouble.c_str());
 
+    clearLever(m_scale);
+    clearLever(m_filter);
+
     return startRuntime();
   }
 
@@ -2401,6 +2746,8 @@ namespace
   {
     dropStereo();
     dropComposite();
+    dropLever(m_scale);
+    dropLever(m_filter);
     m_ovr.stop();
   }
 }

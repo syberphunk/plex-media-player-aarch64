@@ -29,6 +29,7 @@ public:
   int panelMillimetres() const { return m_panelMillimetres; }
   float panelTexelAspect() const { return m_panelTexelAspect; }
   float panelPointerWide() const { return float(m_panelPointerWide.load()) / 1000.0f; }
+  bool panelStretched() const { return m_panelStretched; }
   bool bendPointer(double across, double down, double& onto, double& under) const;
   QString pointerSource() const;
   void markPointer(double across, double down, bool say);
@@ -87,6 +88,7 @@ private:
   std::atomic<int> m_windowWide{0};
   std::atomic<int> m_windowTall{0};
   std::atomic<int> m_panelPointerWide{1000};
+  std::atomic<bool> m_panelStretched{false};
   std::atomic<int> m_curveRadius{0};
   std::atomic<int> m_curveSweep{0};
   std::atomic<int> m_curveTall{0};

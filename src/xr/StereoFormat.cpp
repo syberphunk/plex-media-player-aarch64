@@ -29,16 +29,19 @@ namespace
     return true;
   }
 
-  bool fitPlane(const QSizeF& window, const QSizeF& plane, double& scale, double& left,
-                double& top)
+  bool fitPlane(const QSizeF& window, const QSizeF& plane, bool stretched, double& across,
+                double& down, double& left, double& top)
   {
     if (!(window.width() > 0.0) || !(window.height() > 0.0) || !(plane.width() > 0.0) ||
         !(plane.height() > 0.0))
       return false;
 
-    scale = qMin(plane.width() / window.width(), plane.height() / window.height());
-    left = (plane.width() - window.width() * scale) / 2.0;
-    top = (plane.height() - window.height() * scale) / 2.0;
+    across = plane.width() / window.width();
+    down = plane.height() / window.height();
+    if (!stretched)
+      across = down = qMin(across, down);
+    left = (plane.width() - window.width() * across) / 2.0;
+    top = (plane.height() - window.height() * down) / 2.0;
     return true;
   }
 
@@ -317,20 +320,21 @@ double StereoFormat::eyeAspect(const Layout& layout, const QSize& display)
   return layout.packing == Packing::SideBySide ? aspect / 2.0 : aspect * 2.0;
 }
 
-QRectF StereoFormat::eyeBox(const QSizeF& window, const QSizeF& plane)
+QRectF StereoFormat::eyeBox(const QSizeF& window, const QSizeF& plane, bool stretched)
 {
   const QRectF even(0.0, 0.0, window.width() / 2.0, window.height());
 
-  double scale = 0.0;
+  double across = 0.0;
+  double down = 0.0;
   double left = 0.0;
   double top = 0.0;
-  if (!fitPlane(window, plane, scale, left, top))
+  if (!fitPlane(window, plane, stretched, across, down, left, top))
     return even;
 
-  const double fromX = -left / scale;
-  const double toX = (plane.width() / 2.0 - left) / scale;
-  const double fromY = -top / scale;
-  const double toY = (plane.height() - top) / scale;
+  const double fromX = -left / across;
+  const double toX = (plane.width() / 2.0 - left) / across;
+  const double fromY = -top / down;
+  const double toY = (plane.height() - top) / down;
   const double midX = (fromX + toX) / 2.0;
   const double midY = (fromY + toY) / 2.0;
   const double reachX = qMin(midX - qMax(fromX, 0.0), qMin(toX, window.width()) - midX);
@@ -344,35 +348,50 @@ QRectF StereoFormat::eyeBox(const QSizeF& window, const QSizeF& plane)
   return QRectF(midX - wide / 2.0, midY - tall / 2.0, wide, tall);
 }
 
-QPointF StereoFormat::planeAt(const QPointF& at, const QSizeF& window, const QSizeF& plane)
+double StereoFormat::pixelShape(const QSizeF& window, const QSizeF& plane, bool stretched)
 {
-  double scale = 0.0;
+  double across = 0.0;
+  double down = 0.0;
   double left = 0.0;
   double top = 0.0;
-  if (!fitPlane(window, plane, scale, left, top))
+  if (!fitPlane(window, plane, stretched, across, down, left, top) || !(down > 0.0))
+    return 1.0;
+  return across / down;
+}
+
+QPointF StereoFormat::planeAt(const QPointF& at, const QSizeF& window, const QSizeF& plane,
+                              bool stretched)
+{
+  double across = 0.0;
+  double down = 0.0;
+  double left = 0.0;
+  double top = 0.0;
+  if (!fitPlane(window, plane, stretched, across, down, left, top))
   {
     if (!(window.width() > 0.0) || !(window.height() > 0.0))
       return QPointF();
     return QPointF(at.x() / window.width(), at.y() / window.height());
   }
 
-  return QPointF((at.x() * scale + left) / plane.width(),
-                 (at.y() * scale + top) / plane.height());
+  return QPointF((at.x() * across + left) / plane.width(),
+                 (at.y() * down + top) / plane.height());
 }
 
-QPointF StereoFormat::windowAt(const QPointF& eyeAt, const QSizeF& window, const QSizeF& plane)
+QPointF StereoFormat::windowAt(const QPointF& eyeAt, const QSizeF& window, const QSizeF& plane,
+                               bool stretched)
 {
-  double scale = 0.0;
+  double across = 0.0;
+  double down = 0.0;
   double left = 0.0;
   double top = 0.0;
-  if (!fitPlane(window, plane, scale, left, top))
+  if (!fitPlane(window, plane, stretched, across, down, left, top))
     return QPointF(eyeAt.x() * window.width(), eyeAt.y() * window.height());
 
-  const QRectF box = eyeBox(window, plane);
-  const double fromX = (box.left() * scale + left) / (plane.width() / 2.0);
-  const double toX = (box.right() * scale + left) / (plane.width() / 2.0);
-  const double fromY = (box.top() * scale + top) / plane.height();
-  const double toY = (box.bottom() * scale + top) / plane.height();
+  const QRectF box = eyeBox(window, plane, stretched);
+  const double fromX = (box.left() * across + left) / (plane.width() / 2.0);
+  const double toX = (box.right() * across + left) / (plane.width() / 2.0);
+  const double fromY = (box.top() * down + top) / plane.height();
+  const double toY = (box.bottom() * down + top) / plane.height();
   if (!(toX > fromX) || !(toY > fromY))
     return QPointF(eyeAt.x() * window.width(), eyeAt.y() * window.height());
 

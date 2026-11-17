@@ -58,11 +58,14 @@ namespace StereoFormat
 
   double eyeAspect(const Layout& layout, const QSize& display);
 
-  QRectF eyeBox(const QSizeF& window, const QSizeF& plane);
+  QRectF eyeBox(const QSizeF& window, const QSizeF& plane, bool stretched);
 
-  QPointF planeAt(const QPointF& at, const QSizeF& window, const QSizeF& plane);
+  double pixelShape(const QSizeF& window, const QSizeF& plane, bool stretched);
 
-  QPointF windowAt(const QPointF& eyeAt, const QSizeF& window, const QSizeF& plane);
+  QPointF planeAt(const QPointF& at, const QSizeF& window, const QSizeF& plane, bool stretched);
+
+  QPointF windowAt(const QPointF& eyeAt, const QSizeF& window, const QSizeF& plane,
+                   bool stretched);
 }
 
 #endif

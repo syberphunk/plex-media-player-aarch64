@@ -214,6 +214,13 @@ void XrPresenter::readHost()
                                          : "used as delivered");
 
     const bool spreading = pointing && pointerWide > 1000;
+    const bool stretched = pointing && message.windowStretched != 0;
+    if (pointing && (stretched != m_panelStretched.load() || pointerNews))
+      QLOG_INFO() << "Stereoscopic: the compositor"
+                  << (stretched ? "stretches the window over the whole panel, so each eye is "
+                                  "half the window"
+                                : "fits the window inside the panel at its own shape");
+    m_panelStretched = stretched;
     const bool curved = spreading && message.curveRadiusMillimetres > 0 &&
                         message.curveSweepThousandths > 0 && message.curveTallMillimetres > 0;
     const int aimedBy = curved ? int(message.aimedBy) : int(XrProtocol::Unaimed);

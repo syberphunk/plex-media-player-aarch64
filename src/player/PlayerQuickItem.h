@@ -74,6 +74,7 @@ private:
   QRect m_windowVideoRect;
   QSizeF m_eyePlane;
   double m_eyeAspect;
+  bool m_eyeStretched;
   QOpenGLFramebufferObject* m_windowShot;
   QOpenGLFramebufferObject* m_videoFbo;
   QOpenGLShaderProgram* m_keyProgram;

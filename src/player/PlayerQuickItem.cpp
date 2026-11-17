@@ -121,7 +121,8 @@ static void* get_proc_address(void* ctx, const char* name)
 PlayerRenderer::PlayerRenderer(PlayerQuickItem* item)
 : m_item(item), m_mpv(item->m_mpv), m_mpvGL(nullptr), m_initialized(false),
   m_playbackActive(false), m_stereoWanted(false), m_stereoPacking(0), m_stereoSwapped(false),
-  m_stereoControls(false), m_eyeAspect(0.0), m_windowShot(nullptr), m_videoFbo(nullptr),
+  m_stereoControls(false), m_eyeAspect(0.0), m_eyeStretched(false), m_windowShot(nullptr),
+  m_videoFbo(nullptr),
   m_keyProgram(nullptr), m_keyVao(0), m_keyFailed(false), m_shotReports(0), m_dumpsLeft(0),
   m_dumpWaits(0), m_dumpBudget(kDumpBudget), m_captures(false), m_bars(false), m_rulerFrom(0), m_rulerSaid(0),
   m_rulerShots(0),
@@ -277,10 +278,15 @@ void PlayerRenderer::syncStereo()
   m_stereoPacking = presenter.packing();
   m_stereoSwapped = presenter.swapped();
   const QSize plane = presenter.panelPointer();
-  m_eyePlane = presenter.panelPointerWide() > 1.0f && plane.width() > 0 && plane.height() > 0
+  const bool stretched = presenter.panelStretched();
+  m_eyePlane = (stretched || presenter.panelPointerWide() > 1.0f) && plane.width() > 0 &&
+                   plane.height() > 0
                  ? QSizeF(plane)
                  : QSizeF(m_windowSize);
   m_eyeAspect = presenter.eyeAspect();
+  if (stretched != m_eyeStretched)
+    m_shotReports = 0;
+  m_eyeStretched = stretched;
   m_packedSize = packedFor(presenter.videoSize());
 
   const bool controls = presenter.controlsActive();
@@ -419,14 +425,17 @@ void PlayerRenderer::reportShot(QOpenGLExtraFunctions* gl)
               << (toWide >= fromWide && toTall >= fromTall ? "magnified" : "minified")
               << "eye box" << qRound(box.x()) << qRound(box.y()) << qRound(box.width())
               << qRound(box.height()) << "on a plane" << qRound(m_eyePlane.width()) << "x"
-              << qRound(m_eyePlane.height()) << "eye aspect" << m_eyeAspect;
+              << qRound(m_eyePlane.height())
+              << (m_eyeStretched ? "which the window is stretched over"
+                                 : "which the window is fitted inside")
+              << "eye aspect" << m_eyeAspect;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 QRectF PlayerRenderer::eyeBox(int eye) const
 {
   const QSizeF window(m_windowSize);
-  const QRectF left = StereoFormat::eyeBox(window, m_eyePlane);
+  const QRectF left = StereoFormat::eyeBox(window, m_eyePlane, m_eyeStretched);
   if (eye == 0)
     return left;
   return QRectF(window.width() - left.right(), left.top(), left.width(), left.height());
@@ -452,7 +461,8 @@ QRectF PlayerRenderer::eyeVideo(int eye) const
   if (!(m_eyeAspect > 0.0) || !(box.width() > 0.0) || !(box.height() > 0.0))
     return area;
 
-  const double shape = m_eyeAspect * (box.width() / box.height()) * double(h) / double(w);
+  const double shape = m_eyeAspect * (box.width() / box.height()) * double(h) / double(w) /
+                       StereoFormat::pixelShape(QSizeF(m_windowSize), m_eyePlane, m_eyeStretched);
   double wide = area.width();
   double tall = wide / shape;
   if (tall > area.height())
@@ -1504,6 +1514,7 @@ QPointF PlayerQuickItem::spreadPointer(const QPointF& at, bool follow) const
   const QSize panel = known ? XrPresenter::Get().panelPointer() : QSize();
   const bool hasPanel = panel.width() > 0 && panel.height() > 0;
   const float spread = known ? XrPresenter::Get().panelPointerWide() : 1.0f;
+  const bool stretched = known && XrPresenter::Get().panelStretched();
 
   if (spread > 1.0f)
   {
@@ -1511,7 +1522,7 @@ QPointF PlayerQuickItem::spreadPointer(const QPointF& at, bool follow) const
     const QSizeF plane = hasPanel ? QSizeF(panel) : window;
     const QPointF onPlane = m_cursorOffWindow && hasPanel
                               ? QPointF(at.x() / plane.width(), at.y() / plane.height())
-                              : StereoFormat::planeAt(at, window, plane);
+                              : StereoFormat::planeAt(at, window, plane, stretched);
 
     double onto = 0.0;
     double under = 0.0;
@@ -1521,7 +1532,8 @@ QPointF PlayerQuickItem::spreadPointer(const QPointF& at, bool follow) const
       under = onPlane.y();
     }
 
-    const QPointF to = StereoFormat::windowAt(QPointF(onto, under), window, plane);
+    const QPointF to =
+      StereoFormat::windowAt(QPointF(onto, under), window, plane, stretched);
     x = float(to.x());
     y = float(to.y());
     moved = true;
@@ -1587,7 +1599,8 @@ void PlayerQuickItem::markPointer(bool say)
   const QPointF onPlane = m_cursorOffWindow && hasPanel
                             ? QPointF(m_cursorRaw.x() / plane.width(),
                                       m_cursorRaw.y() / plane.height())
-                            : StereoFormat::planeAt(m_cursorRaw, window, plane);
+                            : StereoFormat::planeAt(m_cursorRaw, window, plane,
+                                                    XrPresenter::Get().panelStretched());
 
   m_cursorMarked.start();
   XrPresenter::Get().markPointer(onPlane.x(), onPlane.y(), say);
