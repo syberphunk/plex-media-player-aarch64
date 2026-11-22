@@ -116,10 +116,10 @@ In Game Mode, do either of these:
 
 ## What works
 
-- **Video** in H.264, HEVC and VP9 is decoded by the Frame's hardware decoder.
-- **HDR and Dolby Vision** files play in SDR. They are 10-bit video, which the
-  Frame's hardware decoder cannot output, so the processor decodes them
-  instead.
+- **Video** in H.264, HEVC and VP9 is decoded by the Frame's hardware decoder,
+  including 10-bit HEVC and VP9. 10-bit H.264 is decoded by the processor.
+- **HDR and Dolby Vision** files play in SDR. Dolby Vision is decoded by the
+  processor.
 - **3D films** packed side by side or over and under can play with depth in
   the headset. Turn on **Play 3D files through the headset** in the
   **Stereoscopic 3D** section of **Plex Media Player settings**.

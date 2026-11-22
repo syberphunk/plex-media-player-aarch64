@@ -1895,10 +1895,11 @@ static int videoStreamBitDepth(const StreamInfo& stream)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-// The V4L2 wrapper does not check whether the hardware can represent the stream
-// it is handed: it configures an 8 bit CAPTURE format and decodes into it
-// regardless, so 10 bit content comes out corrupted rather than failing over.
-// Drop the hardware decoder for any stream the device cannot emit correctly.
+// The V4L2 wrapper does not check whether the hardware can decode the stream it
+// is handed, so a stream the device cannot handle comes out black or corrupted
+// rather than failing over. Drop the hardware decoder for any stream the device
+// cannot decode: one deeper than its capture formats, 10 bit H.264, which the
+// Frame's decoder rejects, and Dolby Vision.
 QStringList PlayerComponent::allowedVideoDecoders(const PlaybackInfo& info) const
 {
   if (m_videoDecoderPreference.isEmpty())
@@ -1942,6 +1943,8 @@ QStringList PlayerComponent::allowedVideoDecoders(const PlaybackInfo& info) cons
     const int depth = videoStreamBitDepth(stream);
     if (deviceDepth > 0 && depth > deviceDepth)
       reason = QString("stream is %1 bit, decoder emits %2 bit").arg(depth).arg(deviceDepth);
+    else if (stream.codec == "h264" && depth > 8)
+      reason = "the decoder rejects H.264 deeper than 8 bit";
     else if (stream.videoDolbyVision)
       reason = "Dolby Vision, which the decoder cannot process";
 
