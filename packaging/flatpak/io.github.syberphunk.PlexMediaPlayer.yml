@@ -125,6 +125,8 @@ modules:
         path: patches/ffmpeg-v4l2m2m-vp9-superframe-split.patch
       - type: patch
         path: patches/ffmpeg-v4l2m2m-vp9-hidden-frames.patch
+      - type: patch
+        path: patches/ffmpeg-v4l2m2m-10bit-capture-format.patch
 
   - name: libmpv
     buildsystem: meson

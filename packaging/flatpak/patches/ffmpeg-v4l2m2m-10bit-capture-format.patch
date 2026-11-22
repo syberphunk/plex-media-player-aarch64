@@ -1,0 +1,179 @@
+diff --git a/libavcodec/v4l2_buffers.c b/libavcodec/v4l2_buffers.c
+index 75f3738..ad47cfa 100644
+--- a/libavcodec/v4l2_buffers.c
++++ b/libavcodec/v4l2_buffers.c
+@@ -340,6 +340,7 @@ static int v4l2_buffer_buf_to_swframe(AVFrame *frame, V4L2Buffer *avbuf)
+     switch (avbuf->context->av_pix_fmt) {
+     case AV_PIX_FMT_NV12:
+     case AV_PIX_FMT_NV21:
++    case AV_PIX_FMT_P010LE:
+         if (avbuf->num_planes > 1)
+             break;
+         frame->linesize[1] = avbuf->plane_info[0].bytesperline;
+diff --git a/libavcodec/v4l2_context.c b/libavcodec/v4l2_context.c
+index 96cd040..96ba27d 100644
+--- a/libavcodec/v4l2_context.c
++++ b/libavcodec/v4l2_context.c
+@@ -28,6 +28,7 @@
+ #include <fcntl.h>
+ #include <poll.h>
+ #include "libavutil/mem.h"
++#include "libavutil/pixdesc.h"
+ #include "libavcodec/avcodec.h"
+ #include "decode.h"
+ #include "v4l2_buffers.h"
+@@ -179,6 +180,9 @@ static int v4l2_handle_event(V4L2Context *ctx)
+     V4L2m2mContext *s = ctx_to_m2mctx(ctx);
+     struct v4l2_format cap_fmt = s->capture.format;
+     struct v4l2_event evt = { 0 };
++    uint32_t cap_pixfmt;
++    enum AVPixelFormat avfmt;
++    int pixfmt_changed = 0;
+     int ret;
+ 
+     ret = ioctl(s->fd, VIDIOC_DQEVENT, &evt);
+@@ -201,11 +205,35 @@ static int v4l2_handle_event(V4L2Context *ctx)
+         return 0;
+     }
+ 
++    /*
++     * Once a decoder has parsed the stream it may switch its capture format
++     * while the picture size stays the same. Qualcomm's decoder does this for
++     * 10 bit streams and picks a vendor-compressed layout that cannot be read
++     * as a picture. Ask for plain P010 instead, which the same decoder offers.
++     * Without this the capture buffers are set up for a layout nobody reads.
++     */
++    cap_pixfmt = V4L2_TYPE_IS_MULTIPLANAR(cap_fmt.type) ?
++                 cap_fmt.fmt.pix_mp.pixelformat : cap_fmt.fmt.pix.pixelformat;
++    avfmt = ff_v4l2_format_v4l2_to_avfmt(cap_pixfmt, AV_CODEC_ID_RAWVIDEO);
++#ifdef V4L2_PIX_FMT_P010
++    if (avfmt == AV_PIX_FMT_NONE && cap_pixfmt == v4l2_fourcc('Q', '1', '0', 'C'))
++        avfmt = AV_PIX_FMT_P010LE;
++#endif
++    if (avfmt != AV_PIX_FMT_NONE && avfmt != s->capture.av_pix_fmt) {
++        av_log(logger(ctx), AV_LOG_DEBUG, "capture format changed from %s to %s\n",
++               av_get_pix_fmt_name(s->capture.av_pix_fmt) ?: "none",
++               av_get_pix_fmt_name(avfmt));
++        s->capture.av_pix_fmt = avfmt;
++        if (s->avctx)
++            s->avctx->pix_fmt = avfmt;
++        pixfmt_changed = 1;
++    }
++
+     if (v4l2_resolution_changed(&s->capture, &cap_fmt)) {
+         s->capture.height = v4l2_get_height(&cap_fmt);
+         s->capture.width = v4l2_get_width(&cap_fmt);
+         s->capture.sample_aspect_ratio = v4l2_get_sar(&s->capture);
+-    } else {
++    } else if (!pixfmt_changed) {
+         v4l2_start_decode(ctx);
+         return 0;
+     }
+@@ -534,9 +562,44 @@ static inline int v4l2_try_raw_format(V4L2Context* ctx, enum AVPixelFormat pixfm
+     if (ret)
+         return AVERROR(EINVAL);
+ 
++    /* drivers often answer with the format they would use instead of failing */
++    if ((V4L2_TYPE_IS_MULTIPLANAR(ctx->type) ?
++         fmt->fmt.pix_mp.pixelformat : fmt->fmt.pix.pixelformat) != v4l2_fmt)
++        return AVERROR(EINVAL);
++
+     return 0;
+ }
+ 
++/*
++ * Players often open the decoder before the pixel format is known, but the
++ * profile is already set from the container. Use it so the right capture
++ * format is requested on the first attempt.
++ */
++static int v4l2_is_10bit_stream(const AVCodecContext *avctx, enum AVPixelFormat pixfmt)
++{
++    /* a pixel format that is already known decides */
++    if (pixfmt != AV_PIX_FMT_NONE)
++        return pixfmt == AV_PIX_FMT_YUV420P10LE;
++
++    switch (avctx->codec_id) {
++    case AV_CODEC_ID_HEVC:
++        if (avctx->profile != AV_PROFILE_UNKNOWN)
++            return avctx->profile == AV_PROFILE_HEVC_MAIN_10;
++        /* players such as mpv open the decoder before the profile is parsed;
++         * the hvcC header in extradata (Matroska, MP4) already has the depth */
++        if (avctx->extradata_size >= 23 && avctx->extradata[0] == 1)
++            return (avctx->extradata[17] & 7) + 8 == 10;
++        return 0;
++    case AV_CODEC_ID_VP9:
++        return avctx->profile == AV_PROFILE_VP9_2;
++    case AV_CODEC_ID_H264:
++        /* the low byte is the profile, the rest are constraint flags */
++        return (avctx->profile & 0xff) == AV_PROFILE_H264_HIGH_10;
++    default:
++        return 0;
++    }
++}
++
+ static int v4l2_get_raw_format(V4L2Context* ctx, enum AVPixelFormat *p)
+ {
+     enum AVPixelFormat pixfmt = ctx->av_pix_fmt;
+@@ -546,10 +609,17 @@ static int v4l2_get_raw_format(V4L2Context* ctx, enum AVPixelFormat *p)
+     memset(&fdesc, 0, sizeof(fdesc));
+     fdesc.type = ctx->type;
+ 
++    /* decoders hand out 10 bit 4:2:0 as P010 */
++    if (ctx_to_m2mctx(ctx)->avctx && av_codec_is_decoder(ctx_to_m2mctx(ctx)->avctx->codec) &&
++        v4l2_is_10bit_stream(ctx_to_m2mctx(ctx)->avctx, pixfmt))
++        pixfmt = AV_PIX_FMT_P010LE;
++
+     if (pixfmt != AV_PIX_FMT_NONE) {
+         ret = v4l2_try_raw_format(ctx, pixfmt);
+-        if (!ret)
++        if (!ret) {
++            *p = pixfmt;
+             return 0;
++        }
+     }
+ 
+     for (;;) {
+diff --git a/libavcodec/v4l2_fmt.c b/libavcodec/v4l2_fmt.c
+index 6df47e3..8a478f0 100644
+--- a/libavcodec/v4l2_fmt.c
++++ b/libavcodec/v4l2_fmt.c
+@@ -51,6 +51,9 @@ static const struct fmt_conversion {
+     { AV_FMT(YUV410P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YUV410) },
+     { AV_FMT(YUV410P),     AV_CODEC(RAWVIDEO),    V4L2_FMT(YVU410) },
+     { AV_FMT(NV12),        AV_CODEC(RAWVIDEO),    V4L2_FMT(NV12) },
++#ifdef V4L2_PIX_FMT_P010
++    { AV_FMT(P010LE),      AV_CODEC(RAWVIDEO),    V4L2_FMT(P010) },
++#endif
+     { AV_FMT(NONE),        AV_CODEC(MJPEG),       V4L2_FMT(MJPEG) },
+     { AV_FMT(NONE),        AV_CODEC(MJPEG),       V4L2_FMT(JPEG) },
+ #ifdef V4L2_PIX_FMT_SRGGB8
+diff --git a/libavcodec/v4l2_m2m_dec.c b/libavcodec/v4l2_m2m_dec.c
+index e5f6160..d77a963 100644
+--- a/libavcodec/v4l2_m2m_dec.c
++++ b/libavcodec/v4l2_m2m_dec.c
+@@ -62,6 +62,25 @@ static int v4l2_try_start(AVCodecContext *avctx)
+         return ret;
+     }
+ 
++#ifdef V4L2_PIX_FMT_P010
++    /*
++     * Qualcomm's decoder reports a vendor-compressed layout for 10 bit
++     * streams once it has parsed the stream header. FFmpeg cannot read it, so
++     * ask for plain P010, which the same decoder offers.
++     */
++    if (capture->format.fmt.pix_mp.pixelformat == v4l2_fourcc('Q', '1', '0', 'C')) {
++        capture->format.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_P010;
++        if (ioctl(s->fd, VIDIOC_S_FMT, &capture->format))
++            av_log(avctx, AV_LOG_WARNING, "VIDIOC_S_FMT ioctl, P010 not accepted\n");
++        capture->format.type = capture->type;
++        ret = ioctl(s->fd, VIDIOC_G_FMT, &capture->format);
++        if (ret) {
++            av_log(avctx, AV_LOG_WARNING, "VIDIOC_G_FMT ioctl\n");
++            return ret;
++        }
++    }
++#endif
++
+     /* 2.1 update the AVCodecContext */
+     avctx->pix_fmt = ff_v4l2_format_v4l2_to_avfmt(capture->format.fmt.pix_mp.pixelformat, AV_CODEC_ID_RAWVIDEO);
+     capture->av_pix_fmt = avctx->pix_fmt;
