@@ -37,14 +37,8 @@ public:
   QString shortcutName() const { return m_shortcutName; }
   QString lastError() const { return m_lastError; }
 
-  // True when the app is worth offering a Steam shortcut for: a headset
-  // session that Steam did not start, where the shortcut would change how the
-  // device clocks itself.
   bool shouldOffer() const;
 
-  // The shortcut is already there but Steam did not start this session, so the
-  // same session can be had with the device's per-title profile by starting it
-  // through Steam instead.
   bool shouldOfferRelaunch() const;
 
   Q_INVOKABLE void refresh();

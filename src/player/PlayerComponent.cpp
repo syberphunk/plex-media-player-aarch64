@@ -1871,9 +1871,6 @@ PlaybackInfo PlayerComponent::getPlaybackInfo()
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-// Bit depth of a video stream, from what the server reported. Falls back to the
-// profile name, which encodes the depth for every format that has a deep
-// variant. Returns 0 when neither says anything.
 static int videoStreamBitDepth(const StreamInfo& stream)
 {
   if (stream.videoBitDepth > 0)
@@ -1886,7 +1883,6 @@ static int videoStreamBitDepth(const StreamInfo& stream)
     return 12;
   if (profile.contains("10"))
     return 10;
-  // VP9 profiles 2 and 3 are the 10/12 bit ones.
   if (stream.codec == "vp9" && (profile == "profile2" || profile == "profile3" ||
                                 profile == "2" || profile == "3"))
     return 10;
@@ -1895,10 +1891,6 @@ static int videoStreamBitDepth(const StreamInfo& stream)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-// The V4L2 wrapper does not check whether the hardware can represent the stream
-// it is handed: it configures an 8 bit CAPTURE format and decodes into it
-// regardless, so 10 bit content comes out corrupted rather than failing over.
-// Drop the hardware decoder for any stream the device cannot emit correctly.
 QStringList PlayerComponent::allowedVideoDecoders(const PlaybackInfo& info) const
 {
   if (m_videoDecoderPreference.isEmpty())
@@ -1907,9 +1899,6 @@ QStringList PlayerComponent::allowedVideoDecoders(const PlaybackInfo& info) cons
   const int deviceDepth = SessionEnv::v4l2DecodeBitDepth();
   QStringList excluded;
 
-  // The streams in info may have no profile at all, because that lookup matches
-  // the server's stream index against ffmpeg's and the two do not always agree.
-  // Read the server's own list as well, which needs no index match.
   QList<StreamInfo> streams = info.streams;
   for (auto partInfo : m_serverMediaInfo["Part"].toList())
   {

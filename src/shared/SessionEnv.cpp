@@ -117,22 +117,19 @@ static const struct { unsigned int fourcc; const char* codec; } k_v4l2CodedForma
 #define PMP_FOURCC(a, b, c, d) \
   ((unsigned int)(a) | ((unsigned int)(b) << 8) | ((unsigned int)(c) << 16) | ((unsigned int)(d) << 24))
 
-// Raw CAPTURE formats that carry more than 8 bits per component. Spelled as
-// literal fourccs so the set does not depend on the kernel headers this is
-// built against. Anything outside this set is treated as 8 bit.
 static const struct { unsigned int fourcc; int depth; } k_v4l2DeepRawFormats[] = {
-  {PMP_FOURCC('Q', '1', '0', 'C'), 10}, // QCOM compressed 10 bit
+  {PMP_FOURCC('Q', '1', '0', 'C'), 10},
   {PMP_FOURCC('P', '0', '1', '0'), 10},
-  {PMP_FOURCC('P', 'M', '1', '0'), 10}, // P010 multiplanar
+  {PMP_FOURCC('P', 'M', '1', '0'), 10},
   {PMP_FOURCC('N', 'V', '1', '5'), 10},
-  {PMP_FOURCC('R', 'K', '2', '0'), 10}, // NV12_10LE40
+  {PMP_FOURCC('R', 'K', '2', '0'), 10},
   {PMP_FOURCC('Y', '0', '1', '0'), 10},
   {PMP_FOURCC('A', 'R', '3', '0'), 10},
   {PMP_FOURCC('A', 'B', '3', '0'), 10},
   {PMP_FOURCC('X', 'R', '3', '0'), 10},
   {PMP_FOURCC('X', 'B', '3', '0'), 10},
   {PMP_FOURCC('P', '0', '1', '2'), 12},
-  {PMP_FOURCC('P', 'M', '1', '2'), 12}, // P012 multiplanar
+  {PMP_FOURCC('P', 'M', '1', '2'), 12},
   {PMP_FOURCC('Y', '0', '1', '2'), 12},
   {PMP_FOURCC('P', '0', '1', '6'), 16},
   {PMP_FOURCC('P', 'M', '1', '6'), 16},

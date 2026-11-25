@@ -60,7 +60,7 @@ struct StreamInfo {
   int audioChannels;
   int audioSampleRate;
   QSize videoResolution;
-  int videoBitDepth;                    // 0 if the server did not report one
+  int videoBitDepth;
   bool videoDolbyVision;
 };
 

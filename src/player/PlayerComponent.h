@@ -225,8 +225,6 @@ private:
   PlaybackInfo getPlaybackInfo();
   // Make the player prefer certain codecs over others.
   void setPreferredCodecs(const QList<CodecDriver>& codecs, const PlaybackInfo& info);
-  // The V4L2 decoder preference, minus the codecs whose streams in this file
-  // the hardware cannot emit correctly.
   QStringList allowedVideoDecoders(const PlaybackInfo& info) const;
   // Determine the required codecs and possibly download them.
   // Call resume() when done.
